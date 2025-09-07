@@ -1,5 +1,5 @@
-import { SOCKET_EVENTS, PLAYER_STATE } from '@/constants/socketConfig';
-import { DEFAULT_SONG_VOLUMES } from '@/constants/playerConfig';
+import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
+import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
 
 /**
  * Registers song-related socket event handlers

@@ -1,4 +1,4 @@
-import { SOCKET_EVENTS, PLAYER_STATE } from '@/constants/socketConfig';
+import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
 
 /**
  * Registers state-related socket event handlers (play/pause/lock)

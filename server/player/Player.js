@@ -1,6 +1,6 @@
-import { PLAYER_STATE, MUTE_STATE } from '@/constants/socketConfig';
-import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '@/constants/playerConfig';
-import DeviceHandler from '@/hardware/DeviceHandler';
+import { PLAYER_STATE, MUTE_STATE } from '../constants/socketConfig.js';
+import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
+import DeviceHandler from '../hardware/DeviceHandler.js';
 
 /**
  * High-level Player class that abstracts hardware control and manages player state

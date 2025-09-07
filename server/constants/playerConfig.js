@@ -1,4 +1,4 @@
-import { SONG_TYPE, PLAYER_STATE, MUTE_STATE } from '@/constants/socketConfig';
+import { SONG_TYPE, PLAYER_STATE, MUTE_STATE } from './socketConfig.js';
 
 // Default volumes for each song
 export const DEFAULT_SONG_VOLUMES = {

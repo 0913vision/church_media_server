@@ -1,4 +1,4 @@
-import { SOCKET_EVENTS } from '@/constants/socketConfig';
+import { SOCKET_EVENTS } from '../constants/socketConfig.js';
 
 /**
  * Manages network-level locking for player operations

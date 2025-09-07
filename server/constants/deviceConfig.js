@@ -6,8 +6,8 @@ export const DEVICE_CONFIG = {
     RASPBERRY_PI: '/lib/arm-linux-gnueabihf/libmpv.so'
   },
   
-  // Current platform (set from main.js)
-  CURRENT_PLATFORM: process.env.PLATFORM,
+  // Current platform
+  CURRENT_PLATFORM: process.platform === 'darwin' ? 'MAC' : 'RASPBERRY_PI',
   
   // Audio file playlist
   PLAYLIST: [

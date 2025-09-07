@@ -1,6 +1,6 @@
-import X32Console from '@/console/X32Console';
-import MockConsole from '@/console/MockConsole';
-import { DEVICE_CONFIG } from '@/constants/deviceConfig';
+import X32Console from './X32Console.js';
+import MockConsole from './MockConsole.js';
+import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
 
 /**
  * High-level console controller that manages audio mixing operations

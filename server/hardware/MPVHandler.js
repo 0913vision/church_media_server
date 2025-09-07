@@ -2,7 +2,7 @@ import ffi from 'ffi-napi';
 import ref from 'ref-napi';
 import array from 'ref-array-napi';
 import Struct from 'ref-struct-di';
-import { DEVICE_CONFIG } from '@/constants/deviceConfig';
+import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
 
 /**
  * Low-level MPV FFI wrapper that handles direct library bindings

@@ -1,12 +1,12 @@
 import { Server } from 'socket.io';
-import { SOCKET_CONFIG } from '@/constants/socketConfig';
-import Player from '@/player/Player';
-import NetworkLockManager from '@/lock/NetworkLockManager';
-import { registerVolumeHandlers } from '@/handlers/volumeHandlers';
-import { registerStateHandlers } from '@/handlers/stateHandlers';
-import { registerSongHandlers } from '@/handlers/songHandlers';
-import { registerMuteHandlers } from '@/handlers/muteHandlers';
-import { registerConsoleHandlers } from '@/handlers/consoleHandlers';
+import { SOCKET_CONFIG } from './constants/socketConfig.js';
+import Player from './player/Player.js';
+import NetworkLockManager from './lock/NetworkLockManager.js';
+import { registerVolumeHandlers } from './handlers/volumeHandlers.js';
+import { registerStateHandlers } from './handlers/stateHandlers.js';
+import { registerSongHandlers } from './handlers/songHandlers.js';
+import { registerMuteHandlers } from './handlers/muteHandlers.js';
+import { registerConsoleHandlers } from './handlers/consoleHandlers.js';
 
 class MediaServer {
   start() {

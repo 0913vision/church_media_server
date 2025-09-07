@@ -1,4 +1,4 @@
-import { SOCKET_EVENTS } from '@/constants/socketConfig';
+import { SOCKET_EVENTS } from '../constants/socketConfig.js';
 
 /**
  * Registers mute-related socket event handlers

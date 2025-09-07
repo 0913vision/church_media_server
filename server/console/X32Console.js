@@ -1,5 +1,6 @@
-import { UDPPort } from 'osc';
-import { CONSOLE_CONFIG } from '@/constants/consoleConfig';
+import osc from 'osc';
+const { UDPPort } = osc;
+import { CONSOLE_CONFIG } from '../constants/consoleConfig.js';
 
 /**
  * X32 console implementation for actual hardware communication

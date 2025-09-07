@@ -1,5 +1,5 @@
-import { SOCKET_EVENTS } from '@/constants/socketConfig';
-import ConsoleHandler from '@/console/ConsoleHandler';
+import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import ConsoleHandler from '../console/ConsoleHandler.js';
 
 /**
  * Registers console-related socket event handlers (mixer controls)

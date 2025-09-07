@@ -1,5 +1,5 @@
-import MPVHandler from '@/hardware/MPVHandler';
-import { DEVICE_CONFIG } from '@/constants/deviceConfig';
+import MPVHandler from './MPVHandler.js';
+import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
 
 /**
  * High-level device controller that manages audio playback operations
