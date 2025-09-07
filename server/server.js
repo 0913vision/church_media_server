@@ -27,7 +27,7 @@ class MediaServer {
 
   io.on('connection', (socket) => {
     // Register all handlers with Player and NetworkLockManager instances
-    registerVolumeHandlers(socket, io, player);
+    registerVolumeHandlers(socket, io, player, lockManager);
     registerStateHandlers(socket, io, player, lockManager);
     registerSongHandlers(socket, io, player, lockManager);
     registerMuteHandlers(socket, io, player);
