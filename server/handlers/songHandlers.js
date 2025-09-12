@@ -6,15 +6,17 @@ import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
  * @param {Object} socket - Socket.IO socket instance
  * @param {Object} io - Socket.IO server instance
  * @param {Player} player - Player instance
- * @param {NetworkLockManager} lockManager - Network lock manager instance
+ * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
  */
-export const registerSongHandlers = (socket, io, player, lockManager) => {
+export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
   /**
    * Handle current song get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_CURRENT_SONG_EVENT, async () => {
     try {
-      const currentSong = player.getCurrentSong();
+      const currentSong = !lockCoordinator.isAdminOperationActive() 
+        ? player.getCurrentSong() 
+        : lockCoordinator.getSavedUserState()?.currentSong;
       socket.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, currentSong);
     } catch (error) {
       console.error('Error getting current song:', error);
@@ -26,11 +28,9 @@ export const registerSongHandlers = (socket, io, player, lockManager) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (currentSong, newSong) => {
     try {
-      const lockAcquired = await lockManager.withLock(async () => {
-        // Change song (this handles pause, switch, volume change internally)
+      const lockAcquired = await lockCoordinator.withUserLock(async () => {
         await player.changeSong(currentSong, newSong);
 
-        // Emit state and song changes
         io.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, PLAYER_STATE.PAUSED);
         io.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, newSong);
         io.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, DEFAULT_SONG_VOLUMES[newSong]);

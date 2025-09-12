@@ -4,10 +4,9 @@ import ConsoleHandler from '../console/ConsoleHandler.js';
 /**
  * Registers console-related socket event handlers (mixer controls)
  * @param {Object} socket - Socket.IO socket instance
- * @param {Object} io - Socket.IO server instance
- * @param {Player} player - Player instance (not used for console operations)
+ * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
  */
-export const registerConsoleHandlers = (socket, io, player) => {
+export const registerConsoleHandlers = (socket, lockCoordinator) => {
   const consoleHandler = new ConsoleHandler();
 
   /**
@@ -15,18 +14,29 @@ export const registerConsoleHandlers = (socket, io, player) => {
    */
   socket.on(SOCKET_EVENTS.C2S_MIC_ON_EVENT, async () => {
     try {
-      await consoleHandler.enablePastorMic();
+      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+        await consoleHandler.enablePastorMic();
+      });
+
+      if (!lockAcquired) {
+        console.log('Lock acquisition failed for mic on, request denied');
+        return;
+      }
     } catch (error) {
       console.error('Error enabling pastor microphone:', error);
     }
   });
 
-  /**
-   * Handle auxiliary input on request
-   */
   socket.on(SOCKET_EVENTS.C2S_AUX_ON_EVENT, async () => {
     try {
-      await consoleHandler.enableAux();
+      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+        await consoleHandler.enableAux();
+      });
+
+      if (!lockAcquired) {
+        console.log('Lock acquisition failed for aux on, request denied');
+        return;
+      }
     } catch (error) {
       console.error('Error enabling auxiliary input:', error);
     }

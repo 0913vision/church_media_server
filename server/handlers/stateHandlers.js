@@ -5,15 +5,17 @@ import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
  * @param {Object} socket - Socket.IO socket instance
  * @param {Object} io - Socket.IO server instance
  * @param {Player} player - Player instance
- * @param {NetworkLockManager} lockManager - Network lock manager instance
+ * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
  */
-export const registerStateHandlers = (socket, io, player, lockManager) => {
+export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
   /**
    * Handle state get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_STATE_EVENT, async () => {
     try {
-      const currentState = player.getState();
+      const currentState = !lockCoordinator.isAdminOperationActive() 
+        ? player.getState() 
+        : lockCoordinator.getSavedUserState()?.state;
       socket.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, currentState);
     } catch (error) {
       console.error('Error getting state:', error);
@@ -25,7 +27,7 @@ export const registerStateHandlers = (socket, io, player, lockManager) => {
    */
   socket.on(SOCKET_EVENTS.C2S_GET_LOCK_EVENT, async () => {
     try {
-      const lockStatus = lockManager.isLocked();
+      const lockStatus = lockCoordinator.isLocked();
       socket.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, lockStatus);
     } catch (error) {
       console.error('Error getting lock:', error);
@@ -39,8 +41,7 @@ export const registerStateHandlers = (socket, io, player, lockManager) => {
     try {
       if (newState === player.getState()) return;
 
-      const lockAcquired = await lockManager.withLock(async () => {
-        // Change state
+      const lockAcquired = await lockCoordinator.withUserLock(async () => {
         if (newState === PLAYER_STATE.PLAYING) {
           await player.play();
         } else {

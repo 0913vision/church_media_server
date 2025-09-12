@@ -5,15 +5,17 @@ import { SOCKET_EVENTS } from '../constants/socketConfig.js';
  * @param {Object} socket - Socket.IO socket instance
  * @param {Object} io - Socket.IO server instance
  * @param {Player} player - Player instance
- * @param {NetworkLockManager} lockManager - Network lock manager instance
+ * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
  */
-export const registerVolumeHandlers = (socket, io, player, lockManager) => {
+export const registerVolumeHandlers = (socket, io, player, lockCoordinator) => {
   /**
    * Handle volume get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_VOLUME_EVENT, async () => {
     try {
-      const currentVolume = player.getVolume();
+      const currentVolume = !lockCoordinator.isAdminOperationActive() 
+        ? player.getVolume() 
+        : lockCoordinator.getSavedUserState()?.serverVolume;
       socket.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, currentVolume);
     } catch (error) {
       console.error('Error getting volume:', error);
@@ -25,7 +27,7 @@ export const registerVolumeHandlers = (socket, io, player, lockManager) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_VOLUME_EVENT, async (newVolume) => {
     try {
-      const lockAcquired = await lockManager.withLock(async () => {
+      const lockAcquired = await lockCoordinator.withUserLock(async () => {
         player.setVolume(newVolume);
         io.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, newVolume);
       });

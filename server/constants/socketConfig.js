@@ -23,12 +23,18 @@ export const SOCKET_EVENTS = {
   C2S_MIC_ON_EVENT: 'micOn',
   C2S_AUX_ON_EVENT: 'auxOn',
 
+  // Admin events
+  C2S_AUTHENTICATE_ADMIN_EVENT: 'authenticateAdmin',
+
   // Server to Client events
   S2C_STATE_CHANGED_EVENT: 'stateChanged',
   S2C_VOLUME_CHANGED_EVENT: 'volumeChanged',
   S2C_MUTE_CHANGED_EVENT: 'muteChanged',
   S2C_SONG_CHANGED_EVENT: 'songChanged',
-  S2C_LOCK_CHANGED_EVENT: 'lockChanged'
+  S2C_LOCK_CHANGED_EVENT: 'lockChanged',
+  
+  // Admin response events
+  S2C_ADMIN_AUTHENTICATED_EVENT: 'adminAuthenticated'
 };
 
 // Player states (same as client)

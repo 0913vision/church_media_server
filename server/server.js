@@ -1,7 +1,9 @@
 import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.js';
 import Player from './player/Player.js';
-import NetworkLockManager from './lock/NetworkLockManager.js';
+import LockCoordinator from './lock/LockCoordinator.js';
+import AdminSessionManager from './auth/AdminSessionManager.js';
+import { registerAuthHandlers } from './handlers/authHandlers.js';
 import { registerVolumeHandlers } from './handlers/volumeHandlers.js';
 import { registerStateHandlers } from './handlers/stateHandlers.js';
 import { registerSongHandlers } from './handlers/songHandlers.js';
@@ -17,21 +19,23 @@ class MediaServer {
   })
   global.io = io
 
-  // Create single Player instance and NetworkLockManager
+  // Create single Player instance and managers
   const player = new Player();
-  const lockManager = new NetworkLockManager(io);
+  const lockCoordinator = new LockCoordinator(io);
+  const adminSessionManager = new AdminSessionManager();
 
   const pingInterval = setInterval(() => {
     io.emit('ping');
   }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
   io.on('connection', (socket) => {
-    // Register all handlers with Player and NetworkLockManager instances
-    registerVolumeHandlers(socket, io, player, lockManager);
-    registerStateHandlers(socket, io, player, lockManager);
-    registerSongHandlers(socket, io, player, lockManager);
-    registerMuteHandlers(socket, io, player);
-    registerConsoleHandlers(socket, io, player);
+    // Register all handlers
+    registerAuthHandlers(socket, adminSessionManager);
+    registerVolumeHandlers(socket, io, player, lockCoordinator);
+    registerStateHandlers(socket, io, player, lockCoordinator);
+    registerSongHandlers(socket, io, player, lockCoordinator);
+    registerMuteHandlers(socket, io, player, lockCoordinator);
+    registerConsoleHandlers(socket, lockCoordinator);
   });
   }
 }
