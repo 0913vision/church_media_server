@@ -1,5 +1,6 @@
 import { SOCKET_EVENTS } from '../constants/socketConfig.js';
 import { ADMIN_CONFIG } from '../constants/authConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers authentication-related socket event handlers
@@ -15,13 +16,13 @@ export const registerAuthHandlers = (socket, adminSessionManager) => {
       if (password === ADMIN_CONFIG.ADMIN_PASSWORD) {
         adminSessionManager.addAdminSocket(socket);
         socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: true });
-        console.log(`Socket ${socket.id} authenticated as admin`);
+        log.info('authHandler', socket, 'Socket authenticated as admin');
       } else {
         socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: false });
-        console.log(`Socket ${socket.id} failed admin authentication`);
+        log.warn('authHandler', socket, 'Socket failed admin authentication');
       }
     } catch (error) {
-      console.error('Error during admin authentication:', error);
+      log.error('authHandler', socket, 'Error during admin authentication', { error: error.message });
       socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: false });
     }
   });

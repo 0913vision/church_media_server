@@ -1,4 +1,5 @@
 import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers volume-related socket event handlers
@@ -18,7 +19,7 @@ export const registerVolumeHandlers = (socket, io, player, lockCoordinator) => {
         : lockCoordinator.getSavedUserState()?.serverVolume;
       socket.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, currentVolume);
     } catch (error) {
-      console.error('Error getting volume:', error);
+      log.error('volumeHandler', socket, 'Error getting volume', { error: error.message });
     }
   });
 
@@ -33,11 +34,11 @@ export const registerVolumeHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for volume change, request denied');
+        log.warn('volumeHandler', socket, 'Lock acquisition failed for volume change, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error changing volume:', error);
+      log.error('volumeHandler', socket, 'Error changing volume', { error: error.message, newVolume });
     }
   });
 };

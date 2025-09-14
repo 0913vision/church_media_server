@@ -1,4 +1,5 @@
 import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers state-related socket event handlers (play/pause/lock)
@@ -18,7 +19,7 @@ export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
         : lockCoordinator.getSavedUserState()?.state;
       socket.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, currentState);
     } catch (error) {
-      console.error('Error getting state:', error);
+      log.error('stateHandler', socket, 'Error getting state', { error: error.message });
     }
   });
 
@@ -30,7 +31,7 @@ export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
       const lockStatus = lockCoordinator.isLocked();
       socket.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, lockStatus);
     } catch (error) {
-      console.error('Error getting lock:', error);
+      log.error('stateHandler', socket, 'Error getting lock', { error: error.message });
     }
   });
 
@@ -52,11 +53,11 @@ export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for state change, request denied');
+        log.warn('stateHandler', socket, 'Lock acquisition failed for state change, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error changing state:', error);
+      log.error('stateHandler', socket, 'Error changing state', { error: error.message, newState });
     }
   });
 };

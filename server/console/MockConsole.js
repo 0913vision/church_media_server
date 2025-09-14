@@ -1,9 +1,11 @@
+import { log } from '../utils/logger.js';
+
 /**
  * Mock console implementation for development/testing
  */
 class MockConsole {
   constructor() {
-    console.log("[MockConsole] Mock console initialized");
+    log.info('mockConsole', null, 'Mock console initialized');
   }
 
   /**
@@ -21,11 +23,11 @@ class MockConsole {
    * @returns {Promise<void>}
    */
   async enablePastorMic() {
-    console.log("[MockConsole] Enabling pastor microphone");
-    console.log("[MockConsole] → Channel 01: mix/on = 1, fader = 0.687");
-    console.log("[MockConsole] → Channel 02: mix/on = 1, fader = 0.837");
+    log.info('mockConsole', null, 'Enabling pastor microphone');
+    log.info('mockConsole', null, '→ Channel 01: mix/on = 1, fader = 0.687');
+    log.info('mockConsole', null, '→ Channel 02: mix/on = 1, fader = 0.837');
     await this.#delay(50);
-    console.log("[MockConsole] Pastor microphone enabled");
+    log.info('mockConsole', null, 'Pastor microphone enabled');
   }
 
   /**
@@ -33,10 +35,10 @@ class MockConsole {
    * @returns {Promise<void>}
    */
   async enableAux() {
-    console.log("[MockConsole] Enabling auxiliary input");
-    console.log("[MockConsole] → AuxIn 05: mix/on = 1, fader = 0.75");
+    log.info('mockConsole', null, 'Enabling auxiliary input');
+    log.info('mockConsole', null, '→ AuxIn 05: mix/on = 1, fader = 0.75');
     await this.#delay(50);
-    console.log("[MockConsole] Auxiliary input enabled");
+    log.info('mockConsole', null, 'Auxiliary input enabled');
   }
 }
 

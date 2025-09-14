@@ -22,5 +22,9 @@ export const DEVICE_CONFIG = {
   },
 
   // Console configuration
-  CONSOLE_MODE: process.env.CONSOLE_MODE || 'X32' // 'X32' or 'MOCK'
+  CONSOLE_MODE: process.env.CONSOLE_MODE || 'X32', // 'X32' or 'MOCK'
+  
+  // MPV operation settings
+  MAX_PROPERTY_SET_ATTEMPTS: 10,
+  PROPERTY_SET_RETRY_DELAY_MS: 50
 };

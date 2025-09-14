@@ -1,5 +1,6 @@
 import { SOCKET_EVENTS } from '../constants/socketConfig.js';
 import ConsoleHandler from '../console/ConsoleHandler.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers console-related socket event handlers (mixer controls)
@@ -19,11 +20,11 @@ export const registerConsoleHandlers = (socket, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for mic on, request denied');
+        log.warn('consoleHandler', socket, 'Lock acquisition failed for mic on, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error enabling pastor microphone:', error);
+      log.error('consoleHandler', socket, 'Error enabling pastor microphone', { error: error.message });
     }
   });
 
@@ -34,11 +35,11 @@ export const registerConsoleHandlers = (socket, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for aux on, request denied');
+        log.warn('consoleHandler', socket, 'Lock acquisition failed for aux on, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error enabling auxiliary input:', error);
+      log.error('consoleHandler', socket, 'Error enabling auxiliary input', { error: error.message });
     }
   });
 };

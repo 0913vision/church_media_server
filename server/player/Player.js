@@ -1,6 +1,7 @@
 import { PLAYER_STATE, MUTE_STATE } from '../constants/socketConfig.js';
 import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
 import DeviceHandler from '../hardware/DeviceHandler.js';
+import { log } from '../utils/logger.js';
 
 /**
  * High-level Player class that abstracts hardware control and manages player state
@@ -52,8 +53,13 @@ class Player {
    * @returns {Promise<void>}
    */
   async play() {
+    try {
+      await this.#device.resume();
+    } catch (error) {
+      log.error('player', null, 'Failed to play audio', { error: error.message });
+      throw error;
+    }
     this.#state.state = PLAYER_STATE.PLAYING;
-    await this.#device.resume();
   }
 
   /**
@@ -61,8 +67,13 @@ class Player {
    * @returns {Promise<void>}
    */
   async pause() {
+    try {
+      await this.#device.pause();
+    } catch (error) {
+      log.error('player', null, 'Failed to pause audio', { error: error.message });
+      throw error;
+    }
     this.#state.state = PLAYER_STATE.PAUSED;
-    await this.#device.pause();
   }
 
   // Mute methods
@@ -104,20 +115,42 @@ class Player {
    */
   async changeSong(currentSong, newSong) {
     const wasPlaying = this.isPlaying();
+    
     if (wasPlaying) {
-      await this.#device.pause();
+      try {
+        await this.#device.pause();
+      } catch (error) {
+        log.error('player', null, 'Failed to pause during song change', { error: error.message });
+        throw error;
+      }
     }
 
-    this.#device.changeSong(currentSong, newSong);
+    try {
+      this.#device.changeSong(currentSong, newSong);
+    } catch (error) {
+      log.error('player', null, 'Failed to change song', { currentSong, newSong, error: error.message });
+      throw error;
+    }
+    
+    const newVolume = DEFAULT_SONG_VOLUMES[newSong];
+    
+    try {
+      this.#device.setVolume(newVolume);
+    } catch (error) {
+      log.error('player', null, 'Failed to set volume during song change', { newVolume, error: error.message });
+      throw error;
+    }
     
     this.#state.currentSong = newSong;
     this.#state.state = PLAYER_STATE.PAUSED;
-    
-    const newVolume = DEFAULT_SONG_VOLUMES[newSong];
     this.#state.serverVolume = newVolume;
-    this.#device.setVolume(newVolume);
     
-    this.#device.loadLastSongTime(newSong);
+    try {
+      await this.#device.loadLastSongTime(newSong);
+    } catch (error) {
+      log.error('player', null, 'Failed to load last song time', { newSong, error: error.message });
+      throw error;
+    }
   }
 
   // Utility methods

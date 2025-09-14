@@ -3,6 +3,7 @@ import ref from 'ref-napi';
 import array from 'ref-array-napi';
 import Struct from 'ref-struct-di';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Low-level MPV FFI wrapper that handles direct library bindings
@@ -34,19 +35,38 @@ class MPVHandler {
       data: 'pointer'
     });
 
-    this.#api = ffi.Library(libmpvPath, {
-      'mpv_create': ['pointer', []],
-      'mpv_initialize': ['int', ['pointer']],
-      'mpv_command': ['int', ['pointer', StringArray]],
-      'mpv_set_option_string': ['int', ['pointer', 'string', 'string']],
-      'mpv_set_property_string': ['int', ['pointer', 'string', 'string']],
-      'mpv_get_property_string': ['string', ['pointer', 'string']],
-      'mpv_command_async': ['int', ['pointer', 'uint64', StringArray]],
-      'mpv_wait_event': [mpv_event, ['pointer', 'double']]
-    });
+    try {
+      this.#api = ffi.Library(libmpvPath, {
+        'mpv_create': ['pointer', []],
+        'mpv_initialize': ['int', ['pointer']],
+        'mpv_command': ['int', ['pointer', StringArray]],
+        'mpv_set_option_string': ['int', ['pointer', 'string', 'string']],
+        'mpv_set_property_string': ['int', ['pointer', 'string', 'string']],
+        'mpv_get_property_string': ['string', ['pointer', 'string']],
+        'mpv_command_async': ['int', ['pointer', 'uint64', StringArray]],
+        'mpv_wait_event': [mpv_event, ['pointer', 'double']]
+      });
+    } catch (error) {
+      log.error('mpvHandler', null, 'Failed to load MPV library', { libmpvPath, error: error.message });
+      throw error;
+    }
 
-    this.#playerInstance = this.#api.mpv_create();
-    this.#api.mpv_initialize(this.#playerInstance);
+    try {
+      this.#playerInstance = this.#api.mpv_create();
+    } catch (error) {
+      log.error('mpvHandler', null, 'Failed to create MPV instance', { error: error.message });
+      throw error;
+    }
+
+    try {
+      const result = this.#api.mpv_initialize(this.#playerInstance);
+      if (result !== 0) {
+        throw new Error(`MPV initialization failed with code: ${result}`);
+      }
+    } catch (error) {
+      log.error('mpvHandler', null, 'Failed to initialize MPV', { error: error.message });
+      throw error;
+    }
   }
 
   /**

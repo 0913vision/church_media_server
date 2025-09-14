@@ -1,5 +1,6 @@
 import MPVHandler from './MPVHandler.js';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * High-level device controller that manages audio playback operations
@@ -24,9 +25,23 @@ class DeviceHandler {
    * @private
    */
   #initialize() {
-    this.#mpv.setProperty("loop", "inf");
-    this.#mpv.executeCommand(["loadfile", this.#playlist[0], null]);
-    this.#mpv.setProperty("pause", "yes");
+    try {
+      this.#mpv.setProperty("loop", "inf");
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to set loop property', { error: error.message });
+    }
+
+    try {
+      this.#mpv.executeCommand(["loadfile", this.#playlist[0], null]);
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to load initial file', { file: this.#playlist[0], error: error.message });
+    }
+
+    try {
+      this.#mpv.setProperty("pause", "yes");
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to set pause property', { error: error.message });
+    }
   }
 
   /**
@@ -45,8 +60,13 @@ class DeviceHandler {
    * @private
    */
   #getCurrentSongTime() {
-    const response = this.#mpv.getProperty("playback-time");
-    return parseFloat(response);
+    try {
+      const response = this.#mpv.getProperty("playback-time");
+      return parseFloat(response) || 0;
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to get playback time', { error: error.message });
+      return 0;
+    }
   }
 
   /**
@@ -102,17 +122,50 @@ class DeviceHandler {
     // Switch track
     const trackIndex = newSong === "slow" ? 0 : 1;
     const nextCommand = ["loadfile", this.#playlist[trackIndex], null];
-    this.#mpv.executeCommand(nextCommand);
+    
+    try {
+      this.#mpv.executeCommand(nextCommand);
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to change song', { 
+        currentSong, 
+        newSong, 
+        file: this.#playlist[trackIndex], 
+        error: error.message 
+      });
+      throw error;
+    }
   }
 
   /**
    * Loads the saved playback time for a song
    * @param {string} song - Song type
    */
-  loadLastSongTime(song) {
-    do {
-      this.#mpv.setProperty("playback-time", this.#currentSongTimes[song].toString());
-    } while (parseFloat(this.#mpv.getProperty("playback-time")) !== this.#currentSongTimes[song]);
+  async loadLastSongTime(song) {
+    const targetTime = this.#currentSongTimes[song];
+    let attempts = 0;
+    
+    try {
+      do {
+        this.#mpv.setProperty("playback-time", targetTime.toString());
+        await this.#delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
+        attempts++;
+      } while (
+        parseFloat(this.#mpv.getProperty("playback-time")) !== targetTime && 
+        attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS
+      );
+      
+      if (attempts >= DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS) {
+        throw new Error(`Failed to set playback time after ${attempts} attempts`);
+      }
+    } catch (error) {
+      log.error('deviceHandler', null, 'Failed to load last song time', { 
+        song, 
+        targetTime, 
+        attempts,
+        error: error.message 
+      });
+      throw error;
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers song-related socket event handlers
@@ -19,7 +20,7 @@ export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
         : lockCoordinator.getSavedUserState()?.currentSong;
       socket.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, currentSong);
     } catch (error) {
-      console.error('Error getting current song:', error);
+      log.error('songHandler', socket, 'Error getting current song', { error: error.message });
     }
   });
 
@@ -37,11 +38,11 @@ export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for song change, request denied');
+        log.warn('songHandler', socket, 'Lock acquisition failed for song change, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error changing song:', error);
+      log.error('songHandler', socket, 'Error changing song', { error: error.message, currentSong, newSong });
     }
   });
 };

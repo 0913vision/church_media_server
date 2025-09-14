@@ -1,4 +1,5 @@
 import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * Registers mute-related socket event handlers
@@ -18,7 +19,7 @@ export const registerMuteHandlers = (socket, io, player, lockCoordinator) => {
         : lockCoordinator.getSavedUserState()?.muted;
       socket.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, muteStatus);
     } catch (error) {
-      console.error('Error getting mute status:', error);
+      log.error('muteHandler', socket, 'Error getting mute status', { error: error.message });
     }
   });
 
@@ -33,11 +34,11 @@ export const registerMuteHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        console.log('Lock acquisition failed for mute change, request denied');
+        log.warn('muteHandler', socket, 'Lock acquisition failed for mute change, request denied');
         return;
       }
     } catch (error) {
-      console.error('Error changing mute status:', error);
+      log.error('muteHandler', socket, 'Error changing mute status', { error: error.message, newMute });
     }
   });
 };

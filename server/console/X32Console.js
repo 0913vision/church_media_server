@@ -1,6 +1,7 @@
 import osc from 'osc';
 const { UDPPort } = osc;
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * X32 console implementation for actual hardware communication
@@ -26,7 +27,7 @@ class X32Console {
   #initialize() {
     this.#client.open();
     this.#client.on("ready", () => {
-      console.log("X32 console client is ready");
+      log.info('x32Console', null, 'X32 console client is ready');
     });
   }
 

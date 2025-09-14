@@ -1,6 +1,7 @@
 import X32Console from './X32Console.js';
 import MockConsole from './MockConsole.js';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
+import { log } from '../utils/logger.js';
 
 /**
  * High-level console controller that manages audio mixing operations
@@ -25,7 +26,7 @@ class ConsoleHandler {
     try {
       await this.#console.enablePastorMic();
     } catch (error) {
-      console.error('Error enabling pastor microphone:', error);
+      log.error('consoleHandler', null, 'Error enabling pastor microphone', { error: error.message });
       throw error;
     }
   }
@@ -38,7 +39,7 @@ class ConsoleHandler {
     try {
       await this.#console.enableAux();
     } catch (error) {
-      console.error('Error enabling auxiliary input:', error);
+      log.error('consoleHandler', null, 'Error enabling auxiliary input', { error: error.message });
       throw error;
     }
   }

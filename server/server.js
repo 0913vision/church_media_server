@@ -9,10 +9,11 @@ import { registerStateHandlers } from './handlers/stateHandlers.js';
 import { registerSongHandlers } from './handlers/songHandlers.js';
 import { registerMuteHandlers } from './handlers/muteHandlers.js';
 import { registerConsoleHandlers } from './handlers/consoleHandlers.js';
+import { log } from './utils/logger.js';
 
 class MediaServer {
   start() {
-  console.log('Socket is initializing')
+  log.info('server', null, 'Socket is initializing')
   
   const io = new Server(SOCKET_CONFIG.PORT, {
     cors: SOCKET_CONFIG.CORS,
@@ -29,6 +30,8 @@ class MediaServer {
   }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
   io.on('connection', (socket) => {
+    log.info('server', socket, 'Socket connected', { ip: socket.handshake.address });
+    
     // Register all handlers
     registerAuthHandlers(socket, adminSessionManager);
     registerVolumeHandlers(socket, io, player, lockCoordinator);
@@ -36,6 +39,10 @@ class MediaServer {
     registerSongHandlers(socket, io, player, lockCoordinator);
     registerMuteHandlers(socket, io, player, lockCoordinator);
     registerConsoleHandlers(socket, lockCoordinator);
+    
+    socket.on('disconnect', (reason) => {
+      log.info('server', socket, 'Socket disconnected', { reason });
+    });
   });
   }
 }
