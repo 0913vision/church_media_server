@@ -4,7 +4,9 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "test": "node --test tests/ut/*.test.js",
+    "test:watch": "node --test --watch tests/ut/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
@@ -13,6 +15,7 @@
     "ref-array-napi": "^1.2.2",
     "ref-napi": "^3.0.3",
     "ref-struct-di": "^1.1.1",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.7.2",
+    "socket.io-client": "^4.8.1"
   }
 }
