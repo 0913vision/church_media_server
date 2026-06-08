@@ -47,6 +47,20 @@ export class SocketTestHelper {
     });
   }
 
+  // Collect every payload of an event for `ms`, then resolve the array
+  // (used to assert an ordered sequence of broadcasts, e.g. lock true/false).
+  collectFor(event, ms) {
+    return new Promise((resolve) => {
+      const received = [];
+      const onEvent = (data) => received.push(data);
+      this.socket.on(event, onEvent);
+      setTimeout(() => {
+        this.socket.off(event, onEvent);
+        resolve(received);
+      }, ms);
+    });
+  }
+
   // Emit an event and resolve true if responseEvent does NOT arrive within ms
   // (used to assert that an operation was blocked).
   emitAndExpectNoResponse(event, responseEvent, ms, ...args) {

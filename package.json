@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node main.js",
-    "test": "node --test tests/ut/*.test.js",
-    "test:watch": "node --test --watch tests/ut/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/ut/*.test.js",
+    "test:watch": "node --test --watch --test-concurrency=1 tests/ut/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
