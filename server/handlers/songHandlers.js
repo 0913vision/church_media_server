@@ -15,21 +15,19 @@ export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
    */
   socket.on(SOCKET_EVENTS.C2S_GET_CURRENT_SONG_EVENT, async () => {
     try {
-      const currentSong = !lockCoordinator.isAdminOperationActive() 
-        ? player.getCurrentSong() 
-        : lockCoordinator.getSavedUserState()?.currentSong;
-      socket.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, currentSong);
+      socket.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, player.getCurrentSong());
     } catch (error) {
       log.error('songHandler', socket, 'Error getting current song', { error: error.message });
     }
   });
 
   /**
-   * Handle song change request
+   * Handle song change request — audio resource operation
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (currentSong, newSong) => {
     try {
-      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+      const lockAcquired = await lockCoordinator.withAudioLock(socket, async () => {
+        // Change song (handles pause, switch, volume change internally)
         await player.changeSong(currentSong, newSong);
 
         io.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, PLAYER_STATE.PAUSED);
@@ -38,7 +36,7 @@ export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        log.warn('songHandler', socket, 'Lock acquisition failed for song change, request denied');
+        log.warn('songHandler', socket, 'Song change blocked (admin lock or audio busy)');
         return;
       }
     } catch (error) {

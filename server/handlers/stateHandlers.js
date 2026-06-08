@@ -14,35 +14,33 @@ export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
    */
   socket.on(SOCKET_EVENTS.C2S_GET_STATE_EVENT, async () => {
     try {
-      const currentState = !lockCoordinator.isAdminOperationActive() 
-        ? player.getState() 
-        : lockCoordinator.getSavedUserState()?.state;
-      socket.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, currentState);
+      socket.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, player.getState());
     } catch (error) {
       log.error('stateHandler', socket, 'Error getting state', { error: error.message });
     }
   });
 
   /**
-   * Handle lock get request
+   * Handle lock get request — reports both lock states on their own events
    */
   socket.on(SOCKET_EVENTS.C2S_GET_LOCK_EVENT, async () => {
     try {
-      const lockStatus = lockCoordinator.isLocked();
-      socket.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, lockStatus);
+      const { audio, admin } = lockCoordinator.getLockState();
+      socket.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, audio);
+      socket.emit(SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, admin);
     } catch (error) {
       log.error('stateHandler', socket, 'Error getting lock', { error: error.message });
     }
   });
 
   /**
-   * Handle state change request (play/pause)
+   * Handle state change request (play/pause) — audio resource operation
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_STATE_EVENT, async (newState) => {
     try {
       if (newState === player.getState()) return;
 
-      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+      const lockAcquired = await lockCoordinator.withAudioLock(socket, async () => {
         if (newState === PLAYER_STATE.PLAYING) {
           await player.play();
         } else {
@@ -53,7 +51,7 @@ export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
       });
 
       if (!lockAcquired) {
-        log.warn('stateHandler', socket, 'Lock acquisition failed for state change, request denied');
+        log.warn('stateHandler', socket, 'State change blocked (admin lock or audio busy)');
         return;
       }
     } catch (error) {

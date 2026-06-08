@@ -1,26 +1,29 @@
 import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import ConsoleHandler from '../console/ConsoleHandler.js';
 import { log } from '../utils/logger.js';
 
 /**
- * Registers console-related socket event handlers (mixer controls)
+ * Registers console-related socket event handlers (mixer controls).
+ *
+ * Console operations take NO resource lock — the console holds no protected
+ * state and its OSC bursts are instantaneous. They are only gated by the admin
+ * lock (handled inside withAdminGate).
+ *
  * @param {Object} socket - Socket.IO socket instance
  * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {ConsoleHandler} consoleHandler - Shared console handler instance
  */
-export const registerConsoleHandlers = (socket, lockCoordinator) => {
-  const consoleHandler = new ConsoleHandler();
-
+export const registerConsoleHandlers = (socket, lockCoordinator, consoleHandler) => {
   /**
    * Handle microphone on request
    */
   socket.on(SOCKET_EVENTS.C2S_MIC_ON_EVENT, async () => {
     try {
-      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+      const allowed = await lockCoordinator.withAdminGate(socket, async () => {
         await consoleHandler.enablePastorMic();
       });
 
-      if (!lockAcquired) {
-        log.warn('consoleHandler', socket, 'Lock acquisition failed for mic on, request denied');
+      if (!allowed) {
+        log.warn('consoleHandler', socket, 'Mic on blocked (admin lock)');
         return;
       }
     } catch (error) {
@@ -28,14 +31,17 @@ export const registerConsoleHandlers = (socket, lockCoordinator) => {
     }
   });
 
+  /**
+   * Handle auxiliary input on request
+   */
   socket.on(SOCKET_EVENTS.C2S_AUX_ON_EVENT, async () => {
     try {
-      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+      const allowed = await lockCoordinator.withAdminGate(socket, async () => {
         await consoleHandler.enableAux();
       });
 
-      if (!lockAcquired) {
-        log.warn('consoleHandler', socket, 'Lock acquisition failed for aux on, request denied');
+      if (!allowed) {
+        log.warn('consoleHandler', socket, 'Aux on blocked (admin lock)');
         return;
       }
     } catch (error) {

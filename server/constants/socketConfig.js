@@ -25,16 +25,25 @@ export const SOCKET_EVENTS = {
 
   // Admin events
   C2S_AUTHENTICATE_ADMIN_EVENT: 'authenticateAdmin',
+  C2S_SET_ADMIN_LOCK_EVENT: 'setAdminLock',
 
   // Server to Client events
   S2C_STATE_CHANGED_EVENT: 'stateChanged',
   S2C_VOLUME_CHANGED_EVENT: 'volumeChanged',
   S2C_MUTE_CHANGED_EVENT: 'muteChanged',
   S2C_SONG_CHANGED_EVENT: 'songChanged',
+  // Audio (resource) lock state — held only while the audio device is
+  // mid-transition (play/pause/song change). Kept on the existing event name.
   S2C_LOCK_CHANGED_EVENT: 'lockChanged',
-  
+  // Admin (global gate) lock state — entirely separate channel from the
+  // audio lock above. Broadcast when an admin acquires/releases the gate.
+  S2C_ADMIN_LOCK_CHANGED_EVENT: 'adminLockChanged',
+
   // Admin response events
-  S2C_ADMIN_AUTHENTICATED_EVENT: 'adminAuthenticated'
+  S2C_ADMIN_AUTHENTICATED_EVENT: 'adminAuthenticated',
+
+  // System events
+  S2C_PING_EVENT: 'ping'
 };
 
 // Player states (same as client)

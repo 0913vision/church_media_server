@@ -4,8 +4,8 @@ import { SocketTestHelper } from './test-helpers.js';
 
 describe('Legacy API Path Tests (Deprecated)', () => {
   test('should fail when connecting to /api/socket path', async () => {
-    const helper = new SocketTestHelper('http://localhost:3000', { 
-      path: '/api/socket' 
+    const helper = new SocketTestHelper(undefined, {
+      path: '/api/socket'
     });
     
     try {

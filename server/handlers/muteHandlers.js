@@ -14,27 +14,24 @@ export const registerMuteHandlers = (socket, io, player, lockCoordinator) => {
    */
   socket.on(SOCKET_EVENTS.C2S_GET_MUTE_EVENT, async () => {
     try {
-      const muteStatus = !lockCoordinator.isAdminOperationActive() 
-        ? player.getMute() 
-        : lockCoordinator.getSavedUserState()?.muted;
-      socket.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, muteStatus);
+      socket.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, player.getMute());
     } catch (error) {
       log.error('muteHandler', socket, 'Error getting mute status', { error: error.message });
     }
   });
 
   /**
-   * Handle mute change request
+   * Handle mute change request (audio resource operation)
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_MUTE_EVENT, async (newMute) => {
     try {
-      const lockAcquired = await lockCoordinator.withUserLock(async () => {
+      const lockAcquired = await lockCoordinator.withAudioLock(socket, async () => {
         player.setMute(newMute);
         io.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, newMute);
       });
 
       if (!lockAcquired) {
-        log.warn('muteHandler', socket, 'Lock acquisition failed for mute change, request denied');
+        log.warn('muteHandler', socket, 'Mute change blocked (admin lock or audio busy)');
         return;
       }
     } catch (error) {
