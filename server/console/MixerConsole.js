@@ -6,11 +6,11 @@ import { log } from '../utils/logger.js';
 /**
  * High-level console controller that manages audio mixing operations
  */
-class ConsoleHandler {
+class MixerConsole {
   #console;
 
   /**
-   * Creates a new ConsoleHandler instance
+   * Creates a new MixerConsole instance
    */
   constructor() {
     this.#console = DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' 
@@ -26,7 +26,7 @@ class ConsoleHandler {
     try {
       await this.#console.enablePastorMic();
     } catch (error) {
-      log.error('consoleHandler', null, 'Error enabling pastor microphone', { error: error.message });
+      log.error('mixerConsole', null, 'Error enabling pastor microphone', { error: error.message });
       throw error;
     }
   }
@@ -39,10 +39,10 @@ class ConsoleHandler {
     try {
       await this.#console.enableAux();
     } catch (error) {
-      log.error('consoleHandler', null, 'Error enabling auxiliary input', { error: error.message });
+      log.error('mixerConsole', null, 'Error enabling auxiliary input', { error: error.message });
       throw error;
     }
   }
 }
 
-export default ConsoleHandler;
+export default MixerConsole;

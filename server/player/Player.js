@@ -1,6 +1,6 @@
 import { PLAYER_STATE, MUTE_STATE } from '../constants/playerStates.js';
 import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
-import DeviceHandler from '../hardware/DeviceHandler.js';
+import AudioDevice from '../hardware/AudioDevice.js';
 import { log } from '../utils/logger.js';
 
 /**
@@ -16,7 +16,7 @@ class Player {
    */
   constructor() {
     this.#state = { ...INITIAL_PLAYER_CONFIG };
-    this.#device = new DeviceHandler();
+    this.#device = new AudioDevice();
     // Initialize hardware with default volume
     this.#device.setVolume(this.#state.serverVolume);
   }

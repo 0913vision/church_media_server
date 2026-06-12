@@ -1,4 +1,4 @@
-import MPVHandler from './MPVHandler.js';
+import MpvClient from './MpvClient.js';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
 import { SONG_TYPE } from '../constants/playerStates.js';
 import { log } from '../utils/logger.js';
@@ -6,16 +6,16 @@ import { log } from '../utils/logger.js';
 /**
  * High-level device controller that manages audio playback operations
  */
-class DeviceHandler {
+class AudioDevice {
   #mpv;
   #playlist;
   #currentSongTimes;
 
   /**
-   * Creates a new DeviceHandler instance
+   * Creates a new AudioDevice instance
    */
   constructor() {
-    this.#mpv = new MPVHandler();
+    this.#mpv = new MpvClient();
     this.#playlist = [...DEVICE_CONFIG.PLAYLIST];
     this.#currentSongTimes = {...DEVICE_CONFIG.INITIAL_SONG_TIMES};
     this.#initialize();
@@ -29,19 +29,19 @@ class DeviceHandler {
     try {
       this.#mpv.setProperty("loop", "inf");
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to set loop property', { error: error.message });
+      log.error('audioDevice', null, 'Failed to set loop property', { error: error.message });
     }
 
     try {
       this.#mpv.executeCommand(["loadfile", this.#playlist[0], null]);
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to load initial file', { file: this.#playlist[0], error: error.message });
+      log.error('audioDevice', null, 'Failed to load initial file', { file: this.#playlist[0], error: error.message });
     }
 
     try {
       this.#mpv.setProperty("pause", "yes");
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to set pause property', { error: error.message });
+      log.error('audioDevice', null, 'Failed to set pause property', { error: error.message });
     }
   }
 
@@ -65,7 +65,7 @@ class DeviceHandler {
       const response = this.#mpv.getProperty("playback-time");
       return parseFloat(response) || 0;
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to get playback time', { error: error.message });
+      log.error('audioDevice', null, 'Failed to get playback time', { error: error.message });
       return 0;
     }
   }
@@ -127,7 +127,7 @@ class DeviceHandler {
     try {
       this.#mpv.executeCommand(nextCommand);
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to change song', { 
+      log.error('audioDevice', null, 'Failed to change song', { 
         currentSong, 
         newSong, 
         file: this.#playlist[trackIndex], 
@@ -163,7 +163,7 @@ class DeviceHandler {
         throw new Error(`Failed to set playback time after ${attempts} attempts`);
       }
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to load last song time', {
+      log.error('audioDevice', null, 'Failed to load last song time', {
         song,
         targetTime,
         attempts,
@@ -174,4 +174,4 @@ class DeviceHandler {
   }
 }
 
-export default DeviceHandler;
+export default AudioDevice;

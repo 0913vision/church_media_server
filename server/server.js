@@ -3,7 +3,7 @@ import { SOCKET_CONFIG } from './constants/socketConfig.js';
 import Player from './player/Player.js';
 import LockCoordinator from './lock/LockCoordinator.js';
 import AdminSessionManager from './auth/AdminSessionManager.js';
-import ConsoleHandler from './console/ConsoleHandler.js';
+import MixerConsole from './console/MixerConsole.js';
 import Notifier from './notify/Notifier.js';
 import { registerHandlers } from './handlers/index.js';
 import { log } from './utils/logger.js';
@@ -30,9 +30,9 @@ class MediaServer {
     const player = new Player();
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
-    const consoleHandler = new ConsoleHandler();
+    const mixerConsole = new MixerConsole();
 
-    const deps = { notifier, player, lockCoordinator, adminSessionManager, consoleHandler };
+    const deps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole };
 
     this.#pingInterval = setInterval(() => {
       notifier.ping();

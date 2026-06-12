@@ -6,12 +6,12 @@ import { log } from '../utils/logger.js';
 /**
  * Low-level MPV FFI wrapper that handles direct library bindings
  */
-class MPVHandler {
+class MpvClient {
   #api;
   #playerInstance;
 
   /**
-   * Creates a new MPVHandler instance and initializes MPV
+   * Creates a new MpvClient instance and initializes MPV
    */
   constructor() {
     this.#initializeFFI();
@@ -34,14 +34,14 @@ class MPVHandler {
         'mpv_get_property_string': ['string', ['pointer', 'string']]
       });
     } catch (error) {
-      log.error('mpvHandler', null, 'Failed to load MPV library', { libmpvPath, error: error.message });
+      log.error('mpvClient', null, 'Failed to load MPV library', { libmpvPath, error: error.message });
       throw error;
     }
 
     try {
       this.#playerInstance = this.#api.mpv_create();
     } catch (error) {
-      log.error('mpvHandler', null, 'Failed to create MPV instance', { error: error.message });
+      log.error('mpvClient', null, 'Failed to create MPV instance', { error: error.message });
       throw error;
     }
 
@@ -51,7 +51,7 @@ class MPVHandler {
         throw new Error(`MPV initialization failed with code: ${result}`);
       }
     } catch (error) {
-      log.error('mpvHandler', null, 'Failed to initialize MPV', { error: error.message });
+      log.error('mpvClient', null, 'Failed to initialize MPV', { error: error.message });
       throw error;
     }
   }
@@ -83,4 +83,4 @@ class MPVHandler {
   }
 }
 
-export default MPVHandler;
+export default MpvClient;

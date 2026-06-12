@@ -18,7 +18,7 @@ import { registerConsoleHandlers } from './consoleHandlers.js';
  * @param {Player} deps.player - Player instance
  * @param {LockCoordinator} deps.lockCoordinator - Lock coordinator instance
  * @param {AdminSessionManager} deps.adminSessionManager - Admin session manager
- * @param {ConsoleHandler} deps.consoleHandler - Shared console handler instance
+ * @param {MixerConsole} deps.mixerConsole - Shared mixing console service
  */
 export const registerHandlers = (socket, deps) => {
   registerAuthHandlers(socket, deps);
