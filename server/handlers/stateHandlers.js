@@ -38,6 +38,10 @@ export const registerStateHandlers = (socket, deps) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_STATE_EVENT, async (newState) => {
     try {
+      if (newState !== PLAYER_STATE.PLAYING && newState !== PLAYER_STATE.PAUSED) {
+        log.warn('stateHandler', socket, 'Invalid state requested, request denied', { newState });
+        return;
+      }
       if (newState === player.getState()) return;
 
       const isAdmin = adminSessionManager.isAdminSocket(socket);

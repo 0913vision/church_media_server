@@ -25,6 +25,11 @@ export const registerVolumeHandlers = (socket, deps) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_VOLUME_EVENT, async (newVolume) => {
     try {
+      if (typeof newVolume !== 'number' || !Number.isFinite(newVolume) || newVolume < 0 || newVolume > 100) {
+        log.warn('volumeHandler', socket, 'Invalid volume requested, request denied', { newVolume });
+        return;
+      }
+
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         player.setVolume(newVolume);

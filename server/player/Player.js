@@ -31,12 +31,13 @@ class Player {
   }
 
   /**
-   * Sets the volume level and updates hardware
+   * Sets the volume level and updates hardware.
+   * While muted, the device stays silent — only the remembered volume changes.
    * @param {number} volume - Volume level (0-100)
    */
   setVolume(volume) {
     this.#state.serverVolume = volume;
-    this.#device.setVolume(volume);
+    this.#device.setVolume(this.isMuted() ? 0 : volume);
   }
 
   // State methods
@@ -108,14 +109,17 @@ class Player {
   }
 
   /**
-   * Changes song, updates volume, and handles hardware switching
-   * @param {string} currentSong - Current song type
+   * Changes song, updates volume, and handles hardware switching.
+   * The player's own state decides which song is current; while muted, the
+   * device stays silent and only the remembered volume moves to the new
+   * song's default.
    * @param {string} newSong - New song type (SONG_TYPE.SLOW or SONG_TYPE.FAST)
    * @returns {Promise<void>}
    */
-  async changeSong(currentSong, newSong) {
+  async changeSong(newSong) {
+    const currentSong = this.#state.currentSong;
     const wasPlaying = this.isPlaying();
-    
+
     if (wasPlaying) {
       try {
         await this.#device.pause();
@@ -131,20 +135,20 @@ class Player {
       log.error('player', null, 'Failed to change song', { currentSong, newSong, error: error.message });
       throw error;
     }
-    
+
     const newVolume = DEFAULT_SONG_VOLUMES[newSong];
-    
+
     try {
-      this.#device.setVolume(newVolume);
+      this.#device.setVolume(this.isMuted() ? 0 : newVolume);
     } catch (error) {
       log.error('player', null, 'Failed to set volume during song change', { newVolume, error: error.message });
       throw error;
     }
-    
+
     this.#state.currentSong = newSong;
     this.#state.state = PLAYER_STATE.PAUSED;
     this.#state.serverVolume = newVolume;
-    
+
     try {
       await this.#device.loadLastSongTime(newSong);
     } catch (error) {

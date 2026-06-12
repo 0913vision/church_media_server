@@ -1,4 +1,4 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import { SOCKET_EVENTS, MUTE_STATE } from '../constants/socketConfig.js';
 import { log } from '../utils/logger.js';
 
 /**
@@ -25,6 +25,11 @@ export const registerMuteHandlers = (socket, deps) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_MUTE_EVENT, async (newMute) => {
     try {
+      if (newMute !== MUTE_STATE.MUTED && newMute !== MUTE_STATE.UNMUTED) {
+        log.warn('muteHandler', socket, 'Invalid mute state requested, request denied', { newMute });
+        return;
+      }
+
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         player.setMute(newMute);

@@ -26,5 +26,8 @@ export const DEVICE_CONFIG = {
   
   // MPV operation settings
   MAX_PROPERTY_SET_ATTEMPTS: 10,
-  PROPERTY_SET_RETRY_DELAY_MS: 50
+  PROPERTY_SET_RETRY_DELAY_MS: 50,
+  // Seek verification: playback-time read-back may differ from the requested
+  // position by a frame/block, so compare within a tolerance instead of exact
+  PLAYBACK_TIME_TOLERANCE_SEC: 0.5
 };

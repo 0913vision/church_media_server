@@ -43,20 +43,93 @@ describe('Change Broadcast Tests', () => {
 
   test('changeSong broadcasts song, default volume, and paused state', async () => {
     const actor = new SocketTestHelper();
+    const DEFAULT_SONG_VOLUMES = { slow: 50, fast: 35 };
 
     try {
       await actor.connect();
+
+      // Server state is shared/persistent: switch to whichever song is NOT
+      // current so the test is robust across reruns.
+      const current = await actor.emitAndWaitFor('getCurrentSong', 'songChanged');
+      const target = current === 'slow' ? 'fast' : 'slow';
 
       const songP = actor.waitFor('songChanged');
       const volP = actor.waitFor('volumeChanged');
       const stateP = actor.waitFor('stateChanged');
 
-      actor.socket.emit('changeSong', 'slow', 'fast');
+      actor.socket.emit('changeSong', current, target);
 
       const [song, vol, state] = await Promise.all([songP, volP, stateP]);
-      assert.strictEqual(song, 'fast');
-      assert.strictEqual(vol, 35);  // DEFAULT_SONG_VOLUMES.fast
+      assert.strictEqual(song, target);
+      assert.strictEqual(vol, DEFAULT_SONG_VOLUMES[target]);
       assert.strictEqual(state, 0); // PLAYER_STATE.PAUSED
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('rejects an out-of-range volume (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const rejected = await actor.emitAndExpectNoResponse('changeVolume', 'volumeChanged', 400, 150);
+      assert.strictEqual(rejected, true);
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('rejects a non-numeric volume (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const rejected = await actor.emitAndExpectNoResponse('changeVolume', 'volumeChanged', 400, 'loud');
+      assert.strictEqual(rejected, true);
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('rejects an unknown song (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const rejected = await actor.emitAndExpectNoResponse('changeSong', 'songChanged', 400, 'slow', 'metal');
+      assert.strictEqual(rejected, true);
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('ignores a change to the already-current song (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const current = await actor.emitAndWaitFor('getCurrentSong', 'songChanged');
+      const rejected = await actor.emitAndExpectNoResponse('changeSong', 'songChanged', 400, current, current);
+      assert.strictEqual(rejected, true);
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('rejects an invalid playback state (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const rejected = await actor.emitAndExpectNoResponse('changeState', 'stateChanged', 400, 2);
+      assert.strictEqual(rejected, true);
+    } finally {
+      actor.disconnect();
+    }
+  });
+
+  test('rejects an invalid mute value (no broadcast)', async () => {
+    const actor = new SocketTestHelper();
+    try {
+      await actor.connect();
+      const rejected = await actor.emitAndExpectNoResponse('changeMute', 'muteChanged', 400, 5);
+      assert.strictEqual(rejected, true);
     } finally {
       actor.disconnect();
     }

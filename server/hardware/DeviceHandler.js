@@ -143,26 +143,30 @@ class DeviceHandler {
   async loadLastSongTime(song) {
     const targetTime = this.#currentSongTimes[song];
     let attempts = 0;
-    
+    let succeeded = false;
+
     try {
       do {
         this.#mpv.setProperty("playback-time", targetTime.toString());
         await this.#delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
         attempts++;
-      } while (
-        parseFloat(this.#mpv.getProperty("playback-time")) !== targetTime && 
-        attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS
-      );
-      
-      if (attempts >= DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS) {
+
+        // Tolerance comparison: the read-back can be off by a frame/block, and
+        // right after a track switch it may be null (NaN) — both must retry,
+        // never pass as success.
+        const currentTime = parseFloat(this.#mpv.getProperty("playback-time"));
+        succeeded = Math.abs(currentTime - targetTime) <= DEVICE_CONFIG.PLAYBACK_TIME_TOLERANCE_SEC;
+      } while (!succeeded && attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS);
+
+      if (!succeeded) {
         throw new Error(`Failed to set playback time after ${attempts} attempts`);
       }
     } catch (error) {
-      log.error('deviceHandler', null, 'Failed to load last song time', { 
-        song, 
-        targetTime, 
+      log.error('deviceHandler', null, 'Failed to load last song time', {
+        song,
+        targetTime,
         attempts,
-        error: error.message 
+        error: error.message
       });
       throw error;
     }

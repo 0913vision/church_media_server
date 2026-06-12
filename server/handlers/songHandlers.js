@@ -1,4 +1,4 @@
-import { SOCKET_EVENTS, PLAYER_STATE } from '../constants/socketConfig.js';
+import { SOCKET_EVENTS, PLAYER_STATE, SONG_TYPE } from '../constants/socketConfig.js';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
 import { log } from '../utils/logger.js';
 
@@ -22,14 +22,23 @@ export const registerSongHandlers = (socket, deps) => {
   });
 
   /**
-   * Handle song change request — audio resource operation
+   * Handle song change request — audio resource operation.
+   * The client still sends its own idea of the current song as the first
+   * argument (protocol unchanged), but the server's state is authoritative,
+   * so that value is ignored.
    */
-  socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (currentSong, newSong) => {
+  socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (_clientCurrentSong, newSong) => {
     try {
+      if (!Object.values(SONG_TYPE).includes(newSong)) {
+        log.warn('songHandler', socket, 'Invalid song requested, request denied', { newSong });
+        return;
+      }
+      if (newSong === player.getCurrentSong()) return;
+
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         // Change song (handles pause, switch, volume change internally)
-        await player.changeSong(currentSong, newSong);
+        await player.changeSong(newSong);
 
         notifier.stateChanged(PLAYER_STATE.PAUSED);
         notifier.songChanged(newSong);
