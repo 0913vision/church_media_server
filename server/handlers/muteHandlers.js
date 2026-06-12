@@ -1,4 +1,5 @@
-import { SOCKET_EVENTS, MUTE_STATE } from '../constants/socketConfig.js';
+import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import { MUTE_STATE } from '../constants/playerStates.js';
 import { log } from '../utils/logger.js';
 
 /**

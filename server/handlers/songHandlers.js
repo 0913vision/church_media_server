@@ -1,4 +1,5 @@
-import { SOCKET_EVENTS, PLAYER_STATE, SONG_TYPE } from '../constants/socketConfig.js';
+import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import { PLAYER_STATE, SONG_TYPE } from '../constants/playerStates.js';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
 import { log } from '../utils/logger.js';
 

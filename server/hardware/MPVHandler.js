@@ -1,7 +1,5 @@
 import ffi from 'ffi-napi';
-import ref from 'ref-napi';
 import array from 'ref-array-napi';
-import Struct from 'ref-struct-di';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
 import { log } from '../utils/logger.js';
 
@@ -27,23 +25,13 @@ class MPVHandler {
     const StringArray = array('string');
     const libmpvPath = DEVICE_CONFIG.MPV_LIBRARY_PATH[DEVICE_CONFIG.CURRENT_PLATFORM];
 
-    const StructType = Struct(ref);
-    const mpv_event = StructType({
-      event_id: 'int',
-      error: 'int',
-      reply_userdata: 'uint64',
-      data: 'pointer'
-    });
-
     try {
       this.#api = ffi.Library(libmpvPath, {
         'mpv_create': ['pointer', []],
         'mpv_initialize': ['int', ['pointer']],
         'mpv_command': ['int', ['pointer', StringArray]],
         'mpv_set_property_string': ['int', ['pointer', 'string', 'string']],
-        'mpv_get_property_string': ['string', ['pointer', 'string']],
-        'mpv_command_async': ['int', ['pointer', 'uint64', StringArray]],
-        'mpv_wait_event': [mpv_event, ['pointer', 'double']]
+        'mpv_get_property_string': ['string', ['pointer', 'string']]
       });
     } catch (error) {
       log.error('mpvHandler', null, 'Failed to load MPV library', { libmpvPath, error: error.message });

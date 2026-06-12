@@ -1,4 +1,4 @@
-import { PLAYER_STATE, MUTE_STATE } from '../constants/socketConfig.js';
+import { PLAYER_STATE, MUTE_STATE } from '../constants/playerStates.js';
 import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
 import DeviceHandler from '../hardware/DeviceHandler.js';
 import { log } from '../utils/logger.js';

@@ -45,22 +45,3 @@ export const SOCKET_EVENTS = {
   // System events
   S2C_PING_EVENT: 'ping'
 };
-
-// Player states (same as client)
-export const PLAYER_STATE = {
-  PAUSED: 0,
-  PLAYING: 1
-};
-
-// Mute states (same as client)
-export const MUTE_STATE = {
-  UNMUTED: 0,
-  MUTED: 1
-};
-
-// Song types (same as client)
-export const SONG_TYPE = {
-  SLOW: 'slow',
-  FAST: 'fast'
-};
-

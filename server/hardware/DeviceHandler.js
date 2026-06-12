@@ -1,5 +1,6 @@
 import MPVHandler from './MPVHandler.js';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
+import { SONG_TYPE } from '../constants/playerStates.js';
 import { log } from '../utils/logger.js';
 
 /**
@@ -120,7 +121,7 @@ class DeviceHandler {
     this.#currentSongTimes[currentSong] = currentTime;
 
     // Switch track
-    const trackIndex = newSong === "slow" ? 0 : 1;
+    const trackIndex = newSong === SONG_TYPE.SLOW ? 0 : 1;
     const nextCommand = ["loadfile", this.#playlist[trackIndex], null];
     
     try {

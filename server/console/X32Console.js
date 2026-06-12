@@ -49,16 +49,6 @@ class X32Console {
   }
 
   /**
-   * Creates a delay for smooth transitions
-   * @param {number} ms - Milliseconds to delay
-   * @returns {Promise<void>}
-   * @private
-   */
-  #delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
    * Turn on pastor microphone channels
    * @returns {Promise<void>}
    */
