@@ -13,12 +13,16 @@ import { log } from './utils/logger.js';
  * context, and attaches handler registration to incoming connections.
  */
 class MediaServer {
+  #io = null;
+  #pingInterval = null;
+
   start() {
     log.info('server', null, 'Socket is initializing');
 
     const io = new Server(SOCKET_CONFIG.PORT, {
       cors: SOCKET_CONFIG.CORS,
     });
+    this.#io = io;
 
     // Shared singletons (created once, reused across all connections).
     // Only the Notifier touches io directly; everything else speaks domain.
@@ -30,7 +34,7 @@ class MediaServer {
 
     const deps = { notifier, player, lockCoordinator, adminSessionManager, consoleHandler };
 
-    setInterval(() => {
+    this.#pingInterval = setInterval(() => {
       notifier.ping();
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
@@ -44,6 +48,23 @@ class MediaServer {
         log.info('server', socket, 'Socket disconnected', { reason });
       });
     });
+  }
+
+  /**
+   * Graceful shutdown: stop the heartbeat and close all socket connections.
+   * The MPV instance is released when the process exits.
+   */
+  stop() {
+    log.info('server', null, 'Shutting down');
+
+    if (this.#pingInterval) {
+      clearInterval(this.#pingInterval);
+      this.#pingInterval = null;
+    }
+    if (this.#io) {
+      this.#io.close();
+      this.#io = null;
+    }
   }
 }
 
