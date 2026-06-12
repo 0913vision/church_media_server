@@ -7,13 +7,14 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerStateHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator, adminSessionManager } = deps;
+  const { notifier, player, lockCoordinator, adminSessionManager } = deps;
+
   /**
    * Handle state get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_STATE_EVENT, async () => {
     try {
-      socket.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, player.getState());
+      notifier.stateChanged(player.getState(), socket);
     } catch (error) {
       log.error('stateHandler', socket, 'Error getting state', { error: error.message });
     }
@@ -25,8 +26,8 @@ export const registerStateHandlers = (socket, deps) => {
   socket.on(SOCKET_EVENTS.C2S_GET_LOCK_EVENT, async () => {
     try {
       const { audio, admin } = lockCoordinator.getLockState();
-      socket.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, audio);
-      socket.emit(SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, admin);
+      notifier.audioLockChanged(audio, socket);
+      notifier.adminLockChanged(admin, socket);
     } catch (error) {
       log.error('stateHandler', socket, 'Error getting lock', { error: error.message });
     }
@@ -47,7 +48,7 @@ export const registerStateHandlers = (socket, deps) => {
           await player.pause();
         }
 
-        io.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, newState);
+        notifier.stateChanged(newState);
       });
 
       if (!lockAcquired) {

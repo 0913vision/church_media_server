@@ -14,7 +14,7 @@ import { registerConsoleHandlers } from './consoleHandlers.js';
  *
  * @param {Object} socket - Socket.IO socket instance
  * @param {Object} deps - Shared dependencies
- * @param {Object} deps.io - Socket.IO server instance
+ * @param {Notifier} deps.notifier - Single owner of all S2C emission
  * @param {Player} deps.player - Player instance
  * @param {LockCoordinator} deps.lockCoordinator - Lock coordinator instance
  * @param {AdminSessionManager} deps.adminSessionManager - Admin session manager

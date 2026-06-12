@@ -8,7 +8,8 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerAuthHandlers = (socket, deps) => {
-  const { adminSessionManager, lockCoordinator } = deps;
+  const { notifier, adminSessionManager, lockCoordinator } = deps;
+
   /**
    * Handle admin authentication request
    */
@@ -16,15 +17,15 @@ export const registerAuthHandlers = (socket, deps) => {
     try {
       if (password === ADMIN_CONFIG.ADMIN_PASSWORD) {
         adminSessionManager.addAdminSocket(socket);
-        socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: true });
+        notifier.adminAuthenticated(socket, true);
         log.info('authHandler', socket, 'Socket authenticated as admin');
       } else {
-        socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: false });
+        notifier.adminAuthenticated(socket, false);
         log.warn('authHandler', socket, 'Socket failed admin authentication');
       }
     } catch (error) {
       log.error('authHandler', socket, 'Error during admin authentication', { error: error.message });
-      socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success: false });
+      notifier.adminAuthenticated(socket, false);
     }
   });
 

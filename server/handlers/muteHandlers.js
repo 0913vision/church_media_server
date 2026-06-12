@@ -7,13 +7,14 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerMuteHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator, adminSessionManager } = deps;
+  const { notifier, player, lockCoordinator, adminSessionManager } = deps;
+
   /**
    * Handle mute status get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_MUTE_EVENT, async () => {
     try {
-      socket.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, player.getMute());
+      notifier.muteChanged(player.getMute(), socket);
     } catch (error) {
       log.error('muteHandler', socket, 'Error getting mute status', { error: error.message });
     }
@@ -27,7 +28,7 @@ export const registerMuteHandlers = (socket, deps) => {
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         player.setMute(newMute);
-        io.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, newMute);
+        notifier.muteChanged(newMute);
       });
 
       if (!lockAcquired) {

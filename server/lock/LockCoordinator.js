@@ -1,5 +1,4 @@
 import Lock from './Lock.js';
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
 
 /**
  * Coordinates the server's two distinct, independent locks.
@@ -18,7 +17,8 @@ import { SOCKET_EVENTS } from '../constants/socketConfig.js';
  * the audio lock gates *concurrent mutation of the audio resource*.
  *
  * This layer knows nothing about sockets or sessions: callers resolve identity
- * themselves and pass `isAdmin` booleans / opaque holder ids.
+ * themselves and pass `isAdmin` booleans / opaque holder ids, and lock state
+ * changes are announced through the injected notifier.
  */
 class LockCoordinator {
   #audioLock;
@@ -26,12 +26,11 @@ class LockCoordinator {
   #adminLockHolderId = null; // opaque id of the current admin lock holder
 
   /**
-   * @param {Object} io - Socket.IO server instance (used only by the locks to
-   *   broadcast their own state)
+   * @param {Notifier} notifier - Announces each lock's state changes
    */
-  constructor(io) {
-    this.#audioLock = new Lock(io, SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT);
-    this.#adminLock = new Lock(io, SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT);
+  constructor(notifier) {
+    this.#audioLock = new Lock((locked) => notifier.audioLockChanged(locked));
+    this.#adminLock = new Lock((locked) => notifier.adminLockChanged(locked));
   }
 
   /**

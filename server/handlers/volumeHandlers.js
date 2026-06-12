@@ -7,13 +7,14 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerVolumeHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator, adminSessionManager } = deps;
+  const { notifier, player, lockCoordinator, adminSessionManager } = deps;
+
   /**
    * Handle volume get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_VOLUME_EVENT, async () => {
     try {
-      socket.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, player.getVolume());
+      notifier.volumeChanged(player.getVolume(), socket);
     } catch (error) {
       log.error('volumeHandler', socket, 'Error getting volume', { error: error.message });
     }
@@ -27,7 +28,7 @@ export const registerVolumeHandlers = (socket, deps) => {
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         player.setVolume(newVolume);
-        io.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, newVolume);
+        notifier.volumeChanged(newVolume);
       });
 
       if (!lockAcquired) {

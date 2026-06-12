@@ -8,13 +8,14 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerSongHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator, adminSessionManager } = deps;
+  const { notifier, player, lockCoordinator, adminSessionManager } = deps;
+
   /**
    * Handle current song get request
    */
   socket.on(SOCKET_EVENTS.C2S_GET_CURRENT_SONG_EVENT, async () => {
     try {
-      socket.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, player.getCurrentSong());
+      notifier.songChanged(player.getCurrentSong(), socket);
     } catch (error) {
       log.error('songHandler', socket, 'Error getting current song', { error: error.message });
     }
@@ -30,9 +31,9 @@ export const registerSongHandlers = (socket, deps) => {
         // Change song (handles pause, switch, volume change internally)
         await player.changeSong(currentSong, newSong);
 
-        io.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, PLAYER_STATE.PAUSED);
-        io.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, newSong);
-        io.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, DEFAULT_SONG_VOLUMES[newSong]);
+        notifier.stateChanged(PLAYER_STATE.PAUSED);
+        notifier.songChanged(newSong);
+        notifier.volumeChanged(DEFAULT_SONG_VOLUMES[newSong]);
       });
 
       if (!lockAcquired) {

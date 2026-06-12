@@ -1,28 +1,25 @@
 /**
  * Generic single-holder lock primitive.
  *
- * Owns its own broadcast event name and the io instance, and announces its
- * state to every connected client on each acquire (true) / release (false).
- * This is the same propagation mechanism the server has always used for the
- * lock — generalized so each kind of lock (audio, admin) broadcasts on its
- * own event.
+ * Announces its state via an injected callback on each acquire (true) /
+ * release (false) — it knows nothing about how the announcement travels
+ * (the composition wires it to a Notifier broadcast). This keeps the lock
+ * module pure locking semantics, free of any transport concern.
  */
 class Lock {
   #locked = false;
-  #io;
-  #eventName;
+  #broadcastState;
 
   /**
-   * @param {Object} io - Socket.IO server instance
-   * @param {string} eventName - S2C event name to broadcast this lock's state on
+   * @param {Function} broadcastState - Called with the new boolean state on
+   *   every acquire/release
    */
-  constructor(io, eventName) {
-    this.#io = io;
-    this.#eventName = eventName;
+  constructor(broadcastState) {
+    this.#broadcastState = broadcastState;
   }
 
   /**
-   * Attempts to acquire the lock. Broadcasts `true` to all clients on success.
+   * Attempts to acquire the lock. Announces `true` on success.
    * @returns {boolean} True if acquired, false if already held
    */
   tryLock() {
@@ -30,19 +27,19 @@ class Lock {
       return false;
     }
     this.#locked = true;
-    this.#io.emit(this.#eventName, true);
+    this.#broadcastState(true);
     return true;
   }
 
   /**
-   * Releases the lock and broadcasts `false` to all clients.
+   * Releases the lock and announces `false`.
    */
   unlock() {
     if (!this.#locked) {
       return;
     }
     this.#locked = false;
-    this.#io.emit(this.#eventName, false);
+    this.#broadcastState(false);
   }
 
   /**
