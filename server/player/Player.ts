@@ -3,6 +3,7 @@ import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/player
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type AudioDevice from '../hardware/AudioDevice.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 
 /**
  * High-level Player class that abstracts hardware control and manages player state
@@ -53,7 +54,7 @@ class Player {
     try {
       await this.device.resume();
     } catch (error) {
-      log.error('player', null, 'Failed to play audio', { error: error.message });
+      log.error('player', null, 'Failed to play audio', { error: errorMessage(error) });
       throw error;
     }
     this.state.state = PlayerState.PLAYING;
@@ -66,7 +67,7 @@ class Player {
     try {
       await this.device.pause();
     } catch (error) {
-      log.error('player', null, 'Failed to pause audio', { error: error.message });
+      log.error('player', null, 'Failed to pause audio', { error: errorMessage(error) });
       throw error;
     }
     this.state.state = PlayerState.PAUSED;
@@ -115,7 +116,7 @@ class Player {
       try {
         await this.device.pause();
       } catch (error) {
-        log.error('player', null, 'Failed to pause during song change', { error: error.message });
+        log.error('player', null, 'Failed to pause during song change', { error: errorMessage(error) });
         throw error;
       }
     }
@@ -123,7 +124,7 @@ class Player {
     try {
       this.device.changeSong(currentSong, newSong);
     } catch (error) {
-      log.error('player', null, 'Failed to change song', { currentSong, newSong, error: error.message });
+      log.error('player', null, 'Failed to change song', { currentSong, newSong, error: errorMessage(error) });
       throw error;
     }
 
@@ -132,7 +133,7 @@ class Player {
     try {
       this.device.setVolume(this.isMuted() ? 0 : newVolume);
     } catch (error) {
-      log.error('player', null, 'Failed to set volume during song change', { newVolume, error: error.message });
+      log.error('player', null, 'Failed to set volume during song change', { newVolume, error: errorMessage(error) });
       throw error;
     }
 
@@ -143,7 +144,7 @@ class Player {
     try {
       await this.device.loadLastSongTime(newSong);
     } catch (error) {
-      log.error('player', null, 'Failed to load last song time', { newSong, error: error.message });
+      log.error('player', null, 'Failed to load last song time', { newSong, error: errorMessage(error) });
       throw error;
     }
   }

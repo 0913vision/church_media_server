@@ -1,4 +1,6 @@
+import type { Socket } from 'socket.io';
 import { requireIntEnv } from '../utils/env.ts';
+import type { PlayerState, MuteState, SongType } from './playerStates.ts';
 
 // Server configuration constants
 interface ServerConfig {
@@ -57,5 +59,43 @@ export const SOCKET_EVENTS = {
   S2C_PING_EVENT: 'ping'
 } as const;
 
-/** Union of every protocol event name (derived, single source of truth) */
-export type SocketEventName = (typeof SOCKET_EVENTS)[keyof typeof SOCKET_EVENTS];
+/**
+ * S2C protocol map: every outgoing event with its exact payload type.
+ * Parameterizing socket.io's Server/Socket with this makes every emit
+ * compile-time checked against the protocol.
+ */
+export interface ServerToClientEvents {
+  stateChanged: (state: PlayerState) => void;
+  volumeChanged: (volume: number) => void;
+  muteChanged: (mute: MuteState) => void;
+  songChanged: (song: SongType) => void;
+  lockChanged: (locked: boolean) => void;
+  adminLockChanged: (locked: boolean) => void;
+  adminAuthenticated: (result: { success: boolean }) => void;
+  ping: () => void;
+}
+
+/**
+ * C2S protocol map.
+ * Note(yoochan.kim): payload parameters are deliberately `unknown` — they
+ * arrive from untrusted clients over the wire, and each handler narrows them
+ * with the runtime type guards before use.
+ */
+export interface ClientToServerEvents {
+  getVolume: () => void;
+  getState: () => void;
+  getMute: () => void;
+  getCurrentSong: () => void;
+  getLock: () => void;
+  changeSong: (clientCurrentSong: unknown, newSong: unknown) => void;
+  changeVolume: (volume: unknown) => void;
+  changeState: (state: unknown) => void;
+  changeMute: (mute: unknown) => void;
+  micOn: () => void;
+  auxOn: () => void;
+  authenticateAdmin: (password: unknown) => void;
+  setAdminLock: (locked: unknown) => void;
+}
+
+/** Server-side socket with the protocol applied */
+export type ServerSocket = Socket<ClientToServerEvents, ServerToClientEvents>;

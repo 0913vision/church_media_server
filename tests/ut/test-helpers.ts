@@ -1,6 +1,11 @@
 import { io } from 'socket.io-client';
-import type { Socket } from 'socket.io-client';
+import type { Socket, ManagerOptions, SocketOptions } from 'socket.io-client';
 import net from 'node:net';
+
+// Note(yoochan.kim): the test client Socket stays UNTYPED (no protocol event
+// maps) on purpose — rejection tests must be able to emit invalid payloads
+// (e.g. changeVolume('loud')), which a protocol-typed emit would reject at
+// compile time. The server side is fully protocol-typed instead.
 
 // Explicit test environment. These are declared test parameters — not hidden
 // fallbacks — and may be overridden via env when targeting an externally
@@ -68,10 +73,10 @@ export async function stopServer(): Promise<void> {
 
 export class SocketTestHelper {
   readonly url: string;
-  readonly options: Record<string, unknown>;
+  readonly options: Partial<ManagerOptions & SocketOptions>;
   socket: Socket | null;
 
-  constructor(url: string = DEFAULT_TEST_URL, options: Record<string, unknown> = {}) {
+  constructor(url: string = DEFAULT_TEST_URL, options: Partial<ManagerOptions & SocketOptions> = {}) {
     this.url = url;
     this.options = options;
     this.socket = null;
@@ -93,7 +98,9 @@ export class SocketTestHelper {
     });
   }
 
-  emitAndWaitFor<T = unknown>(event: string, responseEvent: string, ...args: unknown[]): Promise<T> {
+  // Note(yoochan.kim): T has no default on purpose — every call site must
+  // state the expected payload type explicitly (no silent `unknown`).
+  emitAndWaitFor<T>(event: string, responseEvent: string, ...args: unknown[]): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No response for ${event}`)), 5000);
       this.socket!.once(responseEvent, (data: T) => {
@@ -105,7 +112,7 @@ export class SocketTestHelper {
   }
 
   // Wait for an event (e.g. a broadcast) without emitting anything.
-  waitFor<T = unknown>(responseEvent: string, ms = 5000): Promise<T> {
+  waitFor<T>(responseEvent: string, ms = 5000): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No ${responseEvent}`)), ms);
       this.socket!.once(responseEvent, (data: T) => {
@@ -117,7 +124,7 @@ export class SocketTestHelper {
 
   // Collect every payload of an event for `ms`, then resolve the array
   // (used to assert an ordered sequence of broadcasts, e.g. lock true/false).
-  collectFor<T = unknown>(event: string, ms: number): Promise<T[]> {
+  collectFor<T>(event: string, ms: number): Promise<T[]> {
     return new Promise((resolve) => {
       const received: T[] = [];
       const onEvent = (data: T): void => { received.push(data); };

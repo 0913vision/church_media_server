@@ -13,7 +13,7 @@ declare module 'osc' {
     constructor(options: UdpPortOptions);
     open(): void;
     on(event: string, callback: () => void): void;
-    send(message: { address: string; args: unknown }): void;
+    send(message: { address: string; args: number }): void;
   }
 
   const osc: { UDPPort: typeof UDPPort };

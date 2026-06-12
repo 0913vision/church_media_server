@@ -25,8 +25,9 @@ export function requireIntEnv(name: string): number {
 
 export function requireEnvOneOf<T extends string>(name: string, allowed: readonly T[]): T {
   const raw = requireEnv(name);
-  if (!(allowed as readonly string[]).includes(raw)) {
+  const matched = allowed.find((candidate) => candidate === raw);
+  if (matched === undefined) {
     throw new Error(`Environment variable ${name} must be one of [${allowed.join(', ')}], got "${raw}"`);
   }
-  return raw as T;
+  return matched;
 }

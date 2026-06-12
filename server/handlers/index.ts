@@ -1,4 +1,4 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Player from '../player/Player.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
@@ -28,7 +28,7 @@ export interface HandlerDeps {
 /**
  * Registers every socket event handler for a connection.
  */
-export const registerHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   registerAuthHandlers(socket, deps);
   registerVolumeHandlers(socket, deps);
   registerStateHandlers(socket, deps);

@@ -1,4 +1,5 @@
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 
 /**
@@ -18,7 +19,7 @@ class MixerConsole {
     try {
       await this.console.enablePastorMic();
     } catch (error) {
-      log.error('mixerConsole', null, 'Error enabling pastor microphone', { error: error.message });
+      log.error('mixerConsole', null, 'Error enabling pastor microphone', { error: errorMessage(error) });
       throw error;
     }
   }
@@ -30,7 +31,7 @@ class MixerConsole {
     try {
       await this.console.enableAux();
     } catch (error) {
-      log.error('mixerConsole', null, 'Error enabling auxiliary input', { error: error.message });
+      log.error('mixerConsole', null, 'Error enabling auxiliary input', { error: errorMessage(error) });
       throw error;
     }
   }

@@ -1,14 +1,15 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { PlayerState, isSongType } from '../constants/playerStates.ts';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers song-related socket event handlers
  */
-export const registerSongHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerSongHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -18,7 +19,7 @@ export const registerSongHandlers = (socket: Socket, deps: HandlerDeps): void =>
     try {
       notifier.songChanged(player.getCurrentSong(), socket);
     } catch (error) {
-      log.error('songHandler', socket, 'Error getting current song', { error: error.message });
+      log.error('songHandler', socket, 'Error getting current song', { error: errorMessage(error) });
     }
   });
 
@@ -51,7 +52,7 @@ export const registerSongHandlers = (socket: Socket, deps: HandlerDeps): void =>
         return;
       }
     } catch (error) {
-      log.error('songHandler', socket, 'Error changing song', { error: error.message, newSong });
+      log.error('songHandler', socket, 'Error changing song', { error: errorMessage(error), newSong });
     }
   });
 };

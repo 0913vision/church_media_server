@@ -1,13 +1,14 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { PlayerState, isPlayerState } from '../constants/playerStates.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers state-related socket event handlers (play/pause/lock)
  */
-export const registerStateHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerStateHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -17,7 +18,7 @@ export const registerStateHandlers = (socket: Socket, deps: HandlerDeps): void =
     try {
       notifier.stateChanged(player.getState(), socket);
     } catch (error) {
-      log.error('stateHandler', socket, 'Error getting state', { error: error.message });
+      log.error('stateHandler', socket, 'Error getting state', { error: errorMessage(error) });
     }
   });
 
@@ -30,7 +31,7 @@ export const registerStateHandlers = (socket: Socket, deps: HandlerDeps): void =
       notifier.audioLockChanged(audio, socket);
       notifier.adminLockChanged(admin, socket);
     } catch (error) {
-      log.error('stateHandler', socket, 'Error getting lock', { error: error.message });
+      log.error('stateHandler', socket, 'Error getting lock', { error: errorMessage(error) });
     }
   });
 
@@ -61,7 +62,7 @@ export const registerStateHandlers = (socket: Socket, deps: HandlerDeps): void =
         return;
       }
     } catch (error) {
-      log.error('stateHandler', socket, 'Error changing state', { error: error.message, newState });
+      log.error('stateHandler', socket, 'Error changing state', { error: errorMessage(error), newState });
     }
   });
 };

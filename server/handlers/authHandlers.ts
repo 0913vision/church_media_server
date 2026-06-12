@@ -1,13 +1,14 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { ADMIN_CONFIG } from '../constants/authConfig.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers authentication and admin-lock socket event handlers
  */
-export const registerAuthHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerAuthHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   const { notifier, adminSessionManager, lockCoordinator } = deps;
 
   /**
@@ -24,7 +25,7 @@ export const registerAuthHandlers = (socket: Socket, deps: HandlerDeps): void =>
         log.warn('authHandler', socket, 'Socket failed admin authentication');
       }
     } catch (error) {
-      log.error('authHandler', socket, 'Error during admin authentication', { error: error.message });
+      log.error('authHandler', socket, 'Error during admin authentication', { error: errorMessage(error) });
       notifier.adminAuthenticated(socket, false);
     }
   });
@@ -50,7 +51,7 @@ export const registerAuthHandlers = (socket: Socket, deps: HandlerDeps): void =>
         log.info('authHandler', socket, 'Admin lock released');
       }
     } catch (error) {
-      log.error('authHandler', socket, 'Error setting admin lock', { error: error.message, locked });
+      log.error('authHandler', socket, 'Error setting admin lock', { error: errorMessage(error), locked });
     }
   });
 };

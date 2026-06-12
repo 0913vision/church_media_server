@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.ts';
+import type { ClientToServerEvents, ServerToClientEvents } from './constants/socketConfig.ts';
 import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
 import Player from './player/Player.ts';
 import MpvClient from './hardware/MpvClient.ts';
@@ -20,14 +21,17 @@ import { log } from './utils/logger.ts';
  * dependency is constructor-injected here), wires it into a dependency
  * context, and attaches handler registration to incoming connections.
  */
+/** Socket.IO server parameterized with this project's protocol maps */
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
+
 class MediaServer {
-  private io: Server | null = null;
+  private io: TypedServer | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
 
-    const io = new Server(SOCKET_CONFIG.PORT, {
+    const io: TypedServer = new Server<ClientToServerEvents, ServerToClientEvents>(SOCKET_CONFIG.PORT, {
       cors: SOCKET_CONFIG.CORS,
     });
     this.io = io;

@@ -1,12 +1,13 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers volume-related socket event handlers
  */
-export const registerVolumeHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerVolumeHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -16,7 +17,7 @@ export const registerVolumeHandlers = (socket: Socket, deps: HandlerDeps): void 
     try {
       notifier.volumeChanged(player.getVolume(), socket);
     } catch (error) {
-      log.error('volumeHandler', socket, 'Error getting volume', { error: error.message });
+      log.error('volumeHandler', socket, 'Error getting volume', { error: errorMessage(error) });
     }
   });
 
@@ -41,7 +42,7 @@ export const registerVolumeHandlers = (socket: Socket, deps: HandlerDeps): void 
         return;
       }
     } catch (error) {
-      log.error('volumeHandler', socket, 'Error changing volume', { error: error.message, newVolume });
+      log.error('volumeHandler', socket, 'Error changing volume', { error: errorMessage(error), newVolume });
     }
   });
 };

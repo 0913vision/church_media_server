@@ -2,9 +2,15 @@ import ffi from 'ffi-napi';
 import array from 'ref-array-napi';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 
-/** Opaque libmpv handle (a pointer on the FFI side) */
-type MpvHandle = unknown;
+/**
+ * Opaque libmpv handle (a pointer on the FFI side). Branded so arbitrary
+ * values cannot be passed where a handle is expected — only values produced
+ * by mpv_create satisfy this type.
+ */
+declare const MpvHandleBrand: unique symbol;
+type MpvHandle = { readonly [MpvHandleBrand]: never };
 
 /** The libmpv surface this project binds */
 interface MpvApi {
@@ -45,14 +51,14 @@ class MpvClient {
         'mpv_get_property_string': ['string', ['pointer', 'string']]
       }) as MpvApi;
     } catch (error) {
-      log.error('mpvClient', null, 'Failed to load MPV library', { libmpvPath, error: error.message });
+      log.error('mpvClient', null, 'Failed to load MPV library', { libmpvPath, error: errorMessage(error) });
       throw error;
     }
 
     try {
       this.playerInstance = this.api.mpv_create();
     } catch (error) {
-      log.error('mpvClient', null, 'Failed to create MPV instance', { error: error.message });
+      log.error('mpvClient', null, 'Failed to create MPV instance', { error: errorMessage(error) });
       throw error;
     }
 
@@ -62,7 +68,7 @@ class MpvClient {
         throw new Error(`MPV initialization failed with code: ${result}`);
       }
     } catch (error) {
-      log.error('mpvClient', null, 'Failed to initialize MPV', { error: error.message });
+      log.error('mpvClient', null, 'Failed to initialize MPV', { error: errorMessage(error) });
       throw error;
     }
   }

@@ -33,9 +33,10 @@ class X32Console implements ConsoleDevice {
   }
 
   /**
-   * Send OSC command to X32 console
+   * Send OSC command to X32 console — every value this project sends
+   * (mute on/off, fader levels) is a number
    */
-  private sendOscCommand(address: string, args: unknown): Promise<void> {
+  private sendOscCommand(address: string, args: number): Promise<void> {
     return new Promise((resolve) => {
       this.client.send({
         address: address,

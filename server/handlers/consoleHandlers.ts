@@ -1,6 +1,7 @@
-import type { Socket } from 'socket.io';
+import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
 
 /**
@@ -10,7 +11,7 @@ import type { HandlerDeps } from './index.ts';
  * state and its OSC bursts are instantaneous. They are only gated by the admin
  * lock (handled inside withAdminGate).
  */
-export const registerConsoleHandlers = (socket: Socket, deps: HandlerDeps): void => {
+export const registerConsoleHandlers = (socket: ServerSocket, deps: HandlerDeps): void => {
   const { lockCoordinator, mixerConsole, adminSessionManager } = deps;
 
   /**
@@ -28,7 +29,7 @@ export const registerConsoleHandlers = (socket: Socket, deps: HandlerDeps): void
         return;
       }
     } catch (error) {
-      log.error('consoleHandler', socket, 'Error enabling pastor microphone', { error: error.message });
+      log.error('consoleHandler', socket, 'Error enabling pastor microphone', { error: errorMessage(error) });
     }
   });
 
@@ -47,7 +48,7 @@ export const registerConsoleHandlers = (socket: Socket, deps: HandlerDeps): void
         return;
       }
     } catch (error) {
-      log.error('consoleHandler', socket, 'Error enabling auxiliary input', { error: error.message });
+      log.error('consoleHandler', socket, 'Error enabling auxiliary input', { error: errorMessage(error) });
     }
   });
 };

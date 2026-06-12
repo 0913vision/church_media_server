@@ -2,6 +2,7 @@ import MpvClient from './MpvClient.ts';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
 import { SongType } from '../constants/playerStates.ts';
 import { log } from '../utils/logger.ts';
+import { errorMessage } from '../utils/errors.ts';
 
 /**
  * High-level device controller that manages audio playback operations
@@ -28,19 +29,19 @@ class AudioDevice {
     try {
       this.mpv.setProperty("loop", "inf");
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to set loop property', { error: error.message });
+      log.error('audioDevice', null, 'Failed to set loop property', { error: errorMessage(error) });
     }
 
     try {
       this.mpv.executeCommand(["loadfile", this.playlist[SongType.SLOW], null]);
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[SongType.SLOW], error: error.message });
+      log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[SongType.SLOW], error: errorMessage(error) });
     }
 
     try {
       this.mpv.setProperty("pause", "yes");
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to set pause property', { error: error.message });
+      log.error('audioDevice', null, 'Failed to set pause property', { error: errorMessage(error) });
     }
   }
 
@@ -59,7 +60,7 @@ class AudioDevice {
       const response = this.mpv.getProperty("playback-time");
       return parseFloat(response ?? '') || 0;
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to get playback time', { error: error.message });
+      log.error('audioDevice', null, 'Failed to get playback time', { error: errorMessage(error) });
       return 0;
     }
   }
@@ -120,7 +121,7 @@ class AudioDevice {
         currentSong,
         newSong,
         file: this.playlist[newSong],
-        error: error.message
+        error: errorMessage(error)
       });
       throw error;
     }
@@ -155,7 +156,7 @@ class AudioDevice {
         song,
         targetTime,
         attempts,
-        error: error.message
+        error: errorMessage(error)
       });
       throw error;
     }
