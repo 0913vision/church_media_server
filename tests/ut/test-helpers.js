@@ -1,6 +1,50 @@
 import { io } from 'socket.io-client';
+import net from 'node:net';
 
-const DEFAULT_TEST_URL = `http://localhost:${process.env.PORT || 4000}`;
+const TEST_PORT = Number(process.env.PORT || 4000);
+const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
+
+let startedServer = null;
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const probe = net.connect({ port, host: '127.0.0.1' });
+    const timer = setTimeout(() => { probe.destroy(); resolve(false); }, 500);
+    probe.once('connect', () => { clearTimeout(timer); probe.end(); resolve(true); });
+    probe.once('error', () => { clearTimeout(timer); resolve(false); });
+  });
+}
+
+/**
+ * Makes `npm test` self-contained: when nothing is listening on the test
+ * port, starts an in-process MOCK-console server (real mpv stays paused, so
+ * it is silent). An externally running dev server is used as-is.
+ * Call from a top-level before() hook; pair with stopServer() in after().
+ */
+export async function ensureServer() {
+  if (await isPortOpen(TEST_PORT)) return;
+
+  process.env.CONSOLE_MODE = process.env.CONSOLE_MODE || 'MOCK';
+  process.env.PORT = process.env.PORT || String(TEST_PORT);
+
+  const { default: MediaServer } = await import('../../server/server.js');
+  startedServer = new MediaServer();
+  startedServer.start();
+
+  for (let i = 0; i < 50; i++) {
+    if (await isPortOpen(TEST_PORT)) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Test server failed to start on port ${TEST_PORT}`);
+}
+
+/** Stops the server only if ensureServer() started it in-process. */
+export async function stopServer() {
+  if (startedServer) {
+    startedServer.stop();
+    startedServer = null;
+  }
+}
 
 export class SocketTestHelper {
   constructor(url = DEFAULT_TEST_URL, options = {}) {

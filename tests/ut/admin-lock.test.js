@@ -1,6 +1,9 @@
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper } from './test-helpers.js';
+import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.js';
+
+before(() => ensureServer());
+after(() => stopServer());
 
 // Safety net for the admin authentication + admin lock behavior.
 // Uses the default admin password ('admin123' unless ADMIN_PASSWORD is set).

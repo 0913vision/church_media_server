@@ -1,6 +1,9 @@
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper } from './test-helpers.js';
+import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.js';
+
+before(() => ensureServer());
+after(() => stopServer());
 
 // Safety net: pins the C2S -> S2C change/broadcast contract so it survives the
 // upcoming clean-code refactor (layering / notifier extraction).

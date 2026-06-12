@@ -1,6 +1,9 @@
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper } from './test-helpers.js';
+import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.js';
+
+before(() => ensureServer());
+after(() => stopServer());
 
 describe('Legacy API Path Tests (Deprecated)', () => {
   test('should fail when connecting to /api/socket path', async () => {
