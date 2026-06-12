@@ -1,40 +1,50 @@
 import { Server } from 'socket.io';
-import { SOCKET_CONFIG } from './constants/socketConfig.js';
-import Player from './player/Player.js';
-import LockCoordinator from './lock/LockCoordinator.js';
-import AdminSessionManager from './auth/AdminSessionManager.js';
-import MixerConsole from './console/MixerConsole.js';
-import Notifier from './notify/Notifier.js';
-import { registerHandlers } from './handlers/index.js';
-import { log } from './utils/logger.js';
+import { SOCKET_CONFIG } from './constants/socketConfig.ts';
+import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
+import Player from './player/Player.ts';
+import MpvClient from './hardware/MpvClient.ts';
+import AudioDevice from './hardware/AudioDevice.ts';
+import LockCoordinator from './lock/LockCoordinator.ts';
+import AdminSessionManager from './auth/AdminSessionManager.ts';
+import MixerConsole from './console/MixerConsole.ts';
+import X32Console from './console/X32Console.ts';
+import MockConsole from './console/MockConsole.ts';
+import type { ConsoleDevice } from './console/ConsoleDevice.ts';
+import Notifier from './notify/Notifier.ts';
+import { registerHandlers } from './handlers/index.ts';
+import type { HandlerDeps } from './handlers/index.ts';
+import { log } from './utils/logger.ts';
 
 /**
- * Composition root: builds the shared singletons, wires them into a dependency
+ * Composition root: builds the whole object graph explicitly (every
+ * dependency is constructor-injected here), wires it into a dependency
  * context, and attaches handler registration to incoming connections.
  */
 class MediaServer {
-  #io = null;
-  #pingInterval = null;
+  private io: Server | null = null;
+  private pingInterval: NodeJS.Timeout | null = null;
 
-  start() {
+  start(): void {
     log.info('server', null, 'Socket is initializing');
 
     const io = new Server(SOCKET_CONFIG.PORT, {
       cors: SOCKET_CONFIG.CORS,
     });
-    this.#io = io;
+    this.io = io;
 
     // Shared singletons (created once, reused across all connections).
     // Only the Notifier touches io directly; everything else speaks domain.
     const notifier = new Notifier(io);
-    const player = new Player();
+    const player = new Player(new AudioDevice(new MpvClient()));
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
-    const mixerConsole = new MixerConsole();
+    const consoleDevice: ConsoleDevice =
+      DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
+    const mixerConsole = new MixerConsole(consoleDevice);
 
-    const deps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole };
+    const deps: HandlerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole };
 
-    this.#pingInterval = setInterval(() => {
+    this.pingInterval = setInterval(() => {
       notifier.ping();
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
@@ -54,16 +64,16 @@ class MediaServer {
    * Graceful shutdown: stop the heartbeat and close all socket connections.
    * The MPV instance is released when the process exits.
    */
-  stop() {
+  stop(): void {
     log.info('server', null, 'Shutting down');
 
-    if (this.#pingInterval) {
-      clearInterval(this.#pingInterval);
-      this.#pingInterval = null;
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
     }
-    if (this.#io) {
-      this.#io.close();
-      this.#io = null;
+    if (this.io) {
+      this.io.close();
+      this.io = null;
     }
   }
 }

@@ -1,13 +1,13 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { PLAYER_STATE } from '../constants/playerStates.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { PlayerState, isPlayerState } from '../constants/playerStates.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers state-related socket event handlers (play/pause/lock)
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerStateHandlers = (socket, deps) => {
+export const registerStateHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -37,9 +37,9 @@ export const registerStateHandlers = (socket, deps) => {
   /**
    * Handle state change request (play/pause) — audio resource operation
    */
-  socket.on(SOCKET_EVENTS.C2S_CHANGE_STATE_EVENT, async (newState) => {
+  socket.on(SOCKET_EVENTS.C2S_CHANGE_STATE_EVENT, async (newState: unknown) => {
     try {
-      if (newState !== PLAYER_STATE.PLAYING && newState !== PLAYER_STATE.PAUSED) {
+      if (!isPlayerState(newState)) {
         log.warn('stateHandler', socket, 'Invalid state requested, request denied', { newState });
         return;
       }
@@ -47,7 +47,7 @@ export const registerStateHandlers = (socket, deps) => {
 
       const isAdmin = adminSessionManager.isAdminSocket(socket);
       const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
-        if (newState === PLAYER_STATE.PLAYING) {
+        if (newState === PlayerState.PLAYING) {
           await player.play();
         } else {
           await player.pause();

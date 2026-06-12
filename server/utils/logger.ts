@@ -1,23 +1,38 @@
+import { requireEnvOneOf } from './env.ts';
+
 // Severity order for level filtering
-const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 
-// Minimum level to print, from LOG_LEVEL env (default: info, so debug is
-// suppressed unless explicitly enabled)
-const MIN_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL] ?? LOG_LEVELS.info;
+type LogLevel = keyof typeof LOG_LEVELS;
+const LOG_LEVEL_NAMES: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
-function write(level, message, context) {
+// Minimum level to print — LOG_LEVEL is a required, validated env variable
+const MIN_LEVEL: number = LOG_LEVELS[requireEnvOneOf('LOG_LEVEL', LOG_LEVEL_NAMES)];
+
+// Anything with an id — a Socket.IO socket in practice
+interface SocketLike {
+  id: string;
+}
+
+type LogExtra = Record<string, unknown>;
+
+function write(level: LogLevel, message: string, context: LogExtra): void {
   if (LOG_LEVELS[level] < MIN_LEVEL) {
     return;
   }
 
   const contextStr = Object.keys(context).length > 0
-    ? `[${Object.entries(context).map(([k, v]) => `${k}=${v}`).join(',')}]`
+    ? `[${Object.entries(context).map(([k, v]) => `${k}=${String(v)}`).join(',')}]`
     : '';
 
   console.log(`[${new Date().toISOString()}][${level.toUpperCase()}] ${message} ${contextStr}`);
 }
 
-function createContext(module, socket, extra = {}) {
+function createContext(
+  module: string,
+  socket: SocketLike | null | undefined,
+  extra: LogExtra = {}
+): LogExtra {
   return {
     module,
     // Only include socketId for socket-scoped logs (avoid "socketId=undefined")
@@ -27,19 +42,19 @@ function createContext(module, socket, extra = {}) {
 }
 
 export const log = {
-  debug: (module, socket, message, extra) => {
+  debug: (module: string, socket: SocketLike | null | undefined, message: string, extra?: LogExtra): void => {
     write('debug', message, createContext(module, socket, extra));
   },
 
-  info: (module, socket, message, extra) => {
+  info: (module: string, socket: SocketLike | null | undefined, message: string, extra?: LogExtra): void => {
     write('info', message, createContext(module, socket, extra));
   },
 
-  warn: (module, socket, message, extra) => {
+  warn: (module: string, socket: SocketLike | null | undefined, message: string, extra?: LogExtra): void => {
     write('warn', message, createContext(module, socket, extra));
   },
 
-  error: (module, socket, message, extra) => {
+  error: (module: string, socket: SocketLike | null | undefined, message: string, extra?: LogExtra): void => {
     write('error', message, createContext(module, socket, extra));
   }
 };

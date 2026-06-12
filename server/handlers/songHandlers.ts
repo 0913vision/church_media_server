@@ -1,14 +1,14 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { PLAYER_STATE, SONG_TYPE } from '../constants/playerStates.js';
-import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { PlayerState, isSongType } from '../constants/playerStates.ts';
+import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers song-related socket event handlers
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerSongHandlers = (socket, deps) => {
+export const registerSongHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -28,9 +28,9 @@ export const registerSongHandlers = (socket, deps) => {
    * argument (protocol unchanged), but the server's state is authoritative,
    * so that value is ignored.
    */
-  socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (_clientCurrentSong, newSong) => {
+  socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (_clientCurrentSong: unknown, newSong: unknown) => {
     try {
-      if (!Object.values(SONG_TYPE).includes(newSong)) {
+      if (!isSongType(newSong)) {
         log.warn('songHandler', socket, 'Invalid song requested, request denied', { newSong });
         return;
       }
@@ -41,7 +41,7 @@ export const registerSongHandlers = (socket, deps) => {
         // Change song (handles pause, switch, volume change internally)
         await player.changeSong(newSong);
 
-        notifier.stateChanged(PLAYER_STATE.PAUSED);
+        notifier.stateChanged(PlayerState.PAUSED);
         notifier.songChanged(newSong);
         notifier.volumeChanged(DEFAULT_SONG_VOLUMES[newSong]);
       });
@@ -51,7 +51,7 @@ export const registerSongHandlers = (socket, deps) => {
         return;
       }
     } catch (error) {
-      log.error('songHandler', socket, 'Error changing song', { error: error.message, currentSong, newSong });
+      log.error('songHandler', socket, 'Error changing song', { error: error.message, newSong });
     }
   });
 };

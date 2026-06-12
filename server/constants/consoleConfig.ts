@@ -23,17 +23,17 @@ export const CONSOLE_CONFIG = {
         FADER_LEVEL: 0.687
       },
       CH2: {
-        MUTE_ADDRESS: "/ch/02/mix/on", 
+        MUTE_ADDRESS: "/ch/02/mix/on",
         FADER_LEVEL_ADDRESS: "/ch/02/mix/fader",
         FADER_LEVEL: 0.837
       }
     }
   },
 
-  // Auxiliary input settings  
+  // Auxiliary input settings
   AUX_INPUT: {
     MUTE_ADDRESS: "/auxin/05/mix/on",
     FADER_LEVEL_ADDRESS: "/auxin/05/mix/fader",
     FADER_LEVEL: 0.75
   }
-};
+} as const;

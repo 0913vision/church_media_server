@@ -1,13 +1,13 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { MUTE_STATE } from '../constants/playerStates.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { isMuteState } from '../constants/playerStates.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers mute-related socket event handlers
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerMuteHandlers = (socket, deps) => {
+export const registerMuteHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -24,9 +24,9 @@ export const registerMuteHandlers = (socket, deps) => {
   /**
    * Handle mute change request (audio resource operation)
    */
-  socket.on(SOCKET_EVENTS.C2S_CHANGE_MUTE_EVENT, async (newMute) => {
+  socket.on(SOCKET_EVENTS.C2S_CHANGE_MUTE_EVENT, async (newMute: unknown) => {
     try {
-      if (newMute !== MUTE_STATE.MUTED && newMute !== MUTE_STATE.UNMUTED) {
+      if (!isMuteState(newMute)) {
         log.warn('muteHandler', socket, 'Invalid mute state requested, request denied', { newMute });
         return;
       }

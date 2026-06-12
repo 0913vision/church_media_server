@@ -1,12 +1,26 @@
 import { io } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import net from 'node:net';
 
-const TEST_PORT = Number(process.env.PORT || 4000);
+// Explicit test environment. These are declared test parameters — not hidden
+// fallbacks — and may be overridden via env when targeting an externally
+// running server.
+export const TEST_PORT = Number(process.env.PORT ?? '4000');
+export const TEST_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
+const TEST_CONSOLE_MODE = process.env.CONSOLE_MODE ?? 'MOCK';
+const TEST_LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
+
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
-let startedServer = null;
+/** The slice of MediaServer the test bootstrap needs */
+interface StoppableServer {
+  start(): void;
+  stop(): void;
+}
 
-function isPortOpen(port) {
+let startedServer: StoppableServer | null = null;
+
+function isPortOpen(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = net.connect({ port, host: '127.0.0.1' });
     const timer = setTimeout(() => { probe.destroy(); resolve(false); }, 500);
@@ -21,15 +35,21 @@ function isPortOpen(port) {
  * it is silent). An externally running dev server is used as-is.
  * Call from a top-level before() hook; pair with stopServer() in after().
  */
-export async function ensureServer() {
+export async function ensureServer(): Promise<void> {
   if (await isPortOpen(TEST_PORT)) return;
 
-  process.env.CONSOLE_MODE = process.env.CONSOLE_MODE || 'MOCK';
-  process.env.PORT = process.env.PORT || String(TEST_PORT);
+  // The server requires every env variable explicitly (fail-fast, no
+  // defaults), so the test bootstrap supplies its declared test environment
+  // before the server module graph is loaded.
+  process.env.PORT = String(TEST_PORT);
+  process.env.CONSOLE_MODE = TEST_CONSOLE_MODE;
+  process.env.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD;
+  process.env.LOG_LEVEL = TEST_LOG_LEVEL;
 
-  const { default: MediaServer } = await import('../../server/server.js');
-  startedServer = new MediaServer();
-  startedServer.start();
+  const { default: MediaServer } = await import('../../server/server.ts');
+  const server: StoppableServer = new MediaServer();
+  server.start();
+  startedServer = server;
 
   for (let i = 0; i < 50; i++) {
     if (await isPortOpen(TEST_PORT)) return;
@@ -39,7 +59,7 @@ export async function ensureServer() {
 }
 
 /** Stops the server only if ensureServer() started it in-process. */
-export async function stopServer() {
+export async function stopServer(): Promise<void> {
   if (startedServer) {
     startedServer.stop();
     startedServer = null;
@@ -47,44 +67,48 @@ export async function stopServer() {
 }
 
 export class SocketTestHelper {
-  constructor(url = DEFAULT_TEST_URL, options = {}) {
+  readonly url: string;
+  readonly options: Record<string, unknown>;
+  socket: Socket | null;
+
+  constructor(url: string = DEFAULT_TEST_URL, options: Record<string, unknown> = {}) {
     this.url = url;
     this.options = options;
     this.socket = null;
   }
 
-  connect() {
+  connect(): Promise<Socket> {
     return new Promise((resolve, reject) => {
       this.socket = io(this.url, this.options);
       const timer = setTimeout(() => reject(new Error('Connection timeout')), 10000);
 
       this.socket.on('connect', () => {
         clearTimeout(timer);
-        resolve(this.socket);
+        resolve(this.socket!);
       });
-      this.socket.on('connect_error', (err) => {
+      this.socket.on('connect_error', (err: Error) => {
         clearTimeout(timer);
         reject(err);
       });
     });
   }
 
-  emitAndWaitFor(event, responseEvent, ...args) {
+  emitAndWaitFor<T = unknown>(event: string, responseEvent: string, ...args: unknown[]): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No response for ${event}`)), 5000);
-      this.socket.once(responseEvent, (data) => {
+      this.socket!.once(responseEvent, (data: T) => {
         clearTimeout(timer);
         resolve(data);
       });
-      this.socket.emit(event, ...args);
+      this.socket!.emit(event, ...args);
     });
   }
 
   // Wait for an event (e.g. a broadcast) without emitting anything.
-  waitFor(responseEvent, ms = 5000) {
+  waitFor<T = unknown>(responseEvent: string, ms = 5000): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No ${responseEvent}`)), ms);
-      this.socket.once(responseEvent, (data) => {
+      this.socket!.once(responseEvent, (data: T) => {
         clearTimeout(timer);
         resolve(data);
       });
@@ -93,13 +117,13 @@ export class SocketTestHelper {
 
   // Collect every payload of an event for `ms`, then resolve the array
   // (used to assert an ordered sequence of broadcasts, e.g. lock true/false).
-  collectFor(event, ms) {
+  collectFor<T = unknown>(event: string, ms: number): Promise<T[]> {
     return new Promise((resolve) => {
-      const received = [];
-      const onEvent = (data) => received.push(data);
-      this.socket.on(event, onEvent);
+      const received: T[] = [];
+      const onEvent = (data: T): void => { received.push(data); };
+      this.socket!.on(event, onEvent);
       setTimeout(() => {
-        this.socket.off(event, onEvent);
+        this.socket!.off(event, onEvent);
         resolve(received);
       }, ms);
     });
@@ -107,20 +131,20 @@ export class SocketTestHelper {
 
   // Emit an event and resolve true if responseEvent does NOT arrive within ms
   // (used to assert that an operation was blocked).
-  emitAndExpectNoResponse(event, responseEvent, ms, ...args) {
+  emitAndExpectNoResponse(event: string, responseEvent: string, ms: number, ...args: unknown[]): Promise<boolean> {
     return new Promise((resolve) => {
       let received = false;
-      const onResponse = () => { received = true; };
-      this.socket.on(responseEvent, onResponse);
-      this.socket.emit(event, ...args);
+      const onResponse = (): void => { received = true; };
+      this.socket!.on(responseEvent, onResponse);
+      this.socket!.emit(event, ...args);
       setTimeout(() => {
-        this.socket.off(responseEvent, onResponse);
+        this.socket!.off(responseEvent, onResponse);
         resolve(!received);
       }, ms);
     });
   }
 
-  disconnect() {
+  disconnect(): void {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;

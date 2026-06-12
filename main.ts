@@ -1,11 +1,11 @@
 import 'dotenv/config';
-import MediaServer from './server/server.js';
+import MediaServer from './server/server.ts';
 
 const server = new MediaServer();
 server.start();
 
 // Graceful shutdown on Ctrl-C / service stop
-const shutdown = () => {
+const shutdown = (): void => {
   server.stop();
   process.exit(0);
 };

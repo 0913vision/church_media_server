@@ -1,45 +1,44 @@
-import MpvClient from './MpvClient.js';
-import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
-import { SONG_TYPE } from '../constants/playerStates.js';
-import { log } from '../utils/logger.js';
+import MpvClient from './MpvClient.ts';
+import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
+import { SongType } from '../constants/playerStates.ts';
+import { log } from '../utils/logger.ts';
 
 /**
  * High-level device controller that manages audio playback operations
  */
 class AudioDevice {
-  #mpv;
-  #playlist;
-  #currentSongTimes;
+  private readonly playlist: Record<SongType, string>;
+  private readonly currentSongTimes: Record<SongType, number>;
 
   /**
-   * Creates a new AudioDevice instance
+   * @param mpv - Low-level MPV client (injected by the composition root)
    */
-  constructor() {
-    this.#mpv = new MpvClient();
-    this.#playlist = [...DEVICE_CONFIG.PLAYLIST];
-    this.#currentSongTimes = {...DEVICE_CONFIG.INITIAL_SONG_TIMES};
-    this.#initialize();
+  constructor(private readonly mpv: MpvClient) {
+    this.playlist = { ...DEVICE_CONFIG.PLAYLIST };
+    this.currentSongTimes = { ...DEVICE_CONFIG.INITIAL_SONG_TIMES };
+    this.initialize();
   }
 
   /**
-   * Initializes the device with default settings
-   * @private
+   * Initializes the device with default settings.
+   * Loads the slow song first — it is the initial current song
+   * (INITIAL_PLAYER_CONFIG.currentSong).
    */
-  #initialize() {
+  private initialize(): void {
     try {
-      this.#mpv.setProperty("loop", "inf");
+      this.mpv.setProperty("loop", "inf");
     } catch (error) {
       log.error('audioDevice', null, 'Failed to set loop property', { error: error.message });
     }
 
     try {
-      this.#mpv.executeCommand(["loadfile", this.#playlist[0], null]);
+      this.mpv.executeCommand(["loadfile", this.playlist[SongType.SLOW], null]);
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to load initial file', { file: this.#playlist[0], error: error.message });
+      log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[SongType.SLOW], error: error.message });
     }
 
     try {
-      this.#mpv.setProperty("pause", "yes");
+      this.mpv.setProperty("pause", "yes");
     } catch (error) {
       log.error('audioDevice', null, 'Failed to set pause property', { error: error.message });
     }
@@ -47,23 +46,18 @@ class AudioDevice {
 
   /**
    * Creates a delay for smooth transitions
-   * @param {number} ms - Milliseconds to delay
-   * @returns {Promise<void>}
-   * @private
    */
-  #delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
    * Gets current playback time
-   * @returns {number} Current playback time in seconds
-   * @private
    */
-  #getCurrentSongTime() {
+  private getCurrentSongTime(): number {
     try {
-      const response = this.#mpv.getProperty("playback-time");
-      return parseFloat(response) || 0;
+      const response = this.mpv.getProperty("playback-time");
+      return parseFloat(response ?? '') || 0;
     } catch (error) {
       log.error('audioDevice', null, 'Failed to get playback time', { error: error.message });
       return 0;
@@ -72,66 +66,61 @@ class AudioDevice {
 
   /**
    * Pauses playback with fade out effect
-   * @returns {Promise<void>}
    */
-  async pause() {
-    const currentVolume = parseFloat(this.#mpv.getProperty("volume"));
+  async pause(): Promise<void> {
+    const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
     for (let i = 0; i <= 30; ++i) {
       const t = i / 30;
       const volume = currentVolume * Math.cos((Math.PI / 2) * t);
-      this.#mpv.setProperty("volume", volume.toString());
-      await this.#delay(100);
+      this.mpv.setProperty("volume", volume.toString());
+      await this.delay(100);
     }
-    this.#mpv.setProperty("pause", "yes");
-    this.#mpv.setProperty("volume", currentVolume.toString());
+    this.mpv.setProperty("pause", "yes");
+    this.mpv.setProperty("volume", currentVolume.toString());
   }
 
   /**
    * Resumes playback with fade in effect
-   * @returns {Promise<void>}
    */
-  async resume() {
-    const currentVolume = parseFloat(this.#mpv.getProperty("volume"));
-    this.#mpv.setProperty("volume", "0");
-    this.#mpv.setProperty("pause", "no");
+  async resume(): Promise<void> {
+    const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
+    this.mpv.setProperty("volume", "0");
+    this.mpv.setProperty("pause", "no");
     for (let i = 0; i <= 30; ++i) {
       const t = i / 30;
       const volume = currentVolume * Math.sin((Math.PI / 2) * t);
-      this.#mpv.setProperty("volume", volume.toString());
-      await this.#delay(100);
+      this.mpv.setProperty("volume", volume.toString());
+      await this.delay(100);
     }
   }
 
   /**
    * Sets the volume level
-   * @param {number} volume - Volume level (0-100)
+   * @param volume - Volume level (0-100)
    */
-  setVolume(volume) {
-    this.#mpv.setProperty("volume", volume.toString());
+  setVolume(volume: number): void {
+    this.mpv.setProperty("volume", volume.toString());
   }
 
   /**
    * Changes the current song
-   * @param {string} currentSong - Current song type
-   * @param {string} newSong - New song type
    */
-  changeSong(currentSong, newSong) {
+  changeSong(currentSong: SongType, newSong: SongType): void {
     // Save current song time
-    const currentTime = this.#getCurrentSongTime();
-    this.#currentSongTimes[currentSong] = currentTime;
+    const currentTime = this.getCurrentSongTime();
+    this.currentSongTimes[currentSong] = currentTime;
 
-    // Switch track
-    const trackIndex = newSong === SONG_TYPE.SLOW ? 0 : 1;
-    const nextCommand = ["loadfile", this.#playlist[trackIndex], null];
-    
+    // Switch track — file resolved by explicit song mapping
+    const nextCommand = ["loadfile", this.playlist[newSong], null];
+
     try {
-      this.#mpv.executeCommand(nextCommand);
+      this.mpv.executeCommand(nextCommand);
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to change song', { 
-        currentSong, 
-        newSong, 
-        file: this.#playlist[trackIndex], 
-        error: error.message 
+      log.error('audioDevice', null, 'Failed to change song', {
+        currentSong,
+        newSong,
+        file: this.playlist[newSong],
+        error: error.message
       });
       throw error;
     }
@@ -139,23 +128,22 @@ class AudioDevice {
 
   /**
    * Loads the saved playback time for a song
-   * @param {string} song - Song type
    */
-  async loadLastSongTime(song) {
-    const targetTime = this.#currentSongTimes[song];
+  async loadLastSongTime(song: SongType): Promise<void> {
+    const targetTime = this.currentSongTimes[song];
     let attempts = 0;
     let succeeded = false;
 
     try {
       do {
-        this.#mpv.setProperty("playback-time", targetTime.toString());
-        await this.#delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
+        this.mpv.setProperty("playback-time", targetTime.toString());
+        await this.delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
         attempts++;
 
         // Tolerance comparison: the read-back can be off by a frame/block, and
         // right after a track switch it may be null (NaN) — both must retry,
         // never pass as success.
-        const currentTime = parseFloat(this.#mpv.getProperty("playback-time"));
+        const currentTime = parseFloat(this.mpv.getProperty("playback-time") ?? '');
         succeeded = Math.abs(currentTime - targetTime) <= DEVICE_CONFIG.PLAYBACK_TIME_TOLERANCE_SEC;
       } while (!succeeded && attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS);
 

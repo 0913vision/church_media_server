@@ -1,3 +1,6 @@
+/** Announces a lock's new state to interested parties */
+export type LockStateBroadcast = (locked: boolean) => void;
+
 /**
  * Generic single-holder lock primitive.
  *
@@ -7,56 +10,51 @@
  * module pure locking semantics, free of any transport concern.
  */
 class Lock {
-  #locked = false;
-  #broadcastState;
+  private locked = false;
 
   /**
-   * @param {Function} broadcastState - Called with the new boolean state on
-   *   every acquire/release
+   * @param broadcastState - Called with the new boolean state on every
+   *   acquire/release
    */
-  constructor(broadcastState) {
-    this.#broadcastState = broadcastState;
-  }
+  constructor(private readonly broadcastState: LockStateBroadcast) {}
 
   /**
    * Attempts to acquire the lock. Announces `true` on success.
-   * @returns {boolean} True if acquired, false if already held
+   * @returns True if acquired, false if already held
    */
-  tryLock() {
-    if (this.#locked) {
+  tryLock(): boolean {
+    if (this.locked) {
       return false;
     }
-    this.#locked = true;
-    this.#broadcastState(true);
+    this.locked = true;
+    this.broadcastState(true);
     return true;
   }
 
   /**
    * Releases the lock and announces `false`.
    */
-  unlock() {
-    if (!this.#locked) {
+  unlock(): void {
+    if (!this.locked) {
       return;
     }
-    this.#locked = false;
-    this.#broadcastState(false);
+    this.locked = false;
+    this.broadcastState(false);
   }
 
   /**
    * Checks if the lock is currently held
-   * @returns {boolean} True if locked, false otherwise
    */
-  isLocked() {
-    return this.#locked;
+  isLocked(): boolean {
+    return this.locked;
   }
 
   /**
    * Runs an async callback as a critical section: acquires the lock, runs the
    * callback, then always releases. Used for time-extended resource changes.
-   * @param {Function} asyncCallback - Async function to run under the lock
-   * @returns {Promise<boolean>} True if it ran, false if acquisition failed
+   * @returns True if it ran, false if acquisition failed
    */
-  async withLock(asyncCallback) {
+  async withLock(asyncCallback: () => Promise<void>): Promise<boolean> {
     if (!this.tryLock()) {
       return false;
     }

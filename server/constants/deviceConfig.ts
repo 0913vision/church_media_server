@@ -1,33 +1,42 @@
+import { SongType } from './playerStates.ts';
+import { requireEnvOneOf } from '../utils/env.ts';
+
+/** Which mixing-console backend to drive */
+export type ConsoleMode = 'X32' | 'MOCK';
+const CONSOLE_MODES: readonly ConsoleMode[] = ['X32', 'MOCK'];
+
 // Device hardware configuration
+const CURRENT_PLATFORM = process.platform === 'darwin' ? 'MAC' : 'RASPBERRY_PI';
+
 export const DEVICE_CONFIG = {
   // MPV library paths for different platforms
   MPV_LIBRARY_PATH: {
     MAC: '/opt/homebrew/lib/libmpv.dylib',
     RASPBERRY_PI: '/lib/arm-linux-gnueabihf/libmpv.so'
   },
-  
+
   // Current platform
-  CURRENT_PLATFORM: process.platform === 'darwin' ? 'MAC' : 'RASPBERRY_PI',
-  
-  // Audio file playlist
-  PLAYLIST: [
-    './assets/audio/music_slow.mp3',
-    './assets/audio/music_fast.mp3'
-  ],
-  
+  CURRENT_PLATFORM,
+
+  // Audio file per song — explicit mapping, no positional index coupling
+  PLAYLIST: {
+    [SongType.SLOW]: './assets/audio/music_slow.mp3',
+    [SongType.FAST]: './assets/audio/music_fast.mp3'
+  } satisfies Record<SongType, string>,
+
   // Initial song times
   INITIAL_SONG_TIMES: {
-    slow: 0.0,
-    fast: 0.0
-  },
+    [SongType.SLOW]: 0.0,
+    [SongType.FAST]: 0.0
+  } satisfies Record<SongType, number>,
 
-  // Console configuration
-  CONSOLE_MODE: process.env.CONSOLE_MODE || 'X32', // 'X32' or 'MOCK'
-  
+  // Console configuration (required env, validated against ConsoleMode)
+  CONSOLE_MODE: requireEnvOneOf('CONSOLE_MODE', CONSOLE_MODES),
+
   // MPV operation settings
   MAX_PROPERTY_SET_ATTEMPTS: 10,
   PROPERTY_SET_RETRY_DELAY_MS: 50,
   // Seek verification: playback-time read-back may differ from the requested
   // position by a frame/block, so compare within a tolerance instead of exact
   PLAYBACK_TIME_TOLERANCE_SEC: 0.5
-};
+} as const;

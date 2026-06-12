@@ -1,15 +1,23 @@
-import { SONG_TYPE, PLAYER_STATE, MUTE_STATE } from './playerStates.js';
+import { SongType, PlayerState, MuteState } from './playerStates.ts';
 
 // Default volumes for each song
-export const DEFAULT_SONG_VOLUMES = {
-  [SONG_TYPE.SLOW]: 50,
-  [SONG_TYPE.FAST]: 35
+export const DEFAULT_SONG_VOLUMES: Record<SongType, number> = {
+  [SongType.SLOW]: 50,
+  [SongType.FAST]: 35
 };
 
+// Full player state shape
+export interface PlayerConfig {
+  serverVolume: number;
+  muted: MuteState;
+  state: PlayerState;
+  currentSong: SongType;
+}
+
 // Initial player configuration
-export const INITIAL_PLAYER_CONFIG = {
+export const INITIAL_PLAYER_CONFIG: PlayerConfig = {
   serverVolume: 50,
-  muted: MUTE_STATE.UNMUTED,
-  state: PLAYER_STATE.PAUSED,
-  currentSong: SONG_TYPE.SLOW
+  muted: MuteState.UNMUTED,
+  state: PlayerState.PAUSED,
+  currentSong: SongType.SLOW
 };

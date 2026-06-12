@@ -1,12 +1,13 @@
 {
   "name": "church-media-server",
   "version": "1.0.0",
-  "main": "main.js",
+  "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "start": "node main.js",
-    "test": "node --test --test-concurrency=1 tests/ut/*.test.js",
-    "test:watch": "node --test --watch --test-concurrency=1 tests/ut/*.test.js"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && node dist/main.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/ut/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
@@ -17,5 +18,9 @@
     "ref-struct-di": "^1.1.1",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
   }
 }

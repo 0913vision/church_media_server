@@ -1,6 +1,6 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.js';
+import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
@@ -11,7 +11,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const state = await helper.emitAndWaitFor('getState', 'stateChanged');
+      const state = await helper.emitAndWaitFor<number>('getState', 'stateChanged');
 
       assert.strictEqual(typeof state, 'number');
       assert.ok([0, 1].includes(state));
@@ -25,7 +25,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const volume = await helper.emitAndWaitFor('getVolume', 'volumeChanged');
+      const volume = await helper.emitAndWaitFor<number>('getVolume', 'volumeChanged');
 
       assert.strictEqual(typeof volume, 'number');
       assert.ok(volume >= 0 && volume <= 100);
@@ -39,7 +39,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const mute = await helper.emitAndWaitFor('getMute', 'muteChanged');
+      const mute = await helper.emitAndWaitFor<number>('getMute', 'muteChanged');
 
       assert.strictEqual(typeof mute, 'number');
       assert.ok([0, 1].includes(mute));
@@ -53,7 +53,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const song = await helper.emitAndWaitFor('getCurrentSong', 'songChanged');
+      const song = await helper.emitAndWaitFor<string>('getCurrentSong', 'songChanged');
 
       assert.strictEqual(typeof song, 'string');
       assert.ok(['slow', 'fast'].includes(song));
@@ -67,7 +67,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const lock = await helper.emitAndWaitFor('getLock', 'lockChanged');
+      const lock = await helper.emitAndWaitFor<boolean>('getLock', 'lockChanged');
 
       assert.strictEqual(typeof lock, 'boolean');
     } finally {
@@ -80,7 +80,7 @@ describe('Socket Getter Tests', () => {
 
     try {
       await helper.connect();
-      const adminLock = await helper.emitAndWaitFor('getLock', 'adminLockChanged');
+      const adminLock = await helper.emitAndWaitFor<boolean>('getLock', 'adminLockChanged');
 
       // Verify the protocol: admin lock is reported as a boolean on its own,
       // separate event. (The value is global server state that other tests may

@@ -1,5 +1,7 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers console-related socket event handlers (mixer controls).
@@ -7,12 +9,10 @@ import { log } from '../utils/logger.js';
  * Console operations take NO resource lock — the console holds no protected
  * state and its OSC bursts are instantaneous. They are only gated by the admin
  * lock (handled inside withAdminGate).
- *
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerConsoleHandlers = (socket, deps) => {
+export const registerConsoleHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { lockCoordinator, mixerConsole, adminSessionManager } = deps;
+
   /**
    * Handle microphone on request
    */

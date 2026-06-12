@@ -1,12 +1,12 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers volume-related socket event handlers
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerVolumeHandlers = (socket, deps) => {
+export const registerVolumeHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { notifier, player, lockCoordinator, adminSessionManager } = deps;
 
   /**
@@ -23,7 +23,7 @@ export const registerVolumeHandlers = (socket, deps) => {
   /**
    * Handle volume change request (audio resource operation)
    */
-  socket.on(SOCKET_EVENTS.C2S_CHANGE_VOLUME_EVENT, async (newVolume) => {
+  socket.on(SOCKET_EVENTS.C2S_CHANGE_VOLUME_EVENT, async (newVolume: unknown) => {
     try {
       if (typeof newVolume !== 'number' || !Number.isFinite(newVolume) || newVolume < 0 || newVolume > 100) {
         log.warn('volumeHandler', socket, 'Invalid volume requested, request denied', { newVolume });

@@ -1,111 +1,103 @@
-import { PLAYER_STATE, MUTE_STATE } from '../constants/playerStates.js';
-import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.js';
-import AudioDevice from '../hardware/AudioDevice.js';
-import { log } from '../utils/logger.js';
+import { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
+import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
+import type { PlayerConfig } from '../constants/playerConfig.ts';
+import type AudioDevice from '../hardware/AudioDevice.ts';
+import { log } from '../utils/logger.ts';
 
 /**
  * High-level Player class that abstracts hardware control and manages player state
  */
 class Player {
-  // Private fields
-  #state;
-  #device;
+  private state: PlayerConfig;
 
   /**
-   * Creates a new Player instance with initial configuration
+   * @param device - Audio device (injected by the composition root)
    */
-  constructor() {
-    this.#state = { ...INITIAL_PLAYER_CONFIG };
-    this.#device = new AudioDevice();
+  constructor(private readonly device: AudioDevice) {
+    this.state = { ...INITIAL_PLAYER_CONFIG };
     // Initialize hardware with default volume
-    this.#device.setVolume(this.#state.serverVolume);
+    this.device.setVolume(this.state.serverVolume);
   }
 
   // Volume methods
   /**
    * Gets the current volume level
-   * @returns {number} Current volume (0-100)
+   * @returns Current volume (0-100)
    */
-  getVolume() {
-    return this.#state.serverVolume;
+  getVolume(): number {
+    return this.state.serverVolume;
   }
 
   /**
    * Sets the volume level and updates hardware.
    * While muted, the device stays silent — only the remembered volume changes.
-   * @param {number} volume - Volume level (0-100)
+   * @param volume - Volume level (0-100)
    */
-  setVolume(volume) {
-    this.#state.serverVolume = volume;
-    this.#device.setVolume(this.isMuted() ? 0 : volume);
+  setVolume(volume: number): void {
+    this.state.serverVolume = volume;
+    this.device.setVolume(this.isMuted() ? 0 : volume);
   }
 
   // State methods
   /**
    * Gets the current playback state
-   * @returns {number} Current state (PLAYER_STATE.PAUSED or PLAYER_STATE.PLAYING)
    */
-  getState() {
-    return this.#state.state;
+  getState(): PlayerState {
+    return this.state.state;
   }
 
   /**
    * Plays the audio and updates state
-   * @returns {Promise<void>}
    */
-  async play() {
+  async play(): Promise<void> {
     try {
-      await this.#device.resume();
+      await this.device.resume();
     } catch (error) {
       log.error('player', null, 'Failed to play audio', { error: error.message });
       throw error;
     }
-    this.#state.state = PLAYER_STATE.PLAYING;
+    this.state.state = PlayerState.PLAYING;
   }
 
   /**
    * Pauses the audio and updates state
-   * @returns {Promise<void>}
    */
-  async pause() {
+  async pause(): Promise<void> {
     try {
-      await this.#device.pause();
+      await this.device.pause();
     } catch (error) {
       log.error('player', null, 'Failed to pause audio', { error: error.message });
       throw error;
     }
-    this.#state.state = PLAYER_STATE.PAUSED;
+    this.state.state = PlayerState.PAUSED;
   }
 
   // Mute methods
   /**
    * Gets the current mute status
-   * @returns {number} Mute status (MUTE_STATE.UNMUTED or MUTE_STATE.MUTED)
    */
-  getMute() {
-    return this.#state.muted;
+  getMute(): MuteState {
+    return this.state.muted;
   }
 
   /**
    * Sets mute status and updates hardware volume
-   * @param {number} muted - Mute status (MUTE_STATE.UNMUTED or MUTE_STATE.MUTED)
    */
-  setMute(muted) {
-    this.#state.muted = muted;
-    if (muted === MUTE_STATE.MUTED) {
-      this.#device.setVolume(0);
+  setMute(muted: MuteState): void {
+    this.state.muted = muted;
+    if (muted === MuteState.MUTED) {
+      this.device.setVolume(0);
     } else {
-      this.#device.setVolume(this.#state.serverVolume);
+      this.device.setVolume(this.state.serverVolume);
     }
   }
 
   // Song methods
   /**
    * Gets the currently selected song
-   * @returns {string} Current song (SONG_TYPE.SLOW or SONG_TYPE.FAST)
    */
-  getCurrentSong() {
-    return this.#state.currentSong;
+  getCurrentSong(): SongType {
+    return this.state.currentSong;
   }
 
   /**
@@ -113,16 +105,15 @@ class Player {
    * The player's own state decides which song is current; while muted, the
    * device stays silent and only the remembered volume moves to the new
    * song's default.
-   * @param {string} newSong - New song type (SONG_TYPE.SLOW or SONG_TYPE.FAST)
-   * @returns {Promise<void>}
+   * @param newSong - New song type (SongType.SLOW or SongType.FAST)
    */
-  async changeSong(newSong) {
-    const currentSong = this.#state.currentSong;
+  async changeSong(newSong: SongType): Promise<void> {
+    const currentSong = this.state.currentSong;
     const wasPlaying = this.isPlaying();
 
     if (wasPlaying) {
       try {
-        await this.#device.pause();
+        await this.device.pause();
       } catch (error) {
         log.error('player', null, 'Failed to pause during song change', { error: error.message });
         throw error;
@@ -130,7 +121,7 @@ class Player {
     }
 
     try {
-      this.#device.changeSong(currentSong, newSong);
+      this.device.changeSong(currentSong, newSong);
     } catch (error) {
       log.error('player', null, 'Failed to change song', { currentSong, newSong, error: error.message });
       throw error;
@@ -139,18 +130,18 @@ class Player {
     const newVolume = DEFAULT_SONG_VOLUMES[newSong];
 
     try {
-      this.#device.setVolume(this.isMuted() ? 0 : newVolume);
+      this.device.setVolume(this.isMuted() ? 0 : newVolume);
     } catch (error) {
       log.error('player', null, 'Failed to set volume during song change', { newVolume, error: error.message });
       throw error;
     }
 
-    this.#state.currentSong = newSong;
-    this.#state.state = PLAYER_STATE.PAUSED;
-    this.#state.serverVolume = newVolume;
+    this.state.currentSong = newSong;
+    this.state.state = PlayerState.PAUSED;
+    this.state.serverVolume = newVolume;
 
     try {
-      await this.#device.loadLastSongTime(newSong);
+      await this.device.loadLastSongTime(newSong);
     } catch (error) {
       log.error('player', null, 'Failed to load last song time', { newSong, error: error.message });
       throw error;
@@ -161,34 +152,16 @@ class Player {
 
   /**
    * Checks if the player is currently playing
-   * @returns {boolean} True if playing, false otherwise
    */
-  isPlaying() {
-    return this.#state.state === PLAYER_STATE.PLAYING;
-  }
-
-  /**
-   * Checks if the player is currently paused
-   * @returns {boolean} True if paused, false otherwise
-   */
-  isPaused() {
-    return this.#state.state === PLAYER_STATE.PAUSED;
+  isPlaying(): boolean {
+    return this.state.state === PlayerState.PLAYING;
   }
 
   /**
    * Checks if the player is currently muted
-   * @returns {boolean} True if muted, false otherwise
    */
-  isMuted() {
-    return this.#state.muted === MUTE_STATE.MUTED;
-  }
-
-  /**
-   * Gets a copy of the full configuration object (for debugging)
-   * @returns {Object} Copy of the current configuration
-   */
-  getFullConfig() {
-    return { ...this.#state };
+  isMuted(): boolean {
+    return this.state.muted === MuteState.MUTED;
   }
 }
 

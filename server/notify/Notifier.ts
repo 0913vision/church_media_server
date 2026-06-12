@@ -1,4 +1,7 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
+import type { Server, Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import type { SocketEventName } from '../constants/socketConfig.ts';
+import type { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
 
 /**
  * Single owner of all S2C emission: every outgoing event name and the
@@ -11,58 +14,48 @@ import { SOCKET_EVENTS } from '../constants/socketConfig.js';
  * when a target socket is passed.
  */
 class Notifier {
-  #io;
-
-  /**
-   * @param {Object} io - Socket.IO server instance
-   */
-  constructor(io) {
-    this.#io = io;
-  }
+  constructor(private readonly io: Server) {}
 
   /**
    * Emits to all clients, or to one client when a target socket is given.
-   * @private
    */
-  #emit(eventName, payload, socket) {
-    (socket ?? this.#io).emit(eventName, payload);
+  private emit(eventName: SocketEventName, payload: unknown, socket?: Socket): void {
+    (socket ?? this.io).emit(eventName, payload);
   }
 
-  stateChanged(state, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, state, socket);
+  stateChanged(state: PlayerState, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, state, socket);
   }
 
-  volumeChanged(volume, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, volume, socket);
+  volumeChanged(volume: number, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, volume, socket);
   }
 
-  muteChanged(mute, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, mute, socket);
+  muteChanged(mute: MuteState, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, mute, socket);
   }
 
-  songChanged(song, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, song, socket);
+  songChanged(song: SongType, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, song, socket);
   }
 
-  audioLockChanged(locked, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, locked, socket);
+  audioLockChanged(locked: boolean, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, locked, socket);
   }
 
-  adminLockChanged(locked, socket) {
-    this.#emit(SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, locked, socket);
+  adminLockChanged(locked: boolean, socket?: Socket): void {
+    this.emit(SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, locked, socket);
   }
 
   /**
    * Authentication result — always a single-recipient reply.
-   * @param {Object} socket - The authenticating socket
-   * @param {boolean} success
    */
-  adminAuthenticated(socket, success) {
+  adminAuthenticated(socket: Socket, success: boolean): void {
     socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success });
   }
 
-  ping() {
-    this.#io.emit(SOCKET_EVENTS.S2C_PING_EVENT);
+  ping(): void {
+    this.io.emit(SOCKET_EVENTS.S2C_PING_EVENT);
   }
 }
 

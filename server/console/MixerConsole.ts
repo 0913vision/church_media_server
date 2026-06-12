@@ -1,30 +1,22 @@
-import X32Console from './X32Console.js';
-import MockConsole from './MockConsole.js';
-import { DEVICE_CONFIG } from '../constants/deviceConfig.js';
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.ts';
+import type { ConsoleDevice } from './ConsoleDevice.ts';
 
 /**
- * High-level console controller that manages audio mixing operations
+ * High-level console controller that manages audio mixing operations.
+ * Which backend drives it (X32 or Mock) is decided by the composition root.
  */
 class MixerConsole {
-  #console;
-
   /**
-   * Creates a new MixerConsole instance
+   * @param console - Console backend (injected by the composition root)
    */
-  constructor() {
-    this.#console = DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' 
-      ? new MockConsole() 
-      : new X32Console();
-  }
+  constructor(private readonly console: ConsoleDevice) {}
 
   /**
    * Enable pastor microphone
-   * @returns {Promise<void>}
    */
-  async enablePastorMic() {
+  async enablePastorMic(): Promise<void> {
     try {
-      await this.#console.enablePastorMic();
+      await this.console.enablePastorMic();
     } catch (error) {
       log.error('mixerConsole', null, 'Error enabling pastor microphone', { error: error.message });
       throw error;
@@ -33,11 +25,10 @@ class MixerConsole {
 
   /**
    * Enable auxiliary input
-   * @returns {Promise<void>}
    */
-  async enableAux() {
+  async enableAux(): Promise<void> {
     try {
-      await this.#console.enableAux();
+      await this.console.enableAux();
     } catch (error) {
       log.error('mixerConsole', null, 'Error enabling auxiliary input', { error: error.message });
       throw error;

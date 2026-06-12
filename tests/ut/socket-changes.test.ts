@@ -1,12 +1,12 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.js';
+import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
 
-// Safety net: pins the C2S -> S2C change/broadcast contract so it survives the
-// upcoming clean-code refactor (layering / notifier extraction).
+// Safety net: pins the C2S -> S2C change/broadcast contract so it survives
+// refactors (layering / notifier extraction / TypeScript migration).
 describe('Change Broadcast Tests', () => {
   test('changeVolume broadcasts volumeChanged to all clients', async () => {
     const actor = new SocketTestHelper();
@@ -16,8 +16,8 @@ describe('Change Broadcast Tests', () => {
       await actor.connect();
       await observer.connect();
 
-      const observed = observer.waitFor('volumeChanged');
-      actor.socket.emit('changeVolume', 37);
+      const observed = observer.waitFor<number>('volumeChanged');
+      actor.socket!.emit('changeVolume', 37);
 
       assert.strictEqual(await observed, 37);
     } finally {
@@ -34,8 +34,8 @@ describe('Change Broadcast Tests', () => {
       await actor.connect();
       await observer.connect();
 
-      const observed = observer.waitFor('muteChanged');
-      actor.socket.emit('changeMute', 1);
+      const observed = observer.waitFor<number>('muteChanged');
+      actor.socket!.emit('changeMute', 1);
 
       assert.strictEqual(await observed, 1);
     } finally {
@@ -46,26 +46,26 @@ describe('Change Broadcast Tests', () => {
 
   test('changeSong broadcasts song, default volume, and paused state', async () => {
     const actor = new SocketTestHelper();
-    const DEFAULT_SONG_VOLUMES = { slow: 50, fast: 35 };
+    const DEFAULT_SONG_VOLUMES: Record<string, number> = { slow: 50, fast: 35 };
 
     try {
       await actor.connect();
 
       // Server state is shared/persistent: switch to whichever song is NOT
       // current so the test is robust across reruns.
-      const current = await actor.emitAndWaitFor('getCurrentSong', 'songChanged');
+      const current = await actor.emitAndWaitFor<string>('getCurrentSong', 'songChanged');
       const target = current === 'slow' ? 'fast' : 'slow';
 
-      const songP = actor.waitFor('songChanged');
-      const volP = actor.waitFor('volumeChanged');
-      const stateP = actor.waitFor('stateChanged');
+      const songP = actor.waitFor<string>('songChanged');
+      const volP = actor.waitFor<number>('volumeChanged');
+      const stateP = actor.waitFor<number>('stateChanged');
 
-      actor.socket.emit('changeSong', current, target);
+      actor.socket!.emit('changeSong', current, target);
 
       const [song, vol, state] = await Promise.all([songP, volP, stateP]);
       assert.strictEqual(song, target);
       assert.strictEqual(vol, DEFAULT_SONG_VOLUMES[target]);
-      assert.strictEqual(state, 0); // PLAYER_STATE.PAUSED
+      assert.strictEqual(state, 0); // PlayerState.PAUSED
     } finally {
       actor.disconnect();
     }
@@ -108,7 +108,7 @@ describe('Change Broadcast Tests', () => {
     const actor = new SocketTestHelper();
     try {
       await actor.connect();
-      const current = await actor.emitAndWaitFor('getCurrentSong', 'songChanged');
+      const current = await actor.emitAndWaitFor<string>('getCurrentSong', 'songChanged');
       const rejected = await actor.emitAndExpectNoResponse('changeSong', 'songChanged', 400, current, current);
       assert.strictEqual(rejected, true);
     } finally {
@@ -146,8 +146,8 @@ describe('Change Broadcast Tests', () => {
       await actor.connect();
       await observer.connect();
 
-      const collected = observer.collectFor('lockChanged', 400);
-      actor.socket.emit('changeVolume', 55);
+      const collected = observer.collectFor<boolean>('lockChanged', 400);
+      actor.socket!.emit('changeVolume', 55);
       const events = await collected;
 
       assert.ok(events.includes(true), 'should broadcast audio lock acquired');

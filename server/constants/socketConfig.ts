@@ -1,6 +1,17 @@
+import { requireIntEnv } from '../utils/env.ts';
+
 // Server configuration constants
-export const SOCKET_CONFIG = {
-  PORT: process.env.PORT,
+interface ServerConfig {
+  PORT: number;
+  PING_INTERVAL_MS: number;
+  CORS: {
+    origin: string;
+    methods: string[];
+  };
+}
+
+export const SOCKET_CONFIG: ServerConfig = {
+  PORT: requireIntEnv('PORT'),
   PING_INTERVAL_MS: 30000,
   CORS: {
     origin: "*",
@@ -12,7 +23,7 @@ export const SOCKET_CONFIG = {
 export const SOCKET_EVENTS = {
   // Client to Server events
   C2S_GET_VOLUME_EVENT: 'getVolume',
-  C2S_GET_STATE_EVENT: 'getState', 
+  C2S_GET_STATE_EVENT: 'getState',
   C2S_GET_MUTE_EVENT: 'getMute',
   C2S_GET_CURRENT_SONG_EVENT: 'getCurrentSong',
   C2S_GET_LOCK_EVENT: 'getLock',
@@ -44,4 +55,7 @@ export const SOCKET_EVENTS = {
 
   // System events
   S2C_PING_EVENT: 'ping'
-};
+} as const;
+
+/** Union of every protocol event name (derived, single source of truth) */
+export type SocketEventName = (typeof SOCKET_EVENTS)[keyof typeof SOCKET_EVENTS];

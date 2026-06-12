@@ -1,46 +1,43 @@
 import osc from 'osc';
+import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
+import { log } from '../utils/logger.ts';
+import type { ConsoleDevice } from './ConsoleDevice.ts';
+
 const { UDPPort } = osc;
-import { CONSOLE_CONFIG } from '../constants/consoleConfig.js';
-import { log } from '../utils/logger.js';
 
 /**
  * X32 console implementation for actual hardware communication
  */
-class X32Console {
-  #client;
+class X32Console implements ConsoleDevice {
+  private readonly client: InstanceType<typeof UDPPort>;
 
   constructor() {
-    this.#client = new UDPPort({
+    this.client = new UDPPort({
       localAddress: CONSOLE_CONFIG.NETWORK.LOCAL_ADDRESS,
       localPort: CONSOLE_CONFIG.NETWORK.LOCAL_PORT,
       remoteAddress: CONSOLE_CONFIG.NETWORK.REMOTE_ADDRESS,
       remotePort: CONSOLE_CONFIG.NETWORK.REMOTE_PORT
     });
-    
-    this.#initialize();
+
+    this.initialize();
   }
 
   /**
    * Initialize the X32 client connection
-   * @private
    */
-  #initialize() {
-    this.#client.open();
-    this.#client.on("ready", () => {
+  private initialize(): void {
+    this.client.open();
+    this.client.on("ready", () => {
       log.info('x32Console', null, 'X32 console client is ready');
     });
   }
 
   /**
    * Send OSC command to X32 console
-   * @param {string} address - OSC address
-   * @param {*} args - OSC arguments
-   * @returns {Promise<void>}
-   * @private
    */
-  #sendOscCommand(address, args) {
+  private sendOscCommand(address: string, args: unknown): Promise<void> {
     return new Promise((resolve) => {
-      this.#client.send({
+      this.client.send({
         address: address,
         args: args
       });
@@ -50,28 +47,26 @@ class X32Console {
 
   /**
    * Turn on pastor microphone channels
-   * @returns {Promise<void>}
    */
-  async enablePastorMic() {
+  async enablePastorMic(): Promise<void> {
     const { CH1, CH2 } = CONSOLE_CONFIG.PASTOR_MIC.CHANNELS;
     const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
 
-    await this.#sendOscCommand(CH1.MUTE_ADDRESS, UNMUTE);
-    await this.#sendOscCommand(CH2.MUTE_ADDRESS, UNMUTE);
-    await this.#sendOscCommand(CH1.FADER_LEVEL_ADDRESS, CH1.FADER_LEVEL);
-    await this.#sendOscCommand(CH2.FADER_LEVEL_ADDRESS, CH2.FADER_LEVEL);
+    await this.sendOscCommand(CH1.MUTE_ADDRESS, UNMUTE);
+    await this.sendOscCommand(CH2.MUTE_ADDRESS, UNMUTE);
+    await this.sendOscCommand(CH1.FADER_LEVEL_ADDRESS, CH1.FADER_LEVEL);
+    await this.sendOscCommand(CH2.FADER_LEVEL_ADDRESS, CH2.FADER_LEVEL);
   }
 
   /**
    * Turn on auxiliary input
-   * @returns {Promise<void>}
    */
-  async enableAux() {
+  async enableAux(): Promise<void> {
     const { MUTE_ADDRESS, FADER_LEVEL_ADDRESS, FADER_LEVEL } = CONSOLE_CONFIG.AUX_INPUT;
     const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
 
-    await this.#sendOscCommand(MUTE_ADDRESS, UNMUTE);
-    await this.#sendOscCommand(FADER_LEVEL_ADDRESS, FADER_LEVEL);
+    await this.sendOscCommand(MUTE_ADDRESS, UNMUTE);
+    await this.sendOscCommand(FADER_LEVEL_ADDRESS, FADER_LEVEL);
   }
 }
 

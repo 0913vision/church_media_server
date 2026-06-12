@@ -1,26 +1,34 @@
-import { registerAuthHandlers } from './authHandlers.js';
-import { registerVolumeHandlers } from './volumeHandlers.js';
-import { registerStateHandlers } from './stateHandlers.js';
-import { registerSongHandlers } from './songHandlers.js';
-import { registerMuteHandlers } from './muteHandlers.js';
-import { registerConsoleHandlers } from './consoleHandlers.js';
+import type { Socket } from 'socket.io';
+import type Notifier from '../notify/Notifier.ts';
+import type Player from '../player/Player.ts';
+import type LockCoordinator from '../lock/LockCoordinator.ts';
+import type AdminSessionManager from '../auth/AdminSessionManager.ts';
+import type MixerConsole from '../console/MixerConsole.ts';
+import { registerAuthHandlers } from './authHandlers.ts';
+import { registerVolumeHandlers } from './volumeHandlers.ts';
+import { registerStateHandlers } from './stateHandlers.ts';
+import { registerSongHandlers } from './songHandlers.ts';
+import { registerMuteHandlers } from './muteHandlers.ts';
+import { registerConsoleHandlers } from './consoleHandlers.ts';
+
+/**
+ * Shared dependency context built once by the composition root (server.js)
+ * and handed to every handler; each handler destructures only what it needs.
+ */
+export interface HandlerDeps {
+  /** Single owner of all S2C emission */
+  notifier: Notifier;
+  player: Player;
+  lockCoordinator: LockCoordinator;
+  adminSessionManager: AdminSessionManager;
+  /** Shared mixing console service */
+  mixerConsole: MixerConsole;
+}
 
 /**
  * Registers every socket event handler for a connection.
- *
- * All handlers share one dependency context so the composition root (server.js)
- * wires the app in a single place and individual handlers destructure only
- * what they need.
- *
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies
- * @param {Notifier} deps.notifier - Single owner of all S2C emission
- * @param {Player} deps.player - Player instance
- * @param {LockCoordinator} deps.lockCoordinator - Lock coordinator instance
- * @param {AdminSessionManager} deps.adminSessionManager - Admin session manager
- * @param {MixerConsole} deps.mixerConsole - Shared mixing console service
  */
-export const registerHandlers = (socket, deps) => {
+export const registerHandlers = (socket: Socket, deps: HandlerDeps): void => {
   registerAuthHandlers(socket, deps);
   registerVolumeHandlers(socket, deps);
   registerStateHandlers(socket, deps);

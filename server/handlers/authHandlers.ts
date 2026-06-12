@@ -1,19 +1,19 @@
-import { SOCKET_EVENTS } from '../constants/socketConfig.js';
-import { ADMIN_CONFIG } from '../constants/authConfig.js';
-import { log } from '../utils/logger.js';
+import type { Socket } from 'socket.io';
+import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
+import { ADMIN_CONFIG } from '../constants/authConfig.ts';
+import { log } from '../utils/logger.ts';
+import type { HandlerDeps } from './index.ts';
 
 /**
  * Registers authentication and admin-lock socket event handlers
- * @param {Object} socket - Socket.IO socket instance
- * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerAuthHandlers = (socket, deps) => {
+export const registerAuthHandlers = (socket: Socket, deps: HandlerDeps): void => {
   const { notifier, adminSessionManager, lockCoordinator } = deps;
 
   /**
    * Handle admin authentication request
    */
-  socket.on(SOCKET_EVENTS.C2S_AUTHENTICATE_ADMIN_EVENT, (password) => {
+  socket.on(SOCKET_EVENTS.C2S_AUTHENTICATE_ADMIN_EVENT, (password: unknown) => {
     try {
       if (password === ADMIN_CONFIG.ADMIN_PASSWORD) {
         adminSessionManager.addAdminSocket(socket);
@@ -33,9 +33,9 @@ export const registerAuthHandlers = (socket, deps) => {
    * Handle admin lock toggle (explicit acquire/release by an authenticated admin).
    * Acquiring blocks all other users from submitting new operations; in-flight
    * operations are unaffected. Broadcasts on its own (admin) lock event.
-   * @param {boolean} locked - true to acquire, false to release
+   * @param locked - true to acquire, false to release
    */
-  socket.on(SOCKET_EVENTS.C2S_SET_ADMIN_LOCK_EVENT, (locked) => {
+  socket.on(SOCKET_EVENTS.C2S_SET_ADMIN_LOCK_EVENT, (locked: unknown) => {
     try {
       if (!adminSessionManager.isAdminSocket(socket)) {
         log.warn('authHandler', socket, 'Non-admin attempted to set admin lock');
