@@ -106,7 +106,7 @@ class DeviceHandler {
    * @param {number} volume - Volume level (0-100)
    */
   setVolume(volume) {
-    this.#mpv.setOption("volume", volume.toString());
+    this.#mpv.setProperty("volume", volume.toString());
   }
 
   /**

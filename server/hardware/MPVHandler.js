@@ -40,7 +40,6 @@ class MPVHandler {
         'mpv_create': ['pointer', []],
         'mpv_initialize': ['int', ['pointer']],
         'mpv_command': ['int', ['pointer', StringArray]],
-        'mpv_set_option_string': ['int', ['pointer', 'string', 'string']],
         'mpv_set_property_string': ['int', ['pointer', 'string', 'string']],
         'mpv_get_property_string': ['string', ['pointer', 'string']],
         'mpv_command_async': ['int', ['pointer', 'uint64', StringArray]],
@@ -93,15 +92,6 @@ class MPVHandler {
    */
   executeCommand(command) {
     this.#api.mpv_command(this.#playerInstance, command);
-  }
-
-  /**
-   * Sets an option on the MPV player instance
-   * @param {string} option - Option name
-   * @param {string} value - Option value
-   */
-  setOption(option, value) {
-    this.#api.mpv_set_option_string(this.#playerInstance, option, value);
   }
 }
 
