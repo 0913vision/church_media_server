@@ -16,46 +16,44 @@ import { SOCKET_EVENTS } from '../constants/socketConfig.js';
  *
  * The two are orthogonal: the admin lock gates *who may start an operation*,
  * the audio lock gates *concurrent mutation of the audio resource*.
+ *
+ * This layer knows nothing about sockets or sessions: callers resolve identity
+ * themselves and pass `isAdmin` booleans / opaque holder ids.
  */
 class LockCoordinator {
   #audioLock;
   #adminLock;
-  #adminSessionManager;
-  #adminLockHolder = null; // socket.id currently holding the admin lock
+  #adminLockHolderId = null; // opaque id of the current admin lock holder
 
   /**
-   * @param {Object} io - Socket.IO server instance
-   * @param {AdminSessionManager} adminSessionManager - Admin session manager
+   * @param {Object} io - Socket.IO server instance (used only by the locks to
+   *   broadcast their own state)
    */
-  constructor(io, adminSessionManager) {
+  constructor(io) {
     this.#audioLock = new Lock(io, SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT);
     this.#adminLock = new Lock(io, SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT);
-    this.#adminSessionManager = adminSessionManager;
   }
 
   /**
-   * The submission gate: whether a socket may start an operation right now.
+   * The submission gate: whether a requester may start an operation right now.
    * Blocked only when the admin lock is held and the requester is not an admin.
-   * @param {Object} socket - Socket.IO socket instance
+   * @param {boolean} isAdmin - Whether the requester is an authenticated admin
    * @returns {boolean}
    * @private
    */
-  #passesAdminGate(socket) {
-    if (!this.#adminLock.isLocked()) {
-      return true;
-    }
-    return this.#adminSessionManager.isAdminSocket(socket);
+  #passesAdminGate(isAdmin) {
+    return !this.#adminLock.isLocked() || isAdmin;
   }
 
   /**
    * Runs an audio operation: passes the admin submission gate, then runs inside
    * the audio resource lock (critical section).
-   * @param {Object} socket - Socket.IO socket instance
+   * @param {boolean} isAdmin - Whether the requester is an authenticated admin
    * @param {Function} asyncCallback - Async function performing the audio change
    * @returns {Promise<boolean>} True if it ran, false if blocked or contended
    */
-  async withAudioLock(socket, asyncCallback) {
-    if (!this.#passesAdminGate(socket)) {
+  async withAudioLock(isAdmin, asyncCallback) {
+    if (!this.#passesAdminGate(isAdmin)) {
       return false;
     }
     return await this.#audioLock.withLock(asyncCallback);
@@ -64,12 +62,12 @@ class LockCoordinator {
   /**
    * Runs a gated operation that takes no resource lock (used by the console):
    * passes the admin submission gate, then runs.
-   * @param {Object} socket - Socket.IO socket instance
+   * @param {boolean} isAdmin - Whether the requester is an authenticated admin
    * @param {Function} asyncCallback - Async function performing the change
    * @returns {Promise<boolean>} True if it ran, false if blocked
    */
-  async withAdminGate(socket, asyncCallback) {
-    if (!this.#passesAdminGate(socket)) {
+  async withAdminGate(isAdmin, asyncCallback) {
+    if (!this.#passesAdminGate(isAdmin)) {
       return false;
     }
     await asyncCallback();
@@ -77,45 +75,43 @@ class LockCoordinator {
   }
 
   /**
-   * Acquires the admin lock for an authenticated admin socket (explicit toggle).
+   * Acquires the admin lock for a holder (explicit toggle). The caller is
+   * responsible for verifying the requester is an authenticated admin.
    * In-flight operations are unaffected; only new submissions are gated.
-   * @param {Object} socket - Socket.IO socket instance
-   * @returns {boolean} True if acquired, false if not an admin or already held
+   * @param {string} holderId - Opaque id of the acquiring holder (e.g. socket.id)
+   * @returns {boolean} True if acquired, false if already held
    */
-  acquireAdminLock(socket) {
-    if (!this.#adminSessionManager.isAdminSocket(socket)) {
-      return false;
-    }
+  acquireAdminLock(holderId) {
     const acquired = this.#adminLock.tryLock();
     if (acquired) {
-      this.#adminLockHolder = socket.id;
+      this.#adminLockHolderId = holderId;
     }
     return acquired;
   }
 
   /**
-   * Releases the admin lock if this socket is the holder.
-   * @param {Object} socket - Socket.IO socket instance
+   * Releases the admin lock if this holder is the one holding it.
+   * @param {string} holderId - Opaque id of the releasing holder
    * @returns {boolean} True if released
    */
-  releaseAdminLock(socket) {
-    if (this.#adminLockHolder !== socket.id) {
+  releaseAdminLock(holderId) {
+    if (this.#adminLockHolderId !== holderId) {
       return false;
     }
     this.#adminLock.unlock();
-    this.#adminLockHolder = null;
+    this.#adminLockHolderId = null;
     return true;
   }
 
   /**
-   * Releases the admin lock if the disconnecting socket was holding it,
+   * Releases the admin lock if the departing holder was holding it,
    * so a dropped admin never leaves the gate stuck closed.
-   * @param {Object} socket - Socket.IO socket instance
+   * @param {string} holderId - Opaque id of the departing holder
    */
-  handleDisconnect(socket) {
-    if (this.#adminLockHolder === socket.id) {
+  handleDisconnect(holderId) {
+    if (this.#adminLockHolderId === holderId) {
       this.#adminLock.unlock();
-      this.#adminLockHolder = null;
+      this.#adminLockHolderId = null;
     }
   }
 

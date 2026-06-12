@@ -42,10 +42,10 @@ export const registerAuthHandlers = (socket, deps) => {
       }
 
       if (locked) {
-        lockCoordinator.acquireAdminLock(socket);
+        lockCoordinator.acquireAdminLock(socket.id);
         log.info('authHandler', socket, 'Admin lock acquired');
       } else {
-        lockCoordinator.releaseAdminLock(socket);
+        lockCoordinator.releaseAdminLock(socket.id);
         log.info('authHandler', socket, 'Admin lock released');
       }
     } catch (error) {

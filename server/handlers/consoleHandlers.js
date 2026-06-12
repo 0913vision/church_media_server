@@ -12,13 +12,14 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerConsoleHandlers = (socket, deps) => {
-  const { lockCoordinator, consoleHandler } = deps;
+  const { lockCoordinator, consoleHandler, adminSessionManager } = deps;
   /**
    * Handle microphone on request
    */
   socket.on(SOCKET_EVENTS.C2S_MIC_ON_EVENT, async () => {
     try {
-      const allowed = await lockCoordinator.withAdminGate(socket, async () => {
+      const isAdmin = adminSessionManager.isAdminSocket(socket);
+      const allowed = await lockCoordinator.withAdminGate(isAdmin, async () => {
         await consoleHandler.enablePastorMic();
       });
 
@@ -36,7 +37,8 @@ export const registerConsoleHandlers = (socket, deps) => {
    */
   socket.on(SOCKET_EVENTS.C2S_AUX_ON_EVENT, async () => {
     try {
-      const allowed = await lockCoordinator.withAdminGate(socket, async () => {
+      const isAdmin = adminSessionManager.isAdminSocket(socket);
+      const allowed = await lockCoordinator.withAdminGate(isAdmin, async () => {
         await consoleHandler.enableAux();
       });
 

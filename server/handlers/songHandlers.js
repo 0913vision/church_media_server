@@ -8,7 +8,7 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerSongHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator } = deps;
+  const { io, player, lockCoordinator, adminSessionManager } = deps;
   /**
    * Handle current song get request
    */
@@ -25,7 +25,8 @@ export const registerSongHandlers = (socket, deps) => {
    */
   socket.on(SOCKET_EVENTS.C2S_CHANGE_SONG_EVENT, async (currentSong, newSong) => {
     try {
-      const lockAcquired = await lockCoordinator.withAudioLock(socket, async () => {
+      const isAdmin = adminSessionManager.isAdminSocket(socket);
+      const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         // Change song (handles pause, switch, volume change internally)
         await player.changeSong(currentSong, newSong);
 

@@ -7,7 +7,7 @@ import { log } from '../utils/logger.js';
  * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
 export const registerStateHandlers = (socket, deps) => {
-  const { io, player, lockCoordinator } = deps;
+  const { io, player, lockCoordinator, adminSessionManager } = deps;
   /**
    * Handle state get request
    */
@@ -39,7 +39,8 @@ export const registerStateHandlers = (socket, deps) => {
     try {
       if (newState === player.getState()) return;
 
-      const lockAcquired = await lockCoordinator.withAudioLock(socket, async () => {
+      const isAdmin = adminSessionManager.isAdminSocket(socket);
+      const lockAcquired = await lockCoordinator.withAudioLock(isAdmin, async () => {
         if (newState === PLAYER_STATE.PLAYING) {
           await player.play();
         } else {

@@ -22,7 +22,7 @@ class MediaServer {
     // Shared singletons (created once, reused across all connections)
     const player = new Player();
     const adminSessionManager = new AdminSessionManager();
-    const lockCoordinator = new LockCoordinator(io, adminSessionManager);
+    const lockCoordinator = new LockCoordinator(io);
     const consoleHandler = new ConsoleHandler();
 
     const deps = { io, player, lockCoordinator, adminSessionManager, consoleHandler };
@@ -37,7 +37,7 @@ class MediaServer {
       registerHandlers(socket, deps);
 
       socket.on('disconnect', (reason) => {
-        lockCoordinator.handleDisconnect(socket);
+        lockCoordinator.handleDisconnect(socket.id);
         log.info('server', socket, 'Socket disconnected', { reason });
       });
     });
