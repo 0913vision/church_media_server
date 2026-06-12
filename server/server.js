@@ -4,14 +4,13 @@ import Player from './player/Player.js';
 import LockCoordinator from './lock/LockCoordinator.js';
 import AdminSessionManager from './auth/AdminSessionManager.js';
 import ConsoleHandler from './console/ConsoleHandler.js';
-import { registerAuthHandlers } from './handlers/authHandlers.js';
-import { registerVolumeHandlers } from './handlers/volumeHandlers.js';
-import { registerStateHandlers } from './handlers/stateHandlers.js';
-import { registerSongHandlers } from './handlers/songHandlers.js';
-import { registerMuteHandlers } from './handlers/muteHandlers.js';
-import { registerConsoleHandlers } from './handlers/consoleHandlers.js';
+import { registerHandlers } from './handlers/index.js';
 import { log } from './utils/logger.js';
 
+/**
+ * Composition root: builds the shared singletons, wires them into a dependency
+ * context, and attaches handler registration to incoming connections.
+ */
 class MediaServer {
   start() {
     log.info('server', null, 'Socket is initializing');
@@ -26,6 +25,8 @@ class MediaServer {
     const lockCoordinator = new LockCoordinator(io, adminSessionManager);
     const consoleHandler = new ConsoleHandler();
 
+    const deps = { io, player, lockCoordinator, adminSessionManager, consoleHandler };
+
     setInterval(() => {
       io.emit(SOCKET_EVENTS.S2C_PING_EVENT);
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
@@ -33,13 +34,7 @@ class MediaServer {
     io.on('connection', (socket) => {
       log.info('server', socket, 'Socket connected', { ip: socket.handshake.address });
 
-      // Register all handlers
-      registerAuthHandlers(socket, adminSessionManager, lockCoordinator);
-      registerVolumeHandlers(socket, io, player, lockCoordinator);
-      registerStateHandlers(socket, io, player, lockCoordinator);
-      registerSongHandlers(socket, io, player, lockCoordinator);
-      registerMuteHandlers(socket, io, player, lockCoordinator);
-      registerConsoleHandlers(socket, lockCoordinator, consoleHandler);
+      registerHandlers(socket, deps);
 
       socket.on('disconnect', (reason) => {
         lockCoordinator.handleDisconnect(socket);

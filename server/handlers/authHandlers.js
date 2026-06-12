@@ -5,10 +5,10 @@ import { log } from '../utils/logger.js';
 /**
  * Registers authentication and admin-lock socket event handlers
  * @param {Object} socket - Socket.IO socket instance
- * @param {AdminSessionManager} adminSessionManager - Admin session manager instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerAuthHandlers = (socket, adminSessionManager, lockCoordinator) => {
+export const registerAuthHandlers = (socket, deps) => {
+  const { adminSessionManager, lockCoordinator } = deps;
   /**
    * Handle admin authentication request
    */

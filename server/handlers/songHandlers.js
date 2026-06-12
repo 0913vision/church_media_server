@@ -5,11 +5,10 @@ import { log } from '../utils/logger.js';
 /**
  * Registers song-related socket event handlers
  * @param {Object} socket - Socket.IO socket instance
- * @param {Object} io - Socket.IO server instance
- * @param {Player} player - Player instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerSongHandlers = (socket, io, player, lockCoordinator) => {
+export const registerSongHandlers = (socket, deps) => {
+  const { io, player, lockCoordinator } = deps;
   /**
    * Handle current song get request
    */

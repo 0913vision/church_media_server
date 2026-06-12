@@ -4,11 +4,10 @@ import { log } from '../utils/logger.js';
 /**
  * Registers mute-related socket event handlers
  * @param {Object} socket - Socket.IO socket instance
- * @param {Object} io - Socket.IO server instance
- * @param {Player} player - Player instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerMuteHandlers = (socket, io, player, lockCoordinator) => {
+export const registerMuteHandlers = (socket, deps) => {
+  const { io, player, lockCoordinator } = deps;
   /**
    * Handle mute status get request
    */

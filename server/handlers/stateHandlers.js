@@ -4,11 +4,10 @@ import { log } from '../utils/logger.js';
 /**
  * Registers state-related socket event handlers (play/pause/lock)
  * @param {Object} socket - Socket.IO socket instance
- * @param {Object} io - Socket.IO server instance
- * @param {Player} player - Player instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerStateHandlers = (socket, io, player, lockCoordinator) => {
+export const registerStateHandlers = (socket, deps) => {
+  const { io, player, lockCoordinator } = deps;
   /**
    * Handle state get request
    */

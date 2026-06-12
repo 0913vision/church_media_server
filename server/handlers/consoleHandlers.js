@@ -9,10 +9,10 @@ import { log } from '../utils/logger.js';
  * lock (handled inside withAdminGate).
  *
  * @param {Object} socket - Socket.IO socket instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
- * @param {ConsoleHandler} consoleHandler - Shared console handler instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerConsoleHandlers = (socket, lockCoordinator, consoleHandler) => {
+export const registerConsoleHandlers = (socket, deps) => {
+  const { lockCoordinator, consoleHandler } = deps;
   /**
    * Handle microphone on request
    */

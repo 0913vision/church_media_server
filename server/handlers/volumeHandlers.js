@@ -4,11 +4,10 @@ import { log } from '../utils/logger.js';
 /**
  * Registers volume-related socket event handlers
  * @param {Object} socket - Socket.IO socket instance
- * @param {Object} io - Socket.IO server instance
- * @param {Player} player - Player instance
- * @param {LockCoordinator} lockCoordinator - Lock coordinator instance
+ * @param {Object} deps - Shared dependencies (see handlers/index.js)
  */
-export const registerVolumeHandlers = (socket, io, player, lockCoordinator) => {
+export const registerVolumeHandlers = (socket, deps) => {
+  const { io, player, lockCoordinator } = deps;
   /**
    * Handle volume get request
    */
