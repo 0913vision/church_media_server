@@ -1,7 +1,7 @@
 import { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
 import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
-import type AudioDevice from '../hardware/AudioDevice.ts';
+import type { AudioOutput } from '../hardware/AudioOutput.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
@@ -12,9 +12,9 @@ class Player {
   private state: PlayerConfig;
 
   /**
-   * @param device - Audio device (injected by the composition root)
+   * @param device - Audio output (injected by the composition root)
    */
-  constructor(private readonly device: AudioDevice) {
+  constructor(private readonly device: AudioOutput) {
     this.state = { ...INITIAL_PLAYER_CONFIG };
     // Initialize hardware with default volume
     this.device.setVolume(this.state.serverVolume);

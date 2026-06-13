@@ -10,6 +10,11 @@ class AdminSessionManager {
    * Adds a socket as admin
    */
   addAdminSocket(socket: ServerSocket): void {
+    // Re-authenticating an already-admin socket must not stack another
+    // disconnect listener.
+    if (this.adminSockets.has(socket)) {
+      return;
+    }
     this.adminSockets.add(socket);
 
     // 연결 끊어지면 자동 제거

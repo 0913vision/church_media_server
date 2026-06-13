@@ -38,17 +38,31 @@ export const registerAuthHandlers = (socket: ServerSocket, deps: HandlerDeps): v
    */
   socket.on(SOCKET_EVENTS.C2S_SET_ADMIN_LOCK_EVENT, (locked: unknown) => {
     try {
+      if (typeof locked !== 'boolean') {
+        log.warn('authHandler', socket, 'Invalid admin lock value, request denied', { locked });
+        return;
+      }
       if (!adminSessionManager.isAdminSocket(socket)) {
         log.warn('authHandler', socket, 'Non-admin attempted to set admin lock');
         return;
       }
 
+      // Log the actual outcome: acquire fails if another admin already holds
+      // the lock, and release is a no-op unless this socket is the holder.
       if (locked) {
-        lockCoordinator.acquireAdminLock(socket.id);
-        log.info('authHandler', socket, 'Admin lock acquired');
+        const acquired = lockCoordinator.acquireAdminLock(socket.id);
+        if (acquired) {
+          log.info('authHandler', socket, 'Admin lock acquired');
+        } else {
+          log.warn('authHandler', socket, 'Admin lock already held, acquire ignored');
+        }
       } else {
-        lockCoordinator.releaseAdminLock(socket.id);
-        log.info('authHandler', socket, 'Admin lock released');
+        const released = lockCoordinator.releaseAdminLock(socket.id);
+        if (released) {
+          log.info('authHandler', socket, 'Admin lock released');
+        } else {
+          log.warn('authHandler', socket, 'Admin lock not held by this socket, release ignored');
+        }
       }
     } catch (error) {
       log.error('authHandler', socket, 'Error setting admin lock', { error: errorMessage(error), locked });

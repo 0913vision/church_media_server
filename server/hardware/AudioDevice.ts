@@ -3,11 +3,12 @@ import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
 import { SongType } from '../constants/playerStates.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
+import type { AudioOutput } from './AudioOutput.ts';
 
 /**
  * High-level device controller that manages audio playback operations
  */
-class AudioDevice {
+class AudioDevice implements AudioOutput {
   private readonly playlist: Record<SongType, string>;
   private readonly currentSongTimes: Record<SongType, number>;
 
@@ -53,15 +54,18 @@ class AudioDevice {
   }
 
   /**
-   * Gets current playback time
+   * Gets current playback time, or null if it can't be read.
+   * Returning null (rather than 0) lets callers keep the previously saved
+   * position instead of clobbering it with a bogus value.
    */
-  private getCurrentSongTime(): number {
+  private getCurrentSongTime(): number | null {
     try {
       const response = this.mpv.getProperty("playback-time");
-      return parseFloat(response ?? '') || 0;
+      const parsed = parseFloat(response ?? '');
+      return Number.isFinite(parsed) ? parsed : null;
     } catch (error) {
       log.error('audioDevice', null, 'Failed to get playback time', { error: errorMessage(error) });
-      return 0;
+      return null;
     }
   }
 
@@ -107,9 +111,11 @@ class AudioDevice {
    * Changes the current song
    */
   changeSong(currentSong: SongType, newSong: SongType): void {
-    // Save current song time
+    // Save current song time — keep the existing saved value if it can't be read
     const currentTime = this.getCurrentSongTime();
-    this.currentSongTimes[currentSong] = currentTime;
+    if (currentTime !== null) {
+      this.currentSongTimes[currentSong] = currentTime;
+    }
 
     // Switch track — file resolved by explicit song mapping
     const nextCommand = ["loadfile", this.playlist[newSong], null];

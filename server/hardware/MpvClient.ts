@@ -74,10 +74,14 @@ class MpvClient {
   }
 
   /**
-   * Sets a property on the MPV player instance
+   * Sets a property on the MPV player instance. libmpv returns a negative
+   * code on failure; surface it instead of failing silently.
    */
   setProperty(property: string, value: string): void {
-    this.api.mpv_set_property_string(this.playerInstance, property, value);
+    const code = this.api.mpv_set_property_string(this.playerInstance, property, value);
+    if (code < 0) {
+      log.warn('mpvClient', null, 'mpv_set_property_string failed', { property, value, code });
+    }
   }
 
   /**
@@ -88,10 +92,14 @@ class MpvClient {
   }
 
   /**
-   * Executes a command on the MPV player instance
+   * Executes a command on the MPV player instance. libmpv returns a negative
+   * code on failure; surface it instead of failing silently.
    */
   executeCommand(command: (string | null)[]): void {
-    this.api.mpv_command(this.playerInstance, command);
+    const code = this.api.mpv_command(this.playerInstance, command);
+    if (code < 0) {
+      log.warn('mpvClient', null, 'mpv_command failed', { command: command.join(' '), code });
+    }
   }
 }
 
