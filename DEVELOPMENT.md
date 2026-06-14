@@ -17,6 +17,7 @@ server.ts  (composition root — builds the object graph by constructor injectio
   │                            hardware/AudioDevice ── hardware/MpvClient (libmpv FFI)
   ├─ console/MixerConsole   mixer service over the ConsoleDevice interface:
   │                            console/X32Console (OSC) | console/MockConsole
+  ├─ state/FileStateStore   persists player preferences (StateStore interface)
   └─ auth/AdminSessionManager
 ```
 
@@ -77,6 +78,16 @@ narrowed by the runtime guards in `server/constants/playerStates.ts`.
 - While muted, volume and song changes keep the device silent and only update
   the remembered level.
 
+## State persistence
+
+Player preferences (volume, mute, song — **not** play/pause) are persisted to
+`STATE_FILE_PATH` via the `StateStore` interface (`FileStateStore` writes a
+small JSON document atomically: temp file + rename). The composition root loads
+them at boot, merges them over the defaults, and **forces `PAUSED`** — so a
+`pm2 restart` / reboot restores the operator's settings but never auto-starts
+audio. `Player` calls the injected persist callback on every preference change.
+The mpv instance is in-process (FFI), so a process death leaves no orphan audio.
+
 ## Testing
 
 `tests/ut/*.test.ts`. `npm test` is self-contained: each test file starts an
@@ -106,6 +117,5 @@ current state rather than assuming globals.
 ## Known limitations / backlog
 
 - Admin auth is a single shared password placeholder (`authConfig.ts` TODO).
-- Shutdown closes connections without fading the audio out.
 - Blocked/invalid requests are logged but the requester gets no ack/error event.
 - CORS is open (`origin: "*"`).

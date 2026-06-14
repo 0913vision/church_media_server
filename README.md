@@ -46,6 +46,7 @@ missing or invalid one (no silent defaults). Copy `.env.example` and adjust.
 | `X32_REMOTE_ADDRESS` | X32 console IP | `192.168.0.3` |
 | `X32_REMOTE_PORT` | X32 OSC port | `10023` |
 | `MPV_LIBRARY_PATH` | libmpv shared library path | `/opt/homebrew/lib/libmpv.dylib` (macOS) · `/lib/arm-linux-gnueabihf/libmpv.so` (Pi) |
+| `STATE_FILE_PATH` | Where player preferences are persisted | `./data/state.json` |
 
 ## Commands
 
