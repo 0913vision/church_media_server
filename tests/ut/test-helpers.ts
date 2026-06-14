@@ -14,6 +14,9 @@ export const TEST_PORT = Number(process.env.PORT ?? '4000');
 export const TEST_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 const TEST_CONSOLE_MODE = process.env.CONSOLE_MODE ?? 'MOCK';
 const TEST_LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
+// X32 config is required at module load even in MOCK mode; supply test values.
+const TEST_X32_REMOTE_ADDRESS = process.env.X32_REMOTE_ADDRESS ?? '127.0.0.1';
+const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -50,6 +53,8 @@ export async function ensureServer(): Promise<void> {
   process.env.CONSOLE_MODE = TEST_CONSOLE_MODE;
   process.env.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD;
   process.env.LOG_LEVEL = TEST_LOG_LEVEL;
+  process.env.X32_REMOTE_ADDRESS = TEST_X32_REMOTE_ADDRESS;
+  process.env.X32_REMOTE_PORT = TEST_X32_REMOTE_PORT;
 
   const { default: MediaServer } = await import('../../server/server.ts');
   const server: StoppableServer = new MediaServer();

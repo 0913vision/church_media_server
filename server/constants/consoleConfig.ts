@@ -1,11 +1,14 @@
+import { requireEnv, requireIntEnv } from '../utils/env.ts';
+
 // X32 Console configuration constants
 export const CONSOLE_CONFIG = {
-  // Network settings
+  // Network settings — the X32's address/port are deployment-specific and come
+  // from required env (validated, fail-fast). Local bind stays a constant.
   NETWORK: {
     LOCAL_ADDRESS: "0.0.0.0",
     LOCAL_PORT: 0,
-    REMOTE_ADDRESS: "192.168.0.3",
-    REMOTE_PORT: 10023
+    REMOTE_ADDRESS: requireEnv('X32_REMOTE_ADDRESS'),
+    REMOTE_PORT: requireIntEnv('X32_REMOTE_PORT')
   },
 
   // OSC command values
