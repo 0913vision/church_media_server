@@ -41,7 +41,7 @@ missing or invalid one (no silent defaults). Copy `.env.example` and adjust.
 |---|---|---|
 | `PORT` | Socket.IO port | `4000` |
 | `CONSOLE_MODE` | `X32` (real console) or `MOCK` (logs only) | `X32` |
-| `ADMIN_PASSWORD` | Admin auth password | `change-me` |
+| `ADMIN_PASSWORD_HASH` | scrypt hash of the admin password (`npm run hash-password`) | `scrypt$16384$8$1$…` |
 | `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` | `info` |
 | `X32_REMOTE_ADDRESS` | X32 console IP | `192.168.0.3` |
 | `X32_REMOTE_PORT` | X32 OSC port | `10023` |
@@ -58,6 +58,7 @@ missing or invalid one (no silent defaults). Copy `.env.example` and adjust.
 | `npm run typecheck` | Type-check only (no emit) |
 | `npm test` | Build, then run the test suite from `dist/` |
 | `npm run test:watch` | Re-run tests from `dist/` on change |
+| `npm run hash-password -- '<pw>'` | Print an `ADMIN_PASSWORD_HASH` value |
 
 ## Production (PM2)
 
@@ -85,6 +86,7 @@ pm2 startup    # run the printed command once → auto-start on boot
   the Pi); `MPV_LIBRARY_PATH` points at it.
 - Use **`CONSOLE_MODE=MOCK`** to develop without an X32 (mixer actions are just
   logged).
-- `ADMIN_PASSWORD` is a **single shared placeholder password** — replace it
-  with a real auth system before any untrusted deployment.
+- The admin password is stored as a **salted scrypt hash** (`ADMIN_PASSWORD_HASH`),
+  never plaintext — generate it with `npm run hash-password -- 'your-password'`.
+  It is still a single shared credential (a per-user admin page is planned).
 - Clients connect on the **default Socket.IO path `/`** (not `/api/socket`).

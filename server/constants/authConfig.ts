@@ -1,7 +1,8 @@
 import { requireEnv } from '../utils/env.ts';
 
-// Admin authentication configuration
+// Admin authentication configuration.
+// The password is stored as a salted scrypt hash (see server/auth/password.ts),
+// never in plaintext. Generate one with `npm run hash-password`.
 export const ADMIN_CONFIG = {
-  // TODO: 나중에 실제 인증 시스템으로 교체
-  ADMIN_PASSWORD: requireEnv('ADMIN_PASSWORD')
+  ADMIN_PASSWORD_HASH: requireEnv('ADMIN_PASSWORD_HASH')
 } as const;

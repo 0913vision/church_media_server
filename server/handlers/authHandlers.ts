@@ -1,6 +1,7 @@
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import { ADMIN_CONFIG } from '../constants/authConfig.ts';
+import { verifyPassword } from '../auth/password.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { HandlerDeps } from './index.ts';
@@ -16,7 +17,7 @@ export const registerAuthHandlers = (socket: ServerSocket, deps: HandlerDeps): v
    */
   socket.on(SOCKET_EVENTS.C2S_AUTHENTICATE_ADMIN_EVENT, (password: unknown) => {
     try {
-      if (password === ADMIN_CONFIG.ADMIN_PASSWORD) {
+      if (typeof password === 'string' && verifyPassword(password, ADMIN_CONFIG.ADMIN_PASSWORD_HASH)) {
         adminSessionManager.addAdminSocket(socket);
         notifier.adminAuthenticated(socket, true);
         log.info('authHandler', socket, 'Socket authenticated as admin');

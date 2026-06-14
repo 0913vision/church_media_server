@@ -116,6 +116,7 @@ current state rather than assuming globals.
 
 ## Known limitations / backlog
 
-- Admin auth is a single shared password placeholder (`authConfig.ts` TODO).
+- Admin auth is a single shared password, stored as a salted scrypt hash
+  (`server/auth/password.ts`); a per-user admin page is planned.
 - Blocked/invalid requests are logged but the requester gets no ack/error event.
 - CORS is open (`origin: "*"`).

@@ -8,6 +8,7 @@
     "build": "npm run clean && tsc",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
+    "hash-password": "npm run build && node dist/scripts/hash-password.js",
     "start": "npm run build && node dist/main.js",
     "test": "npm run build && node --test --test-concurrency=1 dist/tests/ut/*.test.js",
     "test:watch": "node --test --watch --test-concurrency=1 dist/tests/ut/*.test.js"

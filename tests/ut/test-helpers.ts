@@ -4,6 +4,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { hashPassword } from '../../server/auth/password.ts';
 
 // Note(yoochan.kim): the test client Socket stays UNTYPED (no protocol event
 // maps) on purpose — rejection tests must be able to emit invalid payloads
@@ -58,7 +59,8 @@ export async function ensureServer(): Promise<void> {
   // before the server module graph is loaded.
   process.env.PORT = String(TEST_PORT);
   process.env.CONSOLE_MODE = TEST_CONSOLE_MODE;
-  process.env.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD;
+  // The server stores only a hash; auth tests send the matching plaintext.
+  process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH ?? hashPassword(TEST_ADMIN_PASSWORD);
   process.env.LOG_LEVEL = TEST_LOG_LEVEL;
   process.env.X32_REMOTE_ADDRESS = TEST_X32_REMOTE_ADDRESS;
   process.env.X32_REMOTE_PORT = TEST_X32_REMOTE_PORT;
