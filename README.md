@@ -58,8 +58,26 @@ missing or invalid one (no silent defaults). Copy `.env.example` and adjust.
 | `npm test` | Build, then run the test suite from `dist/` |
 | `npm run test:watch` | Re-run tests from `dist/` on change |
 
+## Production (PM2)
+
+On the Pi, PM2 runs the built server and restarts it on crash or reboot:
+
+```bash
+npm ci
+npm run build
+pm2 start ecosystem.config.cjs
+pm2 save       # remember the running process
+pm2 startup    # run the printed command once → auto-start on boot
+```
+
+`pm2 stop` / `pm2 restart` trigger a graceful shutdown;
+`pm2 logs church-media-server` tails output.
+
 ## Notes
 
+- **Preferences persist across restarts and reboots** (volume, mute, song — in
+  `STATE_FILE_PATH`), but the server **always boots paused**: a reboot never
+  auto-starts audio.
 - **Audio files are gitignored** — provide your own `music_slow.mp3` /
   `music_fast.mp3` under `assets/audio/`.
 - **`libmpv` must match the Node process architecture** (e.g. arm libmpv for
