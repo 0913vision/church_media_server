@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.ts';
 import type { ClientToServerEvents, ServerToClientEvents } from './constants/socketConfig.ts';
 import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
+import { INITIAL_PLAYER_CONFIG } from './constants/playerConfig.ts';
 import Player from './player/Player.ts';
 import MpvClient from './hardware/MpvClient.ts';
 import AudioDevice from './hardware/AudioDevice.ts';
@@ -39,7 +40,7 @@ class MediaServer {
     // Shared singletons (created once, reused across all connections).
     // Only the Notifier touches io directly; everything else speaks domain.
     const notifier = new Notifier(io);
-    const player = new Player(new AudioDevice(new MpvClient()));
+    const player = new Player(new AudioDevice(new MpvClient(), INITIAL_PLAYER_CONFIG.currentSong));
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
     const consoleDevice: ConsoleDevice =

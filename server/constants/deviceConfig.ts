@@ -38,5 +38,11 @@ export const DEVICE_CONFIG = {
   PROPERTY_SET_RETRY_DELAY_MS: 50,
   // Seek verification: playback-time read-back may differ from the requested
   // position by a frame/block, so compare within a tolerance instead of exact
-  PLAYBACK_TIME_TOLERANCE_SEC: 0.5
+  PLAYBACK_TIME_TOLERANCE_SEC: 0.5,
+
+  // Play/pause volume fade: FADE_STEPS+1 steps, FADE_STEP_MS apart
+  // (≈ (FADE_STEPS+1) * FADE_STEP_MS total), following a quarter sine/cosine
+  // curve for an equal-power transition
+  FADE_STEPS: 30,
+  FADE_STEP_MS: 100
 } as const;

@@ -14,17 +14,17 @@ class AudioDevice implements AudioOutput {
 
   /**
    * @param mpv - Low-level MPV client (injected by the composition root)
+   * @param initialSong - Song to load on startup (the player's initial current
+   *   song, injected so this layer isn't coupled to player defaults)
    */
-  constructor(private readonly mpv: MpvClient) {
+  constructor(private readonly mpv: MpvClient, private readonly initialSong: SongType) {
     this.playlist = { ...DEVICE_CONFIG.PLAYLIST };
     this.currentSongTimes = { ...DEVICE_CONFIG.INITIAL_SONG_TIMES };
     this.initialize();
   }
 
   /**
-   * Initializes the device with default settings.
-   * Loads the slow song first — it is the initial current song
-   * (INITIAL_PLAYER_CONFIG.currentSong).
+   * Initializes the device with default settings and loads the initial song.
    */
   private initialize(): void {
     try {
@@ -34,9 +34,9 @@ class AudioDevice implements AudioOutput {
     }
 
     try {
-      this.mpv.executeCommand(["loadfile", this.playlist[SongType.SLOW], null]);
+      this.mpv.executeCommand(["loadfile", this.playlist[this.initialSong], null]);
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[SongType.SLOW], error: errorMessage(error) });
+      log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[this.initialSong], error: errorMessage(error) });
     }
 
     try {
@@ -74,11 +74,12 @@ class AudioDevice implements AudioOutput {
    */
   async pause(): Promise<void> {
     const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
-    for (let i = 0; i <= 30; ++i) {
-      const t = i / 30;
+    const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
+    for (let i = 0; i <= FADE_STEPS; ++i) {
+      const t = i / FADE_STEPS;
       const volume = currentVolume * Math.cos((Math.PI / 2) * t);
       this.mpv.setProperty("volume", volume.toString());
-      await this.delay(100);
+      await this.delay(FADE_STEP_MS);
     }
     this.mpv.setProperty("pause", "yes");
     this.mpv.setProperty("volume", currentVolume.toString());
@@ -91,11 +92,12 @@ class AudioDevice implements AudioOutput {
     const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
     this.mpv.setProperty("volume", "0");
     this.mpv.setProperty("pause", "no");
-    for (let i = 0; i <= 30; ++i) {
-      const t = i / 30;
+    const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
+    for (let i = 0; i <= FADE_STEPS; ++i) {
+      const t = i / FADE_STEPS;
       const volume = currentVolume * Math.sin((Math.PI / 2) * t);
       this.mpv.setProperty("volume", volume.toString());
-      await this.delay(100);
+      await this.delay(FADE_STEP_MS);
     }
   }
 
