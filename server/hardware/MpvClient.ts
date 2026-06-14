@@ -40,7 +40,7 @@ class MpvClient {
    */
   private initializeFFI(): void {
     const StringArray = array('string');
-    const libmpvPath = DEVICE_CONFIG.MPV_LIBRARY_PATH[DEVICE_CONFIG.CURRENT_PLATFORM];
+    const libmpvPath = DEVICE_CONFIG.MPV_LIBRARY_PATH;
 
     try {
       this.api = ffi.Library(libmpvPath, {

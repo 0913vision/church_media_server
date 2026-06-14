@@ -1,22 +1,14 @@
 import { SongType } from './playerStates.ts';
-import { requireEnvOneOf } from '../utils/env.ts';
+import { requireEnv, requireEnvOneOf } from '../utils/env.ts';
 
 /** Which mixing-console backend to drive */
 export type ConsoleMode = 'X32' | 'MOCK';
 const CONSOLE_MODES: readonly ConsoleMode[] = ['X32', 'MOCK'];
 
-// Device hardware configuration
-const CURRENT_PLATFORM = process.platform === 'darwin' ? 'MAC' : 'RASPBERRY_PI';
-
 export const DEVICE_CONFIG = {
-  // MPV library paths for different platforms
-  MPV_LIBRARY_PATH: {
-    MAC: '/opt/homebrew/lib/libmpv.dylib',
-    RASPBERRY_PI: '/lib/arm-linux-gnueabihf/libmpv.so'
-  },
-
-  // Current platform
-  CURRENT_PLATFORM,
+  // libmpv shared-library path — platform-specific, so it comes from required
+  // env (validated, fail-fast) rather than guessing from process.platform
+  MPV_LIBRARY_PATH: requireEnv('MPV_LIBRARY_PATH'),
 
   // Audio file per song — explicit mapping, no positional index coupling
   PLAYLIST: {

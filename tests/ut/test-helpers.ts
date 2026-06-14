@@ -17,6 +17,8 @@ const TEST_LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
 // X32 config is required at module load even in MOCK mode; supply test values.
 const TEST_X32_REMOTE_ADDRESS = process.env.X32_REMOTE_ADDRESS ?? '127.0.0.1';
 const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
+// libmpv path is required at module load (real mpv boots even in MOCK mode).
+const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -55,6 +57,7 @@ export async function ensureServer(): Promise<void> {
   process.env.LOG_LEVEL = TEST_LOG_LEVEL;
   process.env.X32_REMOTE_ADDRESS = TEST_X32_REMOTE_ADDRESS;
   process.env.X32_REMOTE_PORT = TEST_X32_REMOTE_PORT;
+  process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
 
   const { default: MediaServer } = await import('../../server/server.ts');
   const server: StoppableServer = new MediaServer();
