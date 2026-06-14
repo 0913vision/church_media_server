@@ -4,18 +4,19 @@
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && node dist/main.js",
-    "test": "npm run build && node --test --test-concurrency=1 dist/tests/ut/*.test.js"
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/ut/*.test.js",
+    "test:watch": "node --test --watch --test-concurrency=1 dist/tests/ut/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
     "ffi-napi": "^4.0.3",
     "osc": "^2.4.5",
     "ref-array-napi": "^1.2.2",
-    "ref-napi": "^3.0.3",
-    "ref-struct-di": "^1.1.1",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.8.1"
   },
