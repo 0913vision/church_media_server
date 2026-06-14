@@ -24,13 +24,12 @@ export interface LockState {
  * the audio lock gates *concurrent mutation of the audio resource*.
  *
  * This layer knows nothing about sockets or sessions: callers resolve identity
- * themselves and pass `isAdmin` booleans / opaque holder ids, and lock state
- * changes are announced through the injected notifier.
+ * themselves and pass `isAdmin` booleans, and lock state changes are announced
+ * through the injected notifier.
  */
 class LockCoordinator {
   private readonly audioLock: Lock;
   private readonly adminLock: Lock;
-  private adminLockHolderId: string | null = null; // opaque id of the current admin lock holder
 
   /**
    * @param notifier - Announces each lock's state changes
@@ -78,43 +77,18 @@ class LockCoordinator {
   }
 
   /**
-   * Acquires the admin lock for a holder (explicit toggle). The caller is
-   * responsible for verifying the requester is an authenticated admin.
-   * In-flight operations are unaffected; only new submissions are gated.
-   * @param holderId - Opaque id of the acquiring holder (e.g. socket.id)
-   * @returns True if acquired, false if already held
+   * Sets the global admin lock on or off. The admin lock is server-global
+   * state: any authenticated admin may toggle it (the caller verifies admin
+   * identity), the new value is broadcast to everyone, and it persists until an
+   * admin turns it off — a setter disconnecting does NOT clear it. Idempotent:
+   * the notifier only broadcasts on an actual on/off transition.
+   * @param locked - true to engage the gate, false to release it
    */
-  acquireAdminLock(holderId: string): boolean {
-    const acquired = this.adminLock.tryLock();
-    if (acquired) {
-      this.adminLockHolderId = holderId;
-    }
-    return acquired;
-  }
-
-  /**
-   * Releases the admin lock if this holder is the one holding it.
-   * @param holderId - Opaque id of the releasing holder
-   * @returns True if released
-   */
-  releaseAdminLock(holderId: string): boolean {
-    if (this.adminLockHolderId !== holderId) {
-      return false;
-    }
-    this.adminLock.unlock();
-    this.adminLockHolderId = null;
-    return true;
-  }
-
-  /**
-   * Releases the admin lock if the departing holder was holding it,
-   * so a dropped admin never leaves the gate stuck closed.
-   * @param holderId - Opaque id of the departing holder
-   */
-  handleDisconnect(holderId: string): void {
-    if (this.adminLockHolderId === holderId) {
+  setAdminLock(locked: boolean): void {
+    if (locked) {
+      this.adminLock.tryLock();
+    } else {
       this.adminLock.unlock();
-      this.adminLockHolderId = null;
     }
   }
 

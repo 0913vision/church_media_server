@@ -77,7 +77,8 @@ class MediaServer {
       registerHandlers(socket, deps);
 
       socket.on('disconnect', (reason) => {
-        lockCoordinator.handleDisconnect(socket.id);
+        // The admin lock is global state and intentionally persists past a
+        // disconnect; only the admin session is dropped (by AdminSessionManager).
         log.info('server', socket, 'Socket disconnected', { reason });
       });
     });

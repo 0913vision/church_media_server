@@ -3,7 +3,21 @@ import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
 
 before(() => ensureServer());
-after(() => stopServer());
+
+// The admin lock is global state that persists across disconnects, so clear it
+// after this file — otherwise a leftover lock would block change ops in other
+// test files sharing the server.
+after(async () => {
+  try {
+    const admin = await connectAuthedAdmin();
+    admin.socket!.emit('setAdminLock', false);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    admin.disconnect();
+  } catch {
+    // best effort
+  }
+  await stopServer();
+});
 
 interface AuthResult {
   success: boolean;
@@ -62,7 +76,7 @@ describe('Admin Lock Tests', () => {
     }
   });
 
-  test('admin can still operate while holding the lock', async () => {
+  test('admin can still operate while the lock is on', async () => {
     const admin = await connectAuthedAdmin();
 
     try {
@@ -90,25 +104,35 @@ describe('Admin Lock Tests', () => {
     }
   });
 
-  test('admin lock auto-releases when the holder disconnects', async () => {
-    const admin = await connectAuthedAdmin();
+  test('the admin lock is global: it persists past the setter and any admin can release it', async () => {
+    const adminA = await connectAuthedAdmin();
     const observer = new SocketTestHelper();
+    await observer.connect();
+    let adminB: SocketTestHelper | null = null;
 
     try {
-      await observer.connect();
-
-      admin.socket!.emit('setAdminLock', true);
-      assert.strictEqual(await admin.waitFor<boolean>('adminLockChanged'), true);
-      // Drain the acquire (true) broadcast on the observer first, so the next
-      // adminLockChanged it sees is unambiguously the auto-release.
+      // A turns the lock on — everyone (incl. the observer) sees it
+      adminA.socket!.emit('setAdminLock', true);
+      assert.strictEqual(await adminA.waitFor<boolean>('adminLockChanged'), true);
       assert.strictEqual(await observer.waitFor<boolean>('adminLockChanged'), true);
 
-      // Holder drops -> server must auto-release and broadcast false
-      const releaseSeen = observer.waitFor<boolean>('adminLockChanged');
-      admin.disconnect();
-      assert.strictEqual(await releaseSeen, false);
+      // The setter disconnects — the global lock must persist (no auto-release)
+      adminA.disconnect();
+      assert.strictEqual(
+        await observer.emitAndWaitFor<boolean>('getLock', 'adminLockChanged'),
+        true,
+        'lock persists after the setting admin disconnects'
+      );
+
+      // A DIFFERENT admin can release it — broadcast false to everyone
+      adminB = await connectAuthedAdmin();
+      const released = observer.waitFor<boolean>('adminLockChanged');
+      adminB.socket!.emit('setAdminLock', false);
+      assert.strictEqual(await released, false, 'any admin can release the global lock');
     } finally {
+      adminA.disconnect();
       observer.disconnect();
+      if (adminB) adminB.disconnect();
     }
   });
 });

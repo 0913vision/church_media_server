@@ -32,10 +32,10 @@ export const registerAuthHandlers = (socket: ServerSocket, deps: HandlerDeps): v
   });
 
   /**
-   * Handle admin lock toggle (explicit acquire/release by an authenticated admin).
-   * Acquiring blocks all other users from submitting new operations; in-flight
-   * operations are unaffected. Broadcasts on its own (admin) lock event.
-   * @param locked - true to acquire, false to release
+   * Handle admin lock toggle. The admin lock is global server state that blocks
+   * all non-admin submissions while on; any authenticated admin may turn it on
+   * or off, and the new value is broadcast to everyone.
+   * @param locked - true to engage the gate, false to release it
    */
   socket.on(SOCKET_EVENTS.C2S_SET_ADMIN_LOCK_EVENT, (locked: unknown) => {
     try {
@@ -48,23 +48,8 @@ export const registerAuthHandlers = (socket: ServerSocket, deps: HandlerDeps): v
         return;
       }
 
-      // Log the actual outcome: acquire fails if another admin already holds
-      // the lock, and release is a no-op unless this socket is the holder.
-      if (locked) {
-        const acquired = lockCoordinator.acquireAdminLock(socket.id);
-        if (acquired) {
-          log.info('authHandler', socket, 'Admin lock acquired');
-        } else {
-          log.warn('authHandler', socket, 'Admin lock already held, acquire ignored');
-        }
-      } else {
-        const released = lockCoordinator.releaseAdminLock(socket.id);
-        if (released) {
-          log.info('authHandler', socket, 'Admin lock released');
-        } else {
-          log.warn('authHandler', socket, 'Admin lock not held by this socket, release ignored');
-        }
-      }
+      lockCoordinator.setAdminLock(locked);
+      log.info('authHandler', socket, 'Admin lock set', { locked });
     } catch (error) {
       log.error('authHandler', socket, 'Error setting admin lock', { error: errorMessage(error), locked });
     }
