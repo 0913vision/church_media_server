@@ -1,6 +1,9 @@
 import { io } from 'socket.io-client';
 import type { Socket, ManagerOptions, SocketOptions } from 'socket.io-client';
 import net from 'node:net';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // Note(yoochan.kim): the test client Socket stays UNTYPED (no protocol event
 // maps) on purpose — rejection tests must be able to emit invalid payloads
@@ -19,6 +22,8 @@ const TEST_X32_REMOTE_ADDRESS = process.env.X32_REMOTE_ADDRESS ?? '127.0.0.1';
 const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
 // libmpv path is required at module load (real mpv boots even in MOCK mode).
 const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
+// Isolate persisted state to a temp file so tests never read/write the real one.
+const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -58,6 +63,9 @@ export async function ensureServer(): Promise<void> {
   process.env.X32_REMOTE_ADDRESS = TEST_X32_REMOTE_ADDRESS;
   process.env.X32_REMOTE_PORT = TEST_X32_REMOTE_PORT;
   process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
+  process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
+  // Start from a clean slate so boot uses INITIAL defaults, not a prior run.
+  fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
 
   const { default: MediaServer } = await import('../../server/server.ts');
   const server: StoppableServer = new MediaServer();

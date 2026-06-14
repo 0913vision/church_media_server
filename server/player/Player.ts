@@ -1,7 +1,8 @@
 import { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
-import { INITIAL_PLAYER_CONFIG, DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
+import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
+import type { PersistedState } from '../state/StateStore.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
@@ -13,11 +14,28 @@ class Player {
 
   /**
    * @param device - Audio output (injected by the composition root)
+   * @param initialConfig - Starting state (defaults, or restored preferences
+   *   with state forced to PAUSED by the composition root)
+   * @param persist - Called with the preferences snapshot whenever they change,
+   *   so they survive a restart / reboot
    */
-  constructor(private readonly device: AudioOutput) {
-    this.state = { ...INITIAL_PLAYER_CONFIG };
-    // Initialize hardware with default volume
-    this.device.setVolume(this.state.serverVolume);
+  constructor(
+    private readonly device: AudioOutput,
+    initialConfig: PlayerConfig,
+    private readonly persist: (state: PersistedState) => void
+  ) {
+    this.state = { ...initialConfig };
+    // Initialize hardware with the starting volume (silent if muted)
+    this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
+  }
+
+  /** Snapshot of the persisted preferences (no play/pause state) */
+  private snapshot(): PersistedState {
+    return {
+      serverVolume: this.state.serverVolume,
+      muted: this.state.muted,
+      currentSong: this.state.currentSong
+    };
   }
 
   // Volume methods
@@ -37,6 +55,7 @@ class Player {
   setVolume(volume: number): void {
     this.state.serverVolume = volume;
     this.device.setVolume(this.isMuted() ? 0 : volume);
+    this.persist(this.snapshot());
   }
 
   // State methods
@@ -91,6 +110,7 @@ class Player {
     } else {
       this.device.setVolume(this.state.serverVolume);
     }
+    this.persist(this.snapshot());
   }
 
   // Song methods
@@ -140,6 +160,7 @@ class Player {
     this.state.currentSong = newSong;
     this.state.state = PlayerState.PAUSED;
     this.state.serverVolume = newVolume;
+    this.persist(this.snapshot());
 
     try {
       await this.device.loadLastSongTime(newSong);

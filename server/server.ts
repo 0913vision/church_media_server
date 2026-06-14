@@ -3,6 +3,8 @@ import { SOCKET_CONFIG } from './constants/socketConfig.ts';
 import type { ClientToServerEvents, ServerToClientEvents } from './constants/socketConfig.ts';
 import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
 import { INITIAL_PLAYER_CONFIG } from './constants/playerConfig.ts';
+import type { PlayerConfig } from './constants/playerConfig.ts';
+import { PlayerState } from './constants/playerStates.ts';
 import Player from './player/Player.ts';
 import MpvClient from './hardware/MpvClient.ts';
 import AudioDevice from './hardware/AudioDevice.ts';
@@ -13,8 +15,10 @@ import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
+import FileStateStore from './state/FileStateStore.ts';
 import { registerHandlers } from './handlers/index.ts';
 import type { HandlerDeps } from './handlers/index.ts';
+import { requireEnv } from './utils/env.ts';
 import { log } from './utils/logger.ts';
 
 /**
@@ -40,7 +44,21 @@ class MediaServer {
     // Shared singletons (created once, reused across all connections).
     // Only the Notifier touches io directly; everything else speaks domain.
     const notifier = new Notifier(io);
-    const player = new Player(new AudioDevice(new MpvClient(), INITIAL_PLAYER_CONFIG.currentSong));
+
+    // Restore persisted preferences (volume / mute / song) across restarts and
+    // reboots, but always boot PAUSED — a reboot must never auto-start audio.
+    const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
+    const initialConfig: PlayerConfig = {
+      ...INITIAL_PLAYER_CONFIG,
+      ...(stateStore.load() ?? {}),
+      state: PlayerState.PAUSED
+    };
+    const player = new Player(
+      new AudioDevice(new MpvClient(), initialConfig.currentSong),
+      initialConfig,
+      (snapshot) => stateStore.save(snapshot)
+    );
+
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
     const consoleDevice: ConsoleDevice =

@@ -1,12 +1,15 @@
 import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SongType, MuteState } from '../../server/constants/playerStates.ts';
+import { SongType, MuteState, PlayerState } from '../../server/constants/playerStates.ts';
+import { INITIAL_PLAYER_CONFIG } from '../../server/constants/playerConfig.ts';
+import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
+import type { PersistedState } from '../../server/state/StateStore.ts';
 
 // Pure unit tests: no server, no socket, no real MPV. A fake AudioOutput is
-// injected so the Player's mute / volume-memory / song-switch logic can be
-// asserted directly — this covers the "stay silent while muted" behavior that
-// is invisible at the socket level (the console never reports device volume).
+// injected so the Player's mute / volume-memory / song-switch logic, and its
+// persistence + restore behavior, can be asserted directly — behavior that is
+// invisible at the socket level (the console never reports device volume).
 
 /** Records every volume the Player pushes to the output. */
 class FakeAudioOutput implements AudioOutput {
@@ -35,10 +38,17 @@ before(async () => {
   Player = (await import('../../server/player/Player.ts')).default;
 });
 
+/** Builds a Player with a fresh fake device and a recording persist spy. */
+function makePlayer(initial: PlayerConfig = INITIAL_PLAYER_CONFIG) {
+  const device = new FakeAudioOutput();
+  const saved: PersistedState[] = [];
+  const player = new Player(device, { ...initial }, (s) => saved.push(s));
+  return { device, saved, player };
+}
+
 describe('Player muted behavior (unit)', () => {
   test('volume change while muted stays silent but remembers the level', () => {
-    const device = new FakeAudioOutput();
-    const player = new Player(device);
+    const { device, player } = makePlayer();
     assert.strictEqual(device.lastVolume, 50, 'constructor applies initial volume');
 
     player.setMute(MuteState.MUTED);
@@ -53,8 +63,7 @@ describe('Player muted behavior (unit)', () => {
   });
 
   test('song change while muted keeps the device silent', async () => {
-    const device = new FakeAudioOutput();
-    const player = new Player(device);
+    const { device, player } = makePlayer();
     player.setMute(MuteState.MUTED);
 
     await player.changeSong(SongType.FAST);
@@ -65,12 +74,41 @@ describe('Player muted behavior (unit)', () => {
   });
 
   test('song change while unmuted applies the new song default volume', async () => {
-    const device = new FakeAudioOutput();
-    const player = new Player(device);
+    const { device, player } = makePlayer();
 
     await player.changeSong(SongType.FAST);
 
     assert.strictEqual(player.getCurrentSong(), SongType.FAST);
     assert.strictEqual(device.lastVolume, 35);
+  });
+});
+
+describe('Player persistence (unit)', () => {
+  test('persists preferences on volume, mute, and song changes', async () => {
+    const { saved, player } = makePlayer();
+
+    player.setVolume(42);
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.UNMUTED, currentSong: SongType.SLOW });
+
+    player.setMute(MuteState.MUTED);
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.MUTED, currentSong: SongType.SLOW });
+
+    await player.changeSong(SongType.FAST);
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 35, muted: MuteState.MUTED, currentSong: SongType.FAST });
+  });
+
+  test('restores persisted preferences but boots silent when muted', () => {
+    const restored: PlayerConfig = {
+      serverVolume: 70,
+      muted: MuteState.MUTED,
+      currentSong: SongType.FAST,
+      state: PlayerState.PAUSED
+    };
+    const { device, player } = makePlayer(restored);
+
+    assert.strictEqual(player.getVolume(), 70);
+    assert.strictEqual(player.getCurrentSong(), SongType.FAST);
+    assert.strictEqual(player.isMuted(), true);
+    assert.strictEqual(device.lastVolume, 0, 'a muted restore must boot the device silent');
   });
 });
