@@ -35,10 +35,11 @@ Two independent, orthogonal locks, each broadcast on its own event:
   the audio device is mid-transition (play / pause / song change). It protects
   the non-atomic fade; a contending audio request is rejected. The console
   takes no resource lock.
-- **Admin lock** (`adminLockChanged`) — a global gate an authenticated admin
-  toggles (`setAdminLock`). While held, no other user may *start* a new
-  operation; in-flight operations finish independently. Auto-released when the
-  holding admin disconnects.
+- **Admin lock** (`adminLockChanged`) — a single global gate. While on, no
+  other user may *start* a new operation (in-flight operations finish
+  independently). **Any** authenticated admin can toggle it (`setAdminLock`),
+  and it is global state that persists across disconnects — it stays on until
+  an admin turns it off, or the server restarts (it is not persisted to disk).
 
 The admin lock gates *who may start an operation*; the audio lock gates
 *concurrent mutation of the audio resource*. They never wait on each other.
