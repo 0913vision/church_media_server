@@ -11,6 +11,10 @@ export interface AudioOutput {
   setVolume(volume: number): void;
   resume(): Promise<void>;
   pause(): Promise<void>;
-  changeSong(currentSong: SongType, newSong: SongType): void;
+  /** Saves the song's live playback position into its time memory */
+  captureSongTime(song: SongType): void;
+  /** Loads a song file onto the looping two-song deck (no position save) */
+  loadSong(song: SongType): void;
   loadLastSongTime(song: SongType): Promise<void>;
+  playFileAt(filePath: string, offsetSec: number): Promise<void>;
 }

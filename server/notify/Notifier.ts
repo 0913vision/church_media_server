@@ -2,6 +2,7 @@ import type { Server } from 'socket.io';
 import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
 import type { ClientToServerEvents, ServerToClientEvents, ServerSocket } from '../constants/socketConfig.ts';
 import type { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
+import type { TrackInfo } from '../tracks/TrackLibrary.ts';
 
 /** Socket.IO server parameterized with this project's protocol maps */
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -57,6 +58,17 @@ class Notifier {
 
   adminLockChanged(locked: boolean, socket?: ServerSocket): void {
     this.emit(socket, SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, locked);
+  }
+
+  /**
+   * Track library listing — always a single-recipient reply.
+   */
+  tracksChanged(socket: ServerSocket, tracks: TrackInfo[]): void {
+    socket.emit(SOCKET_EVENTS.S2C_TRACKS_CHANGED_EVENT, tracks);
+  }
+
+  trackChanged(trackId: string, socket?: ServerSocket): void {
+    this.emit(socket, SOCKET_EVENTS.S2C_TRACK_CHANGED_EVENT, trackId);
   }
 
   /**

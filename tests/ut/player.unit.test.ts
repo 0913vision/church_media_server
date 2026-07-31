@@ -20,8 +20,10 @@ class FakeAudioOutput implements AudioOutput {
   }
   async resume(): Promise<void> {}
   async pause(): Promise<void> {}
-  changeSong(): void {}
+  captureSongTime(): void {}
+  loadSong(): void {}
   async loadLastSongTime(): Promise<void> {}
+  async playFileAt(): Promise<void> {}
 
   get lastVolume(): number | undefined {
     return this.volumeCalls.at(-1);

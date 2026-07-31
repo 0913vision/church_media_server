@@ -25,6 +25,8 @@ const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
 const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
 // Isolate persisted state to a temp file so tests never read/write the real one.
 const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
+// Track library manifest (repo asset; tests only list tracks, never play them).
+const TEST_TRACKS_MANIFEST_PATH = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -66,6 +68,7 @@ export async function ensureServer(): Promise<void> {
   process.env.X32_REMOTE_PORT = TEST_X32_REMOTE_PORT;
   process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
   process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
+  process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
   // Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
 

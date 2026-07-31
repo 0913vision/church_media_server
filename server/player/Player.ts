@@ -11,6 +11,8 @@ import { errorMessage } from '../utils/errors.ts';
  */
 class Player {
   private state: PlayerConfig;
+  /** True while a scheduled library track occupies the deck (not a song) */
+  private trackMode = false;
 
   /**
    * @param device - Audio output (injected by the composition root)
@@ -142,7 +144,13 @@ class Player {
     }
 
     try {
-      this.device.changeSong(currentSong, newSong);
+      // While a scheduled track occupies the deck, the live position belongs
+      // to the track — saving it would corrupt the song's time memory.
+      if (!this.trackMode) {
+        this.device.captureSongTime(currentSong);
+      }
+      this.trackMode = false;
+      this.device.loadSong(newSong);
     } catch (error) {
       log.error('player', null, 'Failed to change song', { currentSong, newSong, error: errorMessage(error) });
       throw error;
@@ -168,6 +176,47 @@ class Player {
       log.error('player', null, 'Failed to load last song time', { newSong, error: errorMessage(error) });
       throw error;
     }
+  }
+
+  /**
+   * Plays a library track from an offset (scheduled flows). The current
+   * song's position is captured once when the deck is first taken over, so
+   * restoreSong() can return exactly where the user left off.
+   */
+  async playTrackAt(filePath: string, offsetSec: number): Promise<void> {
+    try {
+      if (!this.trackMode) {
+        this.device.captureSongTime(this.state.currentSong);
+        this.trackMode = true;
+      }
+      await this.device.playFileAt(filePath, offsetSec);
+    } catch (error) {
+      log.error('player', null, 'Failed to play track', { filePath, offsetSec, error: errorMessage(error) });
+      throw error;
+    }
+    this.state.state = PlayerState.PLAYING;
+  }
+
+  /**
+   * Returns the deck to the two-song system after a scheduled flow: fades out
+   * if sounding, reloads the current song at its remembered position, paused.
+   * No-op when no track has taken the deck.
+   */
+  async restoreSong(): Promise<void> {
+    if (!this.trackMode) return;
+
+    try {
+      if (this.isPlaying()) {
+        await this.device.pause();
+      }
+      this.device.loadSong(this.state.currentSong);
+      await this.device.loadLastSongTime(this.state.currentSong);
+    } catch (error) {
+      log.error('player', null, 'Failed to restore song after track playback', { error: errorMessage(error) });
+      throw error;
+    }
+    this.state.state = PlayerState.PAUSED;
+    this.trackMode = false;
   }
 
   // Utility methods

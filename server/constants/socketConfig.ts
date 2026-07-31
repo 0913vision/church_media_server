@@ -1,6 +1,7 @@
 import type { Socket } from 'socket.io';
 import { requireIntEnv } from '../utils/env.ts';
 import type { PlayerState, MuteState, SongType } from './playerStates.ts';
+import type { TrackInfo } from '../tracks/TrackLibrary.ts';
 
 // Server configuration constants
 interface ServerConfig {
@@ -36,6 +37,11 @@ export const SOCKET_EVENTS = {
   C2S_MIC_ON_EVENT: 'micOn',
   C2S_AUX_ON_EVENT: 'auxOn',
 
+  // Track library (scheduled flows)
+  C2S_GET_TRACKS_EVENT: 'getTracks',
+  C2S_PLAY_TRACK_AT_EVENT: 'playTrackAt',
+  C2S_RESTORE_SONG_EVENT: 'restoreSong',
+
   // Admin events
   C2S_AUTHENTICATE_ADMIN_EVENT: 'authenticateAdmin',
   C2S_SET_ADMIN_LOCK_EVENT: 'setAdminLock',
@@ -51,6 +57,11 @@ export const SOCKET_EVENTS = {
   // Admin (global gate) lock state — entirely separate channel from the
   // audio lock above. Broadcast when an admin acquires/releases the gate.
   S2C_ADMIN_LOCK_CHANGED_EVENT: 'adminLockChanged',
+
+  // Track library — list is a single-recipient reply; a track start is
+  // broadcast so every client can reflect what is sounding.
+  S2C_TRACKS_CHANGED_EVENT: 'tracksChanged',
+  S2C_TRACK_CHANGED_EVENT: 'trackChanged',
 
   // Admin response events
   S2C_ADMIN_AUTHENTICATED_EVENT: 'adminAuthenticated',
@@ -71,6 +82,8 @@ export interface ServerToClientEvents {
   songChanged: (song: SongType) => void;
   lockChanged: (locked: boolean) => void;
   adminLockChanged: (locked: boolean) => void;
+  tracksChanged: (tracks: TrackInfo[]) => void;
+  trackChanged: (trackId: string) => void;
   adminAuthenticated: (result: { success: boolean }) => void;
   ping: () => void;
 }
@@ -93,6 +106,9 @@ export interface ClientToServerEvents {
   changeMute: (mute: unknown) => void;
   micOn: () => void;
   auxOn: () => void;
+  getTracks: () => void;
+  playTrackAt: (trackId: unknown, offsetSec: unknown) => void;
+  restoreSong: () => void;
   authenticateAdmin: (password: unknown) => void;
   setAdminLock: (locked: unknown) => void;
 }

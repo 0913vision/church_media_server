@@ -4,12 +4,14 @@ import type Player from '../player/Player.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
 import type AdminSessionManager from '../auth/AdminSessionManager.ts';
 import type MixerConsole from '../console/MixerConsole.ts';
+import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import { registerAuthHandlers } from './authHandlers.ts';
 import { registerVolumeHandlers } from './volumeHandlers.ts';
 import { registerStateHandlers } from './stateHandlers.ts';
 import { registerSongHandlers } from './songHandlers.ts';
 import { registerMuteHandlers } from './muteHandlers.ts';
 import { registerConsoleHandlers } from './consoleHandlers.ts';
+import { registerTrackHandlers } from './trackHandlers.ts';
 
 /**
  * Shared dependency context built once by the composition root (server.js)
@@ -23,6 +25,8 @@ export interface HandlerDeps {
   adminSessionManager: AdminSessionManager;
   /** Shared mixing console service */
   mixerConsole: MixerConsole;
+  /** Library of playable tracks for scheduled flows */
+  trackLibrary: TrackLibrary;
 }
 
 /**
@@ -35,4 +39,5 @@ export const registerHandlers = (socket: ServerSocket, deps: HandlerDeps): void 
   registerSongHandlers(socket, deps);
   registerMuteHandlers(socket, deps);
   registerConsoleHandlers(socket, deps);
+  registerTrackHandlers(socket, deps);
 };

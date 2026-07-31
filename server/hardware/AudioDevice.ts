@@ -110,28 +110,56 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
-   * Changes the current song
+   * Saves a song's live playback position into its time memory — keeps the
+   * existing saved value if the position can't be read.
    */
-  changeSong(currentSong: SongType, newSong: SongType): void {
-    // Save current song time — keep the existing saved value if it can't be read
+  captureSongTime(song: SongType): void {
     const currentTime = this.getCurrentSongTime();
     if (currentTime !== null) {
-      this.currentSongTimes[currentSong] = currentTime;
+      this.currentSongTimes[song] = currentTime;
     }
+  }
 
-    // Switch track — file resolved by explicit song mapping
-    const nextCommand = ["loadfile", this.playlist[newSong], null];
+  /**
+   * Loads a song onto the two-song deck. The deck loops forever (a scheduled
+   * track may have switched looping off, so it is restored here). Position
+   * saving is the caller's decision via captureSongTime().
+   */
+  loadSong(song: SongType): void {
+    this.mpv.setProperty("loop", "inf");
 
     try {
-      this.mpv.executeCommand(nextCommand);
+      this.mpv.executeCommand(["loadfile", this.playlist[song], null]);
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to change song', {
-        currentSong,
-        newSong,
-        file: this.playlist[newSong],
+      log.error('audioDevice', null, 'Failed to load song', {
+        song,
+        file: this.playlist[song],
         error: errorMessage(error)
       });
       throw error;
+    }
+  }
+
+  /**
+   * Sets the playback position with retry + tolerance verification: the
+   * read-back can be off by a frame/block, and right after a track switch it
+   * may be null (NaN) — both must retry, never pass as success.
+   */
+  private async setPlaybackTime(targetTime: number): Promise<void> {
+    let attempts = 0;
+    let succeeded = false;
+
+    do {
+      this.mpv.setProperty("playback-time", targetTime.toString());
+      await this.delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
+      attempts++;
+
+      const currentTime = parseFloat(this.mpv.getProperty("playback-time") ?? '');
+      succeeded = Math.abs(currentTime - targetTime) <= DEVICE_CONFIG.PLAYBACK_TIME_TOLERANCE_SEC;
+    } while (!succeeded && attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS);
+
+    if (!succeeded) {
+      throw new Error(`Failed to set playback time after ${attempts} attempts`);
     }
   }
 
@@ -140,34 +168,44 @@ class AudioDevice implements AudioOutput {
    */
   async loadLastSongTime(song: SongType): Promise<void> {
     const targetTime = this.currentSongTimes[song];
-    let attempts = 0;
-    let succeeded = false;
-
     try {
-      do {
-        this.mpv.setProperty("playback-time", targetTime.toString());
-        await this.delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
-        attempts++;
-
-        // Tolerance comparison: the read-back can be off by a frame/block, and
-        // right after a track switch it may be null (NaN) — both must retry,
-        // never pass as success.
-        const currentTime = parseFloat(this.mpv.getProperty("playback-time") ?? '');
-        succeeded = Math.abs(currentTime - targetTime) <= DEVICE_CONFIG.PLAYBACK_TIME_TOLERANCE_SEC;
-      } while (!succeeded && attempts < DEVICE_CONFIG.MAX_PROPERTY_SET_ATTEMPTS);
-
-      if (!succeeded) {
-        throw new Error(`Failed to set playback time after ${attempts} attempts`);
-      }
+      await this.setPlaybackTime(targetTime);
     } catch (error) {
       log.error('audioDevice', null, 'Failed to load last song time', {
         song,
         targetTime,
-        attempts,
         error: errorMessage(error)
       });
       throw error;
     }
+  }
+
+  /**
+   * Plays an arbitrary library file from an offset (scheduled flows): loads
+   * it paused, seeks, then fades in. Looping is disabled so the track ends
+   * naturally; changeSong() restores it for the two-song system.
+   */
+  async playFileAt(filePath: string, offsetSec: number): Promise<void> {
+    this.mpv.setProperty("pause", "yes");
+    this.mpv.setProperty("loop", "no");
+
+    try {
+      this.mpv.executeCommand(["loadfile", filePath, null]);
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to load track file', { filePath, error: errorMessage(error) });
+      throw error;
+    }
+
+    if (offsetSec > 0) {
+      try {
+        await this.setPlaybackTime(offsetSec);
+      } catch (error) {
+        log.error('audioDevice', null, 'Failed to seek track', { filePath, offsetSec, error: errorMessage(error) });
+        throw error;
+      }
+    }
+
+    await this.resume();
   }
 }
 

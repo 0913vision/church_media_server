@@ -13,6 +13,7 @@ import AdminSessionManager from './auth/AdminSessionManager.ts';
 import MixerConsole from './console/MixerConsole.ts';
 import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
+import TrackLibrary from './tracks/TrackLibrary.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
@@ -64,8 +65,9 @@ class MediaServer {
     const consoleDevice: ConsoleDevice =
       DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
+    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
 
-    const deps: HandlerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole };
+    const deps: HandlerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole, trackLibrary };
 
     this.pingInterval = setInterval(() => {
       notifier.ping();
