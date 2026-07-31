@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc",
+    "gen-protocol": "node protocol/generate.mjs",
+    "build": "npm run clean && npm run gen-protocol && tsc",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "hash-password": "npm run build && node dist/scripts/hash-password.js",
