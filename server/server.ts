@@ -15,6 +15,7 @@ import MixerConsole from './console/MixerConsole.ts';
 import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
+import FlowRunner from './flow/FlowRunner.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
@@ -34,6 +35,7 @@ type TypedServer = Server<ClientToServerEventsUnsafe, ServerToClientEvents, Reco
 class MediaServer {
   private io: TypedServer | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
+  private flowRunner: FlowRunner | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -72,8 +74,18 @@ class MediaServer {
       DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
+    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier);
+    this.flowRunner = flowRunner;
 
-    const deps: ServerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole, trackLibrary };
+    const deps: ServerDeps = {
+      notifier,
+      player,
+      lockCoordinator,
+      adminSessionManager,
+      mixerConsole,
+      trackLibrary,
+      flowRunner,
+    };
 
     this.pingInterval = setInterval(() => {
       notifier.ping();
@@ -99,6 +111,11 @@ class MediaServer {
   stop(): void {
     log.info('server', null, 'Shutting down');
 
+    // Cancel a run in flight so its timers cannot outlive the process.
+    if (this.flowRunner) {
+      this.flowRunner.dispose();
+      this.flowRunner = null;
+    }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;

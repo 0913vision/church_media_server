@@ -4,6 +4,7 @@ import type LockCoordinator from './lock/LockCoordinator.ts';
 import type AdminSessionManager from './auth/AdminSessionManager.ts';
 import type MixerConsole from './console/MixerConsole.ts';
 import type TrackLibrary from './tracks/TrackLibrary.ts';
+import type FlowRunner from './flow/FlowRunner.ts';
 
 /**
  * Shared dependency context built once by the composition root (server.ts) and
@@ -21,4 +22,6 @@ export interface ServerDeps {
   mixerConsole: MixerConsole;
   /** Library of playable tracks for scheduled flows */
   trackLibrary: TrackLibrary;
+  /** Runs the one flow this server may have in flight */
+  flowRunner: FlowRunner;
 }

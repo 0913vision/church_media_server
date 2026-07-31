@@ -1,14 +1,15 @@
-import { ATTRIBUTES, PlaybackState, isMuteState, isPlaybackState, isSongType } from '../protocol.ts';
+import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState, isSongType } from '../protocol.ts';
 import type { AttributeName, State, StatePatch } from '../protocol.ts';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 
 /**
- * The outcome of checking a value: either work to run, or a refusal. Tagged
- * rather than "a thunk, or nothing", so the caller has to look at which it is.
+ * The outcome of checking a value: either work to run, or a refusal with its
+ * reason. Tagged rather than "a thunk, or nothing", so the caller has to look
+ * at which it is — and so an attribute can say *why* it said no.
  */
-export type WritePlan = { ok: true; apply: () => Promise<StatePatch> } | { ok: false };
+export type WritePlan = { ok: true; apply: () => Promise<StatePatch> } | { ok: false; reason: RejectReason };
 
 /**
  * How a writable attribute is applied. The value arrives untrusted, so parsing
@@ -28,28 +29,32 @@ export interface AttributeSpec {
   write?: WriteSpec;
 }
 
-/**
- * Builds a write entry, closing over the attribute's own value type so the
- * table above it can stay untyped in the value position.
- */
 /** A checked value, or a refusal — the parse half of a write */
-type Checked<T> = { ok: true; value: T } | { ok: false };
+type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 
 function accept<T>(value: T): Checked<T> {
   return { ok: true, value };
 }
-const REJECT: Checked<never> = { ok: false };
+function reject(reason: RejectReason): Checked<never> {
+  return { ok: false, reason };
+}
+/** The usual refusal: the value itself does not check out */
+const BAD_VALUE = reject(RejectReason.INVALID_VALUE);
 
+/**
+ * Builds a write entry, closing over the attribute's own value type so the
+ * table below can stay uniform in the value position.
+ */
 function writable<T>(
   holdsAudioLock: boolean,
-  check: (value: unknown) => Checked<T>,
+  check: (value: unknown, deps: ServerDeps) => Checked<T>,
   apply: (value: T, deps: ServerDeps) => Promise<StatePatch>,
 ): WriteSpec {
   return {
     holdsAudioLock,
     prepare(value, deps) {
-      const checked = check(value);
-      return checked.ok ? { ok: true, apply: () => apply(checked.value, deps) } : { ok: false };
+      const checked = check(value, deps);
+      return checked.ok ? { ok: true, apply: () => apply(checked.value, deps) } : checked;
     },
   };
 }
@@ -57,7 +62,7 @@ function writable<T>(
 function checkVolume(value: unknown): Checked<number> {
   const { min, max } = ATTRIBUTES.volume.range;
   const valid = typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
-  return valid ? accept(value) : REJECT;
+  return valid ? accept(value) : BAD_VALUE;
 }
 
 /**
@@ -72,7 +77,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getState(),
     write: writable(
       true,
-      (value) => (isPlaybackState(value) ? accept(value) : REJECT),
+      (value) => (isPlaybackState(value) ? accept(value) : BAD_VALUE),
       async (playback, deps) => {
         if (playback === deps.player.getState()) return {};
         if (playback === PlaybackState.PLAYING) {
@@ -97,7 +102,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getMute(),
     write: writable(
       true,
-      (value) => (isMuteState(value) ? accept(value) : REJECT),
+      (value) => (isMuteState(value) ? accept(value) : BAD_VALUE),
       async (mute, deps) => {
         if (mute === deps.player.getMute()) return {};
         deps.player.setMute(mute);
@@ -110,7 +115,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getCurrentSong(),
     write: writable(
       true,
-      (value) => (isSongType(value) ? accept(value) : REJECT),
+      (value) => (isSongType(value) ? accept(value) : BAD_VALUE),
       async (song, deps) => {
         if (song === deps.player.getCurrentSong()) return {};
         // Switching songs also pauses the deck and moves the volume to that
@@ -127,7 +132,14 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     // the device. The lock announces its own transitions, so the patch is empty.
     write: writable(
       false,
-      (value) => (typeof value === 'boolean' ? accept(value) : REJECT),
+      (value, deps) => {
+        if (typeof value !== 'boolean') return BAD_VALUE;
+        // A running flow owns the lock it engaged. Letting it be toggled from
+        // outside would leave the flow describing a gate that is not there;
+        // stopping the flow is the way out.
+        if (deps.flowRunner.ownsAdminLock()) return reject(RejectReason.FLOW_ACTIVE);
+        return accept(value);
+      },
       async (adminLock, deps) => {
         deps.lockCoordinator.setAdminLock(adminLock);
         return {};
@@ -144,9 +156,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
   },
 
   flow: {
-    // Note(yoochan.kim): the flow engine lands next; until then the slot is
-    // always idle, which is a value rather than an absence.
-    read: () => ({ phase: 'idle' }),
+    // Read-only: startFlow and stopFlow are what move it.
+    read: (deps) => deps.flowRunner.status(),
   },
 };
 

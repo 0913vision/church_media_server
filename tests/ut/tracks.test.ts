@@ -52,10 +52,10 @@ describe('Track Library Tests', () => {
     const sock = new SocketTestHelper();
     try {
       const { ready } = await sock.open();
-      assert.ok(!ready.commands.includes('startFlow'), 'flow engine is not implemented yet');
+      assert.ok(!ready.commands.includes('rebootPi'), 'guard: this command is not part of the protocol');
 
-      const rejected = sock.waitForRejected('startFlow');
-      sock.invoke('startFlow', { name: 'x', tracks: [], lockAt: '00:00', endsAt: null, unlockAt: '23:59' });
+      const rejected = sock.waitForRejected('rebootPi');
+      sock.invoke('rebootPi', {});
 
       assert.strictEqual(await rejected, RejectReason.UNKNOWN_TARGET);
     } finally {

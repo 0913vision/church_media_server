@@ -82,6 +82,20 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       return DONE;
     },
   },
+
+  startFlow: {
+    // The whole plan arrives here; the server keeps none of it once the run
+    // is over. Validation and scheduling belong to the runner.
+    async run(args, deps) {
+      return deps.flowRunner.start(args);
+    },
+  },
+
+  stopFlow: {
+    async run(_args, deps) {
+      return deps.flowRunner.stop();
+    },
+  },
 };
 
 /** Command names this server implements, for the ready payload */

@@ -108,10 +108,12 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
+      // The attribute decides why it said no: usually the value, but it may
+      // also be something only it knows, like a flow owning the admin lock.
       const plan = spec.write.prepare(parsed?.value, deps);
       if (!plan.ok) {
-        log.warn('write', socket, 'Invalid value, write denied', { field, value: parsed?.value });
-        deps.notifier.rejected(socket, target, RejectReason.INVALID_VALUE);
+        log.warn('write', socket, 'Write denied', { field, value: parsed?.value, reason: plan.reason });
+        deps.notifier.rejected(socket, target, plan.reason);
         return;
       }
 
