@@ -1,4 +1,14 @@
 [
-  { "id": "slow-main", "title": "잔잔한 음악", "file": "./audio/music_slow.mp3", "durationSec": 3684.6 },
-  { "id": "fast-main", "title": "통성기도 음악", "file": "./audio/music_fast.mp3", "durationSec": 10404.5 }
+  {
+    "id": "calm-main",
+    "title": "잔잔한 음악",
+    "file": "./audio/music_slow.mp3",
+    "durationSec": 3684.6
+  },
+  {
+    "id": "fervent-main",
+    "title": "통성기도 음악",
+    "file": "./audio/music_fast.mp3",
+    "durationSec": 10404.5
+  }
 ]

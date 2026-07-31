@@ -6,6 +6,7 @@
   "scripts": {
     "clean": "rm -rf dist",
     "gen-protocol": "node protocol/generate.mjs",
+    "scan-tracks": "node scripts/scan-tracks.mjs",
     "build": "npm run clean && npm run gen-protocol && tsc",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
