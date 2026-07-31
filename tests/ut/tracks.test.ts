@@ -1,32 +1,21 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.ts';
-
-// Note(yoochan.kim): valid playTrackAt is NOT exercised here — it would start
-// audible playback on the host. Only the reply and rejection paths are tested.
+import { RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
 
-interface TrackInfo {
-  id: string;
-  title: string;
-  durationSec: number;
-}
-
-async function fetchTracks(sock: SocketTestHelper): Promise<TrackInfo[]> {
-  sock.socket!.emit('getTracks');
-  return await sock.waitFor<TrackInfo[]>('tracksChanged');
-}
-
+// The track library is fixed at boot, so it rides along with the handshake
+// rather than needing a request of its own.
 describe('Track Library Tests', () => {
-  test('getTracks replies with the manifest entries', async () => {
+  test('ready carries the manifest entries', async () => {
     const sock = new SocketTestHelper();
     try {
-      await sock.connect();
-      const tracks = await fetchTracks(sock);
-      assert.ok(Array.isArray(tracks) && tracks.length > 0, 'manifest should list at least one track');
-      for (const track of tracks) {
+      const { ready } = await sock.open();
+
+      assert.ok(ready.tracks.length > 0, 'manifest should list at least one track');
+      for (const track of ready.tracks) {
         assert.strictEqual(typeof track.id, 'string');
         assert.strictEqual(typeof track.title, 'string');
         assert.ok(Number.isFinite(track.durationSec) && track.durationSec > 0);
@@ -36,29 +25,39 @@ describe('Track Library Tests', () => {
     }
   });
 
-  test('unknown track id is rejected (no trackChanged broadcast)', async () => {
+  test('file paths never reach a client', async () => {
     const sock = new SocketTestHelper();
     try {
-      await sock.connect();
-      const rejected = await sock.emitAndExpectNoResponse('playTrackAt', 'trackChanged', 500, 'no-such-track', 0);
-      assert.strictEqual(rejected, true);
+      const { ready } = await sock.open();
+
+      for (const track of ready.tracks) {
+        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title']);
+      }
     } finally {
       sock.disconnect();
     }
   });
 
-  test('out-of-range offsets are rejected (no trackChanged broadcast)', async () => {
+  test('flow reads as null until the flow engine runs one', async () => {
     const sock = new SocketTestHelper();
     try {
-      await sock.connect();
-      const [track] = await fetchTracks(sock);
-      assert.ok(track, 'manifest should list at least one track');
+      await sock.open();
+      assert.strictEqual((await sock.read(['flow'])).flow, null);
+    } finally {
+      sock.disconnect();
+    }
+  });
 
-      const negative = await sock.emitAndExpectNoResponse('playTrackAt', 'trackChanged', 500, track.id, -5);
-      assert.strictEqual(negative, true, 'negative offset should be rejected');
+  test('a command this server does not implement is refused as unknown', async () => {
+    const sock = new SocketTestHelper();
+    try {
+      const { ready } = await sock.open();
+      assert.ok(!ready.commands.includes('startFlow'), 'flow engine is not implemented yet');
 
-      const beyondEnd = await sock.emitAndExpectNoResponse('playTrackAt', 'trackChanged', 500, track.id, track.durationSec + 1);
-      assert.strictEqual(beyondEnd, true, 'offset past the end should be rejected');
+      const rejected = sock.waitForRejected('startFlow');
+      sock.invoke('startFlow', { name: 'x', tracks: [], lockAt: '00:00', endsAt: null, unlockAt: '23:59' });
+
+      assert.strictEqual(await rejected, RejectReason.UNKNOWN_TARGET);
     } finally {
       sock.disconnect();
     }

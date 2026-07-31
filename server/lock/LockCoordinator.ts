@@ -35,15 +35,19 @@ class LockCoordinator {
    * @param notifier - Announces each lock's state changes
    */
   constructor(notifier: Notifier) {
-    this.audioLock = new Lock((locked) => notifier.audioLockChanged(locked));
-    this.adminLock = new Lock((locked) => notifier.adminLockChanged(locked));
+    // Each lock announces its own transitions, so no caller has to remember to
+    // report them. Both are attributes, so both travel as a state patch.
+    this.audioLock = new Lock((locked) => notifier.state({ audioLock: locked }));
+    this.adminLock = new Lock((locked) => notifier.state({ adminLock: locked }));
   }
 
   /**
    * The submission gate: whether a requester may start an operation right now.
    * Blocked only when the admin lock is held and the requester is not an admin.
+   * Public so callers can tell a gated refusal from a busy device and report
+   * the difference back to the client.
    */
-  private passesAdminGate(isAdmin: boolean): boolean {
+  passesAdminGate(isAdmin: boolean): boolean {
     return !this.adminLock.isLocked() || isAdmin;
   }
 

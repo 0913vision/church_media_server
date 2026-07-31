@@ -1,19 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Track } from '../protocol.ts';
 
-/** A playable library entry (file path stays server-side) */
-export interface Track {
-  id: string;
-  title: string;
+/** A library entry as stored here: the protocol's Track plus its file path */
+export interface LibraryEntry extends Track {
   file: string;
-  durationSec: number;
-}
-
-/** The client-facing slice of a track (no file system details) */
-export interface TrackInfo {
-  id: string;
-  title: string;
-  durationSec: number;
 }
 
 /**
@@ -24,7 +15,7 @@ export interface TrackInfo {
  * additional catalog for admin-driven sequences.
  */
 class TrackLibrary {
-  private readonly tracks = new Map<string, Track>();
+  private readonly tracks = new Map<string, LibraryEntry>();
 
   constructor(manifestPath: string) {
     const manifestDir = path.dirname(manifestPath);
@@ -52,11 +43,12 @@ class TrackLibrary {
     }
   }
 
-  list(): TrackInfo[] {
+  /** The client-facing slice: file paths never leave the server. */
+  list(): Track[] {
     return [...this.tracks.values()].map(({ id, title, durationSec }) => ({ id, title, durationSec }));
   }
 
-  get(id: string): Track | undefined {
+  get(id: string): LibraryEntry | undefined {
     return this.tracks.get(id);
   }
 }

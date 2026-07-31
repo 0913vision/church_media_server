@@ -1,4 +1,4 @@
-import type { SongType } from '../constants/playerStates.ts';
+import type { SongType } from '../protocol.ts';
 
 /**
  * The audio output surface the Player depends on.

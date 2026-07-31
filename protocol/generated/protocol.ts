@@ -186,10 +186,11 @@ export const COMMANDS = {
    */
   authenticate: { permission: 'any' },
   /**
-   * Switch a mixing console input on. Not subject to the audio lock. The console
-   * reports nothing back, so there is no attribute to read.
+   * Switch a mixing console input on. Not subject to the audio lock, and open to
+   * anyone the admin lock is not holding back — the console keeps no protected state.
+   * It reports nothing back, so there is no attribute to read.
    */
-  enableConsoleInput: { permission: 'admin' },
+  enableConsoleInput: { permission: 'any' },
   /**
    * Hand the server a whole scheduled flow to run: it engages the admin lock at
    * lockAt, plays the sequence so it finishes at endsAt (joining mid-sequence if

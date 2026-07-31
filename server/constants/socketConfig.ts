@@ -1,9 +1,10 @@
 import type { Socket } from 'socket.io';
 import { requireIntEnv } from '../utils/env.ts';
-import type { PlayerState, MuteState, SongType } from './playerStates.ts';
-import type { TrackInfo } from '../tracks/TrackLibrary.ts';
+import type { ClientToServerEventsUnsafe, ServerToClientEvents } from '../protocol.ts';
 
-// Server configuration constants
+// Socket server configuration constants. The protocol itself lives in
+// protocol/protocol.json and is generated — this file only carries transport
+// settings.
 interface ServerConfig {
   PORT: number;
   PING_INTERVAL_MS: number;
@@ -22,96 +23,18 @@ export const SOCKET_CONFIG: ServerConfig = {
   }
 };
 
-// Socket events
-export const SOCKET_EVENTS = {
-  // Client to Server events
-  C2S_GET_VOLUME_EVENT: 'getVolume',
-  C2S_GET_STATE_EVENT: 'getState',
-  C2S_GET_MUTE_EVENT: 'getMute',
-  C2S_GET_CURRENT_SONG_EVENT: 'getCurrentSong',
-  C2S_GET_LOCK_EVENT: 'getLock',
-  C2S_CHANGE_SONG_EVENT: 'changeSong',
-  C2S_CHANGE_VOLUME_EVENT: 'changeVolume',
-  C2S_CHANGE_STATE_EVENT: 'changeState',
-  C2S_CHANGE_MUTE_EVENT: 'changeMute',
-  C2S_MIC_ON_EVENT: 'micOn',
-  C2S_AUX_ON_EVENT: 'auxOn',
-
-  // Track library (scheduled flows)
-  C2S_GET_TRACKS_EVENT: 'getTracks',
-  C2S_PLAY_TRACK_AT_EVENT: 'playTrackAt',
-  C2S_RESTORE_SONG_EVENT: 'restoreSong',
-
-  // Admin events
-  C2S_AUTHENTICATE_ADMIN_EVENT: 'authenticateAdmin',
-  C2S_SET_ADMIN_LOCK_EVENT: 'setAdminLock',
-
-  // Server to Client events
-  S2C_STATE_CHANGED_EVENT: 'stateChanged',
-  S2C_VOLUME_CHANGED_EVENT: 'volumeChanged',
-  S2C_MUTE_CHANGED_EVENT: 'muteChanged',
-  S2C_SONG_CHANGED_EVENT: 'songChanged',
-  // Audio (resource) lock state — held only while the audio device is
-  // mid-transition (play/pause/song change). Kept on the existing event name.
-  S2C_LOCK_CHANGED_EVENT: 'lockChanged',
-  // Admin (global gate) lock state — entirely separate channel from the
-  // audio lock above. Broadcast when an admin acquires/releases the gate.
-  S2C_ADMIN_LOCK_CHANGED_EVENT: 'adminLockChanged',
-
-  // Track library — list is a single-recipient reply; a track start is
-  // broadcast so every client can reflect what is sounding.
-  S2C_TRACKS_CHANGED_EVENT: 'tracksChanged',
-  S2C_TRACK_CHANGED_EVENT: 'trackChanged',
-
-  // Admin response events
-  S2C_ADMIN_AUTHENTICATED_EVENT: 'adminAuthenticated',
-
-  // System events
-  S2C_PING_EVENT: 'ping'
-} as const;
-
 /**
- * S2C protocol map: every outgoing event with its exact payload type.
- * Parameterizing socket.io's Server/Socket with this makes every emit
- * compile-time checked against the protocol.
+ * Per-connection bookkeeping. `accepted` starts false: a client must say hello
+ * with a protocol version this server speaks before it may write or invoke.
  */
-export interface ServerToClientEvents {
-  stateChanged: (state: PlayerState) => void;
-  volumeChanged: (volume: number) => void;
-  muteChanged: (mute: MuteState) => void;
-  songChanged: (song: SongType) => void;
-  lockChanged: (locked: boolean) => void;
-  adminLockChanged: (locked: boolean) => void;
-  tracksChanged: (tracks: TrackInfo[]) => void;
-  trackChanged: (trackId: string) => void;
-  adminAuthenticated: (result: { success: boolean }) => void;
-  ping: () => void;
+export interface SocketData {
+  /** Absent until the client says hello */
+  client?: string;
+  accepted?: boolean;
 }
 
 /**
- * C2S protocol map.
- * Note(yoochan.kim): payload parameters are deliberately `unknown` — they
- * arrive from untrusted clients over the wire, and each handler narrows them
- * with the runtime type guards before use.
+ * Server-side socket. Inbound payloads are typed `unknown` because they arrive
+ * from untrusted clients; each is narrowed before use.
  */
-export interface ClientToServerEvents {
-  getVolume: () => void;
-  getState: () => void;
-  getMute: () => void;
-  getCurrentSong: () => void;
-  getLock: () => void;
-  changeSong: (clientCurrentSong: unknown, newSong: unknown) => void;
-  changeVolume: (volume: unknown) => void;
-  changeState: (state: unknown) => void;
-  changeMute: (mute: unknown) => void;
-  micOn: () => void;
-  auxOn: () => void;
-  getTracks: () => void;
-  playTrackAt: (trackId: unknown, offsetSec: unknown) => void;
-  restoreSong: () => void;
-  authenticateAdmin: (password: unknown) => void;
-  setAdminLock: (locked: unknown) => void;
-}
-
-/** Server-side socket with the protocol applied */
-export type ServerSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+export type ServerSocket = Socket<ClientToServerEventsUnsafe, ServerToClientEvents, Record<string, never>, SocketData>;

@@ -1,85 +1,57 @@
 import type { Server } from 'socket.io';
-import { SOCKET_EVENTS } from '../constants/socketConfig.ts';
-import type { ClientToServerEvents, ServerToClientEvents, ServerSocket } from '../constants/socketConfig.ts';
-import type { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
-import type { TrackInfo } from '../tracks/TrackLibrary.ts';
+import { S2C } from '../protocol.ts';
+import type {
+  ClientToServerEventsUnsafe,
+  RejectReason,
+  S2CPayloads,
+  ServerToClientEvents,
+  StatePatch,
+} from '../protocol.ts';
+import type { ServerSocket, SocketData } from '../constants/socketConfig.ts';
 
 /** Socket.IO server parameterized with this project's protocol maps */
-type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
+type TypedServer = Server<ClientToServerEventsUnsafe, ServerToClientEvents, Record<string, never>, SocketData>;
 
 /**
  * Single owner of all S2C emission: every outgoing event name and the
  * broadcast-vs-reply decision lives here, so the rest of the server speaks in
- * domain terms ("volume changed") rather than transport terms (io.emit).
+ * domain terms ("these attributes changed") rather than transport terms.
  *
- * The protocol uses the same event for both scopes: a CHANGE broadcasts the
- * new value to everyone, a GET replies the current value to the requester.
- * Each method therefore broadcasts by default and replies to a single client
- * when a target socket is passed.
+ * The protocol has exactly one carrier of state, so this class is small: a
+ * state patch either goes to everyone or, for per-connection attributes like
+ * isAdmin, to the one client it describes.
  */
 class Notifier {
   constructor(private readonly io: TypedServer) {}
 
-  /**
-   * Emits to all clients, or to one client when a target socket is given.
-   * The mapped-type generic ties the payload to the event at compile time.
-   */
-  private emit<E extends keyof ServerToClientEvents>(
-    socket: ServerSocket | undefined,
-    event: E,
-    ...payload: Parameters<ServerToClientEvents[E]>
-  ): void {
-    if (socket) {
-      socket.emit(event, ...payload);
-    } else {
-      this.io.emit(event, ...payload);
-    }
-  }
-
-  stateChanged(state: PlayerState, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_STATE_CHANGED_EVENT, state);
-  }
-
-  volumeChanged(volume: number, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_VOLUME_CHANGED_EVENT, volume);
-  }
-
-  muteChanged(mute: MuteState, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_MUTE_CHANGED_EVENT, mute);
-  }
-
-  songChanged(song: SongType, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_SONG_CHANGED_EVENT, song);
-  }
-
-  audioLockChanged(locked: boolean, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_LOCK_CHANGED_EVENT, locked);
-  }
-
-  adminLockChanged(locked: boolean, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_ADMIN_LOCK_CHANGED_EVENT, locked);
+  /** Announces changed attributes to every connected client. */
+  state(patch: StatePatch): void {
+    this.io.emit(S2C.STATE, patch);
   }
 
   /**
-   * Track library listing — always a single-recipient reply.
+   * Sends attributes to one client. Used for the full state after hello, for
+   * read replies, and for per-connection attributes such as isAdmin.
    */
-  tracksChanged(socket: ServerSocket, tracks: TrackInfo[]): void {
-    socket.emit(SOCKET_EVENTS.S2C_TRACKS_CHANGED_EVENT, tracks);
+  stateTo(socket: ServerSocket, patch: StatePatch): void {
+    socket.emit(S2C.STATE, patch);
   }
 
-  trackChanged(trackId: string, socket?: ServerSocket): void {
-    this.emit(socket, SOCKET_EVENTS.S2C_TRACK_CHANGED_EVENT, trackId);
+  /** Answers a hello: what this server speaks and what it implements. */
+  ready(socket: ServerSocket, payload: S2CPayloads['ready']): void {
+    socket.emit(S2C.READY, payload);
   }
 
   /**
-   * Authentication result — always a single-recipient reply.
+   * Tells one client why its write or invoke was refused, so it can explain
+   * itself rather than appearing to do nothing.
    */
-  adminAuthenticated(socket: ServerSocket, success: boolean): void {
-    socket.emit(SOCKET_EVENTS.S2C_ADMIN_AUTHENTICATED_EVENT, { success });
+  rejected(socket: ServerSocket, target: string, reason: RejectReason): void {
+    socket.emit(S2C.REJECTED, { target, reason });
   }
 
   ping(): void {
-    this.io.emit(SOCKET_EVENTS.S2C_PING_EVENT);
+    this.io.emit(S2C.PING, {});
   }
 }
 

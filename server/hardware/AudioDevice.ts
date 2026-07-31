@@ -1,6 +1,6 @@
 import MpvClient from './MpvClient.ts';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
-import { SongType } from '../constants/playerStates.ts';
+import { SongType } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { AudioOutput } from './AudioOutput.ts';

@@ -55,9 +55,9 @@ Claim admin rights for this connection. Success shows up as isAdmin in a state p
 
 ### `enableConsoleInput`
 
-권한: admin
+권한: any
 
-Switch a mixing console input on. Not subject to the audio lock. The console reports nothing back, so there is no attribute to read.
+Switch a mixing console input on. Not subject to the audio lock, and open to anyone the admin lock is not holding back — the console keeps no protected state. It reports nothing back, so there is no attribute to read.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |

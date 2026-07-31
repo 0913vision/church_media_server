@@ -1,10 +1,11 @@
 import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.ts';
-import type { ClientToServerEvents, ServerToClientEvents } from './constants/socketConfig.ts';
+import type { SocketData } from './constants/socketConfig.ts';
+import type { ClientToServerEventsUnsafe, ServerToClientEvents } from './protocol.ts';
 import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
 import { INITIAL_PLAYER_CONFIG } from './constants/playerConfig.ts';
 import type { PlayerConfig } from './constants/playerConfig.ts';
-import { PlayerState } from './constants/playerStates.ts';
+import { PlaybackState } from './protocol.ts';
 import Player from './player/Player.ts';
 import MpvClient from './hardware/MpvClient.ts';
 import AudioDevice from './hardware/AudioDevice.ts';
@@ -18,7 +19,7 @@ import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
 import { registerHandlers } from './handlers/index.ts';
-import type { HandlerDeps } from './handlers/index.ts';
+import type { ServerDeps } from './deps.ts';
 import { requireEnv } from './utils/env.ts';
 import { log } from './utils/logger.ts';
 
@@ -28,7 +29,7 @@ import { log } from './utils/logger.ts';
  * context, and attaches handler registration to incoming connections.
  */
 /** Socket.IO server parameterized with this project's protocol maps */
-type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
+type TypedServer = Server<ClientToServerEventsUnsafe, ServerToClientEvents, Record<string, never>, SocketData>;
 
 class MediaServer {
   private io: TypedServer | null = null;
@@ -37,7 +38,12 @@ class MediaServer {
   start(): void {
     log.info('server', null, 'Socket is initializing');
 
-    const io: TypedServer = new Server<ClientToServerEvents, ServerToClientEvents>(SOCKET_CONFIG.PORT, {
+    const io: TypedServer = new Server<
+      ClientToServerEventsUnsafe,
+      ServerToClientEvents,
+      Record<string, never>,
+      SocketData
+    >(SOCKET_CONFIG.PORT, {
       cors: SOCKET_CONFIG.CORS,
     });
     this.io = io;
@@ -52,7 +58,7 @@ class MediaServer {
     const initialConfig: PlayerConfig = {
       ...INITIAL_PLAYER_CONFIG,
       ...(stateStore.load() ?? {}),
-      state: PlayerState.PAUSED
+      state: PlaybackState.PAUSED
     };
     const player = new Player(
       new AudioDevice(new MpvClient(), initialConfig.currentSong),
@@ -67,7 +73,7 @@ class MediaServer {
     const mixerConsole = new MixerConsole(consoleDevice);
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
 
-    const deps: HandlerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole, trackLibrary };
+    const deps: ServerDeps = { notifier, player, lockCoordinator, adminSessionManager, mixerConsole, trackLibrary };
 
     this.pingInterval = setInterval(() => {
       notifier.ping();

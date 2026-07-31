@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isMuteState, isSongType } from '../constants/playerStates.ts';
+import { isMuteState, isSongType } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { StateStore, PersistedState } from './StateStore.ts';

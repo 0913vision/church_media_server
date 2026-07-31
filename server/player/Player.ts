@@ -1,4 +1,4 @@
-import { PlayerState, MuteState, SongType } from '../constants/playerStates.ts';
+import { PlaybackState, MuteState, SongType } from '../protocol.ts';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
@@ -64,7 +64,7 @@ class Player {
   /**
    * Gets the current playback state
    */
-  getState(): PlayerState {
+  getState(): PlaybackState {
     return this.state.state;
   }
 
@@ -78,7 +78,7 @@ class Player {
       log.error('player', null, 'Failed to play audio', { error: errorMessage(error) });
       throw error;
     }
-    this.state.state = PlayerState.PLAYING;
+    this.state.state = PlaybackState.PLAYING;
   }
 
   /**
@@ -91,7 +91,7 @@ class Player {
       log.error('player', null, 'Failed to pause audio', { error: errorMessage(error) });
       throw error;
     }
-    this.state.state = PlayerState.PAUSED;
+    this.state.state = PlaybackState.PAUSED;
   }
 
   // Mute methods
@@ -166,7 +166,7 @@ class Player {
     }
 
     this.state.currentSong = newSong;
-    this.state.state = PlayerState.PAUSED;
+    this.state.state = PlaybackState.PAUSED;
     this.state.serverVolume = newVolume;
     this.persist(this.snapshot());
 
@@ -194,7 +194,7 @@ class Player {
       log.error('player', null, 'Failed to play track', { filePath, offsetSec, error: errorMessage(error) });
       throw error;
     }
-    this.state.state = PlayerState.PLAYING;
+    this.state.state = PlaybackState.PLAYING;
   }
 
   /**
@@ -215,7 +215,7 @@ class Player {
       log.error('player', null, 'Failed to restore song after track playback', { error: errorMessage(error) });
       throw error;
     }
-    this.state.state = PlayerState.PAUSED;
+    this.state.state = PlaybackState.PAUSED;
     this.trackMode = false;
   }
 
@@ -225,7 +225,7 @@ class Player {
    * Checks if the player is currently playing
    */
   isPlaying(): boolean {
-    return this.state.state === PlayerState.PLAYING;
+    return this.state.state === PlaybackState.PLAYING;
   }
 
   /**

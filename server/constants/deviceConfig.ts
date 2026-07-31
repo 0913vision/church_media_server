@@ -1,4 +1,4 @@
-import { SongType } from './playerStates.ts';
+import { SongType } from '../protocol.ts';
 import { requireEnv, requireEnvOneOf } from '../utils/env.ts';
 
 /** Which mixing-console backend to drive */

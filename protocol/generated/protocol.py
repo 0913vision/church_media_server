@@ -143,8 +143,10 @@ class AuthenticateArgs(TypedDict):
 
 class EnableConsoleInputArgs(TypedDict):
     """
-    Switch a mixing console input on. Not subject to the audio lock. The
-    console reports nothing back, so there is no attribute to read.
+    Switch a mixing console input on. Not subject to the audio lock, and open
+    to anyone the admin lock is not holding back — the console keeps no
+    protected state. It reports nothing back, so there is no attribute to
+    read.
     """
     input: ConsoleInput
 
@@ -190,7 +192,7 @@ ATTRIBUTES: dict[str, dict] = {
 
 COMMANDS: dict[str, dict] = {
     "authenticate": {"permission": "any"},
-    "enableConsoleInput": {"permission": "admin"},
+    "enableConsoleInput": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
 }

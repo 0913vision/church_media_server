@@ -1,6 +1,6 @@
 import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SongType, MuteState, PlayerState } from '../../server/constants/playerStates.ts';
+import { SongType, MuteState, PlaybackState } from '../../server/protocol.ts';
 import { INITIAL_PLAYER_CONFIG } from '../../server/constants/playerConfig.ts';
 import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
@@ -104,7 +104,7 @@ describe('Player persistence (unit)', () => {
       serverVolume: 70,
       muted: MuteState.MUTED,
       currentSong: SongType.FAST,
-      state: PlayerState.PAUSED
+      state: PlaybackState.PAUSED
     };
     const { device, player } = makePlayer(restored);
 

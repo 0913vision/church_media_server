@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { hashPassword } from '../../server/auth/password.ts';
+import { C2S, PROTOCOL_VERSION, S2C } from '../../server/protocol.ts';
+import type { RejectReason, S2CPayloads, StatePatch } from '../../server/protocol.ts';
 
 // Note(yoochan.kim): the test client Socket stays UNTYPED (no protocol event
 // maps) on purpose — rejection tests must be able to emit invalid payloads
@@ -168,6 +170,90 @@ export class SocketTestHelper {
       setTimeout(() => {
         this.socket!.off(responseEvent, onResponse);
         resolve(!received);
+      }, ms);
+    });
+  }
+
+  // --- protocol v1 helpers ---
+
+  /**
+   * Connects and completes the handshake. A client must say hello before the
+   * server accepts writes or invokes, so nearly every test starts here.
+   * Returns the ready payload and the full state that follows it.
+   */
+  async open(client = 'test-client'): Promise<{ ready: S2CPayloads['ready']; state: StatePatch }> {
+    await this.connect();
+    const readyP = this.waitFor<S2CPayloads['ready']>(S2C.READY);
+    const stateP = this.waitFor<StatePatch>(S2C.STATE);
+    this.socket!.emit(C2S.HELLO, { client, protocolVersion: PROTOCOL_VERSION });
+    return { ready: await readyP, state: await stateP };
+  }
+
+  /** Reads attributes, resolving the state patch that comes back. */
+  read(fields?: string[]): Promise<StatePatch> {
+    return this.emitAndWaitFor<StatePatch>(C2S.READ, S2C.STATE, { fields: fields ?? null });
+  }
+
+  write(field: string, value: unknown): void {
+    this.socket!.emit(C2S.WRITE, { field, value });
+  }
+
+  invoke(command: string, args: Record<string, unknown> = {}): void {
+    this.socket!.emit(C2S.INVOKE, { command, args });
+  }
+
+  /**
+   * Waits for the first state patch that satisfies `matches`. State is one
+   * event carrying only what changed, so tests say which change they mean
+   * rather than which event they expect.
+   */
+  waitForState(matches: (patch: StatePatch) => boolean, ms = 5000): Promise<StatePatch> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.socket!.off(S2C.STATE, onState);
+        reject(new Error('No matching state patch'));
+      }, ms);
+      const onState = (patch: StatePatch): void => {
+        if (!matches(patch)) return;
+        clearTimeout(timer);
+        this.socket!.off(S2C.STATE, onState);
+        resolve(patch);
+      };
+      this.socket!.on(S2C.STATE, onState);
+    });
+  }
+
+  /** Collects every state patch for `ms`, for asserting an ordered sequence. */
+  collectStates(ms: number): Promise<StatePatch[]> {
+    return this.collectFor<StatePatch>(S2C.STATE, ms);
+  }
+
+  /** Waits for a refusal of `target`, resolving its reason. */
+  waitForRejected(target: string, ms = 2000): Promise<RejectReason> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.socket!.off(S2C.REJECTED, onRejected);
+        reject(new Error(`No rejection for ${target}`));
+      }, ms);
+      const onRejected = (payload: { target: string; reason: RejectReason }): void => {
+        if (payload.target !== target) return;
+        clearTimeout(timer);
+        this.socket!.off(S2C.REJECTED, onRejected);
+        resolve(payload.reason);
+      };
+      this.socket!.on(S2C.REJECTED, onRejected);
+    });
+  }
+
+  /** True when no state patch satisfying `matches` arrives within `ms`. */
+  expectNoState(matches: (patch: StatePatch) => boolean, ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      let seen = false;
+      const onState = (patch: StatePatch): void => { if (matches(patch)) seen = true; };
+      this.socket!.on(S2C.STATE, onState);
+      setTimeout(() => {
+        this.socket!.off(S2C.STATE, onState);
+        resolve(!seen);
       }, ms);
     });
   }
