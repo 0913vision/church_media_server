@@ -37,7 +37,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `playback` | `PlaybackState` | 읽기/쓰기 | any | Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade. |
 | `volume` | `number` (0–100) | 읽기/쓰기 | any | Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. |
 | `mute` | `MuteState` | 읽기/쓰기 | any | Whether output is muted |
-| `song` | `SongType` | 읽기/쓰기 | any | Selected song. Writing it fades out, switches, and restores that song's remembered position, paused. |
+| `song` | `string` | 읽기/쓰기 | any | Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. |
 | `adminLock` | `boolean` | 읽기/쓰기 | admin | Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart. |
 | `audioLock` | `boolean` | 읽기 전용 | — | True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions. |
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
@@ -98,12 +98,6 @@ Whether output is muted
 
 `"unmuted"` · `"muted"`
 
-### SongType
-
-Selectable song in the two-song system users control directly
-
-`"slow"` · `"fast"`
-
 ### ConsoleInput
 
 Mixing console input. Inputs are independent, not alternatives.
@@ -129,6 +123,15 @@ Why a write or invoke was refused. Sent only to the client that issued it, so it
 `"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"protocolMismatch"`
 
 ## 객체
+
+### Song
+
+A song a user can select and leave looping. The server names these, so renaming one — or adding another — needs no client release.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Value to write to the song attribute |
+| `title` | `string` | Human-readable name to show |
 
 ### Track
 
@@ -197,7 +200,8 @@ Answer to hello: what this server speaks, what it supports, and the fixed track 
 | `accepted` | `boolean` |  |
 | `attributes` | `string[]` | Attributes this server implements. Hide controls for anything absent. |
 | `commands` | `string[]` | Commands this server implements. Hide controls for anything absent. |
-| `tracks` | `Track[]` | Track library, fixed at boot |
+| `songs` | `Song[]` | Songs a user may select, with the names to show. Fixed at boot. |
+| `tracks` | `Track[]` | Track library for flows, fixed at boot |
 
 ### `state` _(전체 브로드캐스트)_
 

@@ -206,9 +206,7 @@ class FlowRunner {
       if (index > first) await this.sleepUntil(starts[index]!);
       if (Date.now() >= part.endsAt.getTime()) break;
 
-      const track = part.tracks[index]!;
-      const offset = Math.max(0, (Date.now() - starts[index]!.getTime()) / 1000);
-      const played = await this.playTrack(track, offset, index, part.tracks.length, part.endsAt);
+      const played = await this.playTrack(part.tracks[index]!, starts[index]!, index, part.tracks.length, part.endsAt);
       if (!played) return;
     }
 
@@ -218,14 +216,24 @@ class FlowRunner {
     this.publish();
   }
 
+  /**
+   * Starts one track of the sequence. Taking the deck fades the user's song
+   * out first, which takes seconds — so where this track should be is worked
+   * out after that fade, not before it, or the seek would land where the music
+   * was when the fade began.
+   */
   private async playTrack(
     track: LibraryEntry,
-    offsetSec: number,
+    startedAt: Date,
     index: number,
     total: number,
     endsAt: Date,
   ): Promise<boolean> {
-    const ran = await this.withAudio(() => this.player.playTrackAt(track.file, offsetSec));
+    const ran = await this.withAudio(async () => {
+      await this.player.takeDeck();
+      const offsetSec = Math.max(0, (Date.now() - startedAt.getTime()) / 1000);
+      await this.player.playTrackAt(track.file, offsetSec);
+    });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
       return false;

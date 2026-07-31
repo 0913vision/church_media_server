@@ -1,12 +1,13 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.ts';
-import { MuteState, PlaybackState, RejectReason, SongType } from '../../server/protocol.ts';
+import { MuteState, PlaybackState, RejectReason } from '../../server/protocol.ts';
+import { SongType } from '../../server/constants/songs.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
 
-const DEFAULT_SONG_VOLUMES: Record<string, number> = { slow: 50, fast: 35 };
+const DEFAULT_SONG_VOLUMES: Record<string, number> = { calm: 50, fervent: 35 };
 
 // Safety net: pins the write -> state contract, and the refusal reasons a
 // client relies on to explain why nothing happened.
@@ -59,7 +60,7 @@ describe('Write Tests', () => {
       // Server state is shared and persistent: switch to whichever song is not
       // current so the test is robust across reruns.
       const current = (await actor.read()).song;
-      const target = current === SongType.SLOW ? SongType.FAST : SongType.SLOW;
+      const target = current === SongType.CALM ? SongType.FERVENT : SongType.CALM;
 
       const observed = actor.waitForState((patch) => patch.song !== undefined);
       actor.write('song', target);

@@ -1,9 +1,10 @@
-import { SongType, PlaybackState, MuteState } from '../protocol.ts';
+import { PlaybackState, MuteState } from '../protocol.ts';
+import { SongType } from './songs.ts';
 
 // Default volumes for each song
 export const DEFAULT_SONG_VOLUMES: Record<SongType, number> = {
-  [SongType.SLOW]: 50,
-  [SongType.FAST]: 35
+  [SongType.CALM]: 50,
+  [SongType.FERVENT]: 35
 };
 
 // Full player state shape
@@ -19,5 +20,5 @@ export const INITIAL_PLAYER_CONFIG: PlayerConfig = {
   serverVolume: 50,
   muted: MuteState.UNMUTED,
   state: PlaybackState.PAUSED,
-  currentSong: SongType.SLOW
+  currentSong: SongType.CALM
 };

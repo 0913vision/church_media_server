@@ -1,6 +1,7 @@
 import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SongType, MuteState, PlaybackState } from '../../server/protocol.ts';
+import { MuteState, PlaybackState } from '../../server/protocol.ts';
+import { SongType } from '../../server/constants/songs.ts';
 import { INITIAL_PLAYER_CONFIG } from '../../server/constants/playerConfig.ts';
 import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
@@ -68,9 +69,9 @@ describe('Player muted behavior (unit)', () => {
     const { device, player } = makePlayer();
     player.setMute(MuteState.MUTED);
 
-    await player.changeSong(SongType.FAST);
+    await player.changeSong(SongType.FERVENT);
 
-    assert.strictEqual(player.getCurrentSong(), SongType.FAST);
+    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
     assert.strictEqual(device.lastVolume, 0, 'device stays silent through the song change');
     assert.strictEqual(player.getVolume(), 35, 'remembered volume becomes the new song default');
   });
@@ -78,9 +79,9 @@ describe('Player muted behavior (unit)', () => {
   test('song change while unmuted applies the new song default volume', async () => {
     const { device, player } = makePlayer();
 
-    await player.changeSong(SongType.FAST);
+    await player.changeSong(SongType.FERVENT);
 
-    assert.strictEqual(player.getCurrentSong(), SongType.FAST);
+    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
     assert.strictEqual(device.lastVolume, 35);
   });
 });
@@ -90,26 +91,26 @@ describe('Player persistence (unit)', () => {
     const { saved, player } = makePlayer();
 
     player.setVolume(42);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.UNMUTED, currentSong: SongType.SLOW });
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.UNMUTED, currentSong: SongType.CALM });
 
     player.setMute(MuteState.MUTED);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.MUTED, currentSong: SongType.SLOW });
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.MUTED, currentSong: SongType.CALM });
 
-    await player.changeSong(SongType.FAST);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 35, muted: MuteState.MUTED, currentSong: SongType.FAST });
+    await player.changeSong(SongType.FERVENT);
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 35, muted: MuteState.MUTED, currentSong: SongType.FERVENT });
   });
 
   test('restores persisted preferences but boots silent when muted', () => {
     const restored: PlayerConfig = {
       serverVolume: 70,
       muted: MuteState.MUTED,
-      currentSong: SongType.FAST,
+      currentSong: SongType.FERVENT,
       state: PlaybackState.PAUSED
     };
     const { device, player } = makePlayer(restored);
 
     assert.strictEqual(player.getVolume(), 70);
-    assert.strictEqual(player.getCurrentSong(), SongType.FAST);
+    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
     assert.strictEqual(player.isMuted(), true);
     assert.strictEqual(device.lastVolume, 0, 'a muted restore must boot the device silent');
   });

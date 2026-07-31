@@ -1,4 +1,5 @@
-import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState, isSongType } from '../protocol.ts';
+import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState } from '../protocol.ts';
+import { isSongType } from '../constants/songs.ts';
 import type { AttributeName, State, StatePatch } from '../protocol.ts';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';

@@ -31,12 +31,6 @@ class MuteState(str, Enum):
     MUTED = "muted"
 
 
-class SongType(str, Enum):
-    """Selectable song in the two-song system users control directly"""
-    SLOW = "slow"
-    FAST = "fast"
-
-
 class ConsoleInput(str, Enum):
     """Mixing console input. Inputs are independent, not alternatives."""
     MIC = "mic"
@@ -71,6 +65,15 @@ class RejectReason(str, Enum):
     FLOW_ACTIVE = "flowActive"
     NO_FLOW = "noFlow"
     PROTOCOL_MISMATCH = "protocolMismatch"
+
+
+class Song(TypedDict):
+    """
+    A song a user can select and leave looping. The server names these, so
+    renaming one — or adding another — needs no client release.
+    """
+    id: str  # Value to write to the song attribute
+    title: str  # Human-readable name to show
 
 
 class Track(TypedDict):
@@ -156,7 +159,7 @@ class State(TypedDict):
     playback: PlaybackState  # Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade.
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader.
     mute: MuteState  # Whether output is muted
-    song: SongType  # Selected song. Writing it fades out, switches, and restores that song's remembered position, paused.
+    song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
@@ -168,7 +171,7 @@ class StatePatch(TypedDict, total=False):
     playback: PlaybackState  # Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade.
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader.
     mute: MuteState  # Whether output is muted
-    song: SongType  # Selected song. Writing it fades out, switches, and restores that song's remembered position, paused.
+    song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
@@ -292,7 +295,8 @@ class ReadyPayload(TypedDict):
     accepted: bool
     attributes: list[str]  # Attributes this server implements. Hide controls for anything absent.
     commands: list[str]  # Commands this server implements. Hide controls for anything absent.
-    tracks: list[Track]  # Track library, fixed at boot
+    songs: list[Song]  # Songs a user may select, with the names to show. Fixed at boot.
+    tracks: list[Track]  # Track library for flows, fixed at boot
 
 
 class RejectedPayload(TypedDict):

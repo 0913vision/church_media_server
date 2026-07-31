@@ -1,4 +1,5 @@
-import { PlaybackState, MuteState, SongType } from '../protocol.ts';
+import { PlaybackState, MuteState } from '../protocol.ts';
+import type { SongType } from '../constants/songs.ts';
 import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
@@ -128,7 +129,7 @@ class Player {
    * The player's own state decides which song is current; while muted, the
    * device stays silent and only the remembered volume moves to the new
    * song's default.
-   * @param newSong - New song type (SongType.SLOW or SongType.FAST)
+   * @param newSong - Song to switch to
    */
   async changeSong(newSong: SongType): Promise<void> {
     const currentSong = this.state.currentSong;
@@ -183,12 +184,33 @@ class Player {
    * song's position is captured once when the deck is first taken over, so
    * restoreSong() can return exactly where the user left off.
    */
+  /**
+   * Hands the deck to a scheduled flow: remembers where the user's song was,
+   * and fades out if it is sounding, the same way pausing does.
+   *
+   * Kept separate from playTrackAt because the fade takes seconds, and a flow
+   * has to work out where its timeline is *after* that, not before — otherwise
+   * it seeks to where the music was when the fade began.
+   */
+  async takeDeck(): Promise<void> {
+    if (this.trackMode) return;
+
+    this.device.captureSongTime(this.state.currentSong);
+    this.trackMode = true;
+    if (this.isPlaying()) {
+      try {
+        await this.device.pause();
+      } catch (error) {
+        log.error('player', null, 'Failed to fade out before a flow took the deck', { error: errorMessage(error) });
+        throw error;
+      }
+      this.state.state = PlaybackState.PAUSED;
+    }
+  }
+
   async playTrackAt(filePath: string, offsetSec: number): Promise<void> {
     try {
-      if (!this.trackMode) {
-        this.device.captureSongTime(this.state.currentSong);
-        this.trackMode = true;
-      }
+      await this.takeDeck();
       await this.device.playFileAt(filePath, offsetSec);
     } catch (error) {
       log.error('player', null, 'Failed to play track', { filePath, offsetSec, error: errorMessage(error) });

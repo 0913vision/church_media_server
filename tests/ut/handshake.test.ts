@@ -36,6 +36,14 @@ describe('Handshake and Read Tests', () => {
       // controls for the rest instead of guessing.
       assert.ok(ready.commands.includes('authenticate'));
       assert.ok(ready.commands.includes('enableConsoleInput'));
+
+      // Songs are named by the server, so renaming one never means a client
+      // release — the catalogue arrives with the handshake.
+      assert.ok(ready.songs.length > 0);
+      for (const song of ready.songs) {
+        assert.strictEqual(typeof song.id, 'string');
+        assert.ok(song.title.length > 0, 'every song carries a name to show');
+      }
       assert.ok(Array.isArray(ready.tracks));
     } finally {
       helper.disconnect();
@@ -46,14 +54,14 @@ describe('Handshake and Read Tests', () => {
     const helper = new SocketTestHelper();
 
     try {
-      await helper.open();
+      const { ready } = await helper.open();
       const state = await helper.read();
 
       assert.ok(['playing', 'paused'].includes(state.playback as string));
       assert.strictEqual(typeof state.volume, 'number');
       assert.ok((state.volume as number) >= 0 && (state.volume as number) <= 100);
       assert.ok(['muted', 'unmuted'].includes(state.mute as string));
-      assert.ok(['slow', 'fast'].includes(state.song as string));
+      assert.ok(ready.songs.some((song) => song.id === state.song), 'the selected song is one the server offers');
       assert.strictEqual(typeof state.audioLock, 'boolean');
       assert.strictEqual(typeof state.adminLock, 'boolean');
       assert.strictEqual(state.isAdmin, false);

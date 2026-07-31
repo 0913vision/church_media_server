@@ -1,4 +1,4 @@
-import { SongType } from '../protocol.ts';
+import { SongType } from './songs.ts';
 import { requireEnv, requireEnvOneOf } from '../utils/env.ts';
 
 /** Which mixing-console backend to drive */
@@ -12,14 +12,14 @@ export const DEVICE_CONFIG = {
 
   // Audio file per song — explicit mapping, no positional index coupling
   PLAYLIST: {
-    [SongType.SLOW]: './assets/audio/music_slow.mp3',
-    [SongType.FAST]: './assets/audio/music_fast.mp3'
+    [SongType.CALM]: './assets/audio/music_slow.mp3',
+    [SongType.FERVENT]: './assets/audio/music_fast.mp3'
   } satisfies Record<SongType, string>,
 
   // Initial song times
   INITIAL_SONG_TIMES: {
-    [SongType.SLOW]: 0.0,
-    [SongType.FAST]: 0.0
+    [SongType.CALM]: 0.0,
+    [SongType.FERVENT]: 0.0
   } satisfies Record<SongType, number>,
 
   // Console configuration (required env, validated against ConsoleMode)

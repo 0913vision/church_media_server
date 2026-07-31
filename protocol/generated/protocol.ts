@@ -32,16 +32,6 @@ export function isMuteState(value: unknown): value is MuteState {
   return typeof value === 'string' && (Object.values(MuteState) as string[]).includes(value);
 }
 
-/** Selectable song in the two-song system users control directly */
-export const SongType = {
-  SLOW: 'slow',
-  FAST: 'fast',
-} as const;
-export type SongType = (typeof SongType)[keyof typeof SongType];
-export function isSongType(value: unknown): value is SongType {
-  return typeof value === 'string' && (Object.values(SongType) as string[]).includes(value);
-}
-
 /** Mixing console input. Inputs are independent, not alternatives. */
 export const ConsoleInput = {
   MIC: 'mic',
@@ -92,6 +82,17 @@ export const RejectReason = {
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
 export function isRejectReason(value: unknown): value is RejectReason {
   return typeof value === 'string' && (Object.values(RejectReason) as string[]).includes(value);
+}
+
+/**
+ * A song a user can select and leave looping. The server names these, so renaming one
+ * — or adding another — needs no client release.
+ */
+export interface Song {
+  /** Value to write to the song attribute */
+  id: string;
+  /** Human-readable name to show */
+  title: string;
 }
 
 /** A playable library entry. File paths never leave the server. */
@@ -172,8 +173,10 @@ export const ATTRIBUTES = {
   /** Whether output is muted */
   mute: { access: 'rw', permission: 'any' },
   /**
-   * Selected song. Writing it fades out, switches, and restores that song's remembered
-   * position, paused.
+   * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
+   * out, switches, and restores that song's remembered position, paused. It is an id
+   * rather than a fixed set because which songs exist, and what they are called, is
+   * the server's to say.
    */
   song: { access: 'rw', permission: 'any' },
   /**
@@ -244,10 +247,12 @@ export interface State {
   /** Whether output is muted */
   mute: MuteState;
   /**
-   * Selected song. Writing it fades out, switches, and restores that song's remembered
-   * position, paused.
+   * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
+   * out, switches, and restores that song's remembered position, paused. It is an id
+   * rather than a fixed set because which songs exist, and what they are called, is
+   * the server's to say.
    */
-  song: SongType;
+  song: string;
   /**
    * Global gate on non-admin writes. Any admin may release it, it survives
    * disconnects, and it is cleared by a restart.
@@ -276,7 +281,7 @@ export type WriteRequest =
   | { field: 'playback'; value: PlaybackState }
   | { field: 'volume'; value: number }
   | { field: 'mute'; value: MuteState }
-  | { field: 'song'; value: SongType }
+  | { field: 'song'; value: string }
   | { field: 'adminLock'; value: boolean }
   ;
 
@@ -351,7 +356,9 @@ export interface S2CPayloads {
     attributes: string[];
     /** Commands this server implements. Hide controls for anything absent. */
     commands: string[];
-    /** Track library, fixed at boot */
+    /** Songs a user may select, with the names to show. Fixed at boot. */
+    songs: Song[];
+    /** Track library for flows, fixed at boot */
     tracks: Track[];
   };
   /**
