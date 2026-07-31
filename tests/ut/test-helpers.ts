@@ -189,9 +189,9 @@ export class SocketTestHelper {
     return { ready: await readyP, state: await stateP };
   }
 
-  /** Reads attributes, resolving the state patch that comes back. */
-  read(fields?: string[]): Promise<StatePatch> {
-    return this.emitAndWaitFor<StatePatch>(C2S.READ, S2C.STATE, { fields: fields ?? null });
+  /** Reads every attribute, resolving the state that comes back. */
+  read(): Promise<StatePatch> {
+    return this.emitAndWaitFor<StatePatch>(C2S.READ, S2C.STATE, {});
   }
 
   write(field: string, value: unknown): void {

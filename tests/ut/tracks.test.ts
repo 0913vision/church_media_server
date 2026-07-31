@@ -38,11 +38,11 @@ describe('Track Library Tests', () => {
     }
   });
 
-  test('flow reads as null until the flow engine runs one', async () => {
+  test('the flow slot reads as idle until the flow engine runs one', async () => {
     const sock = new SocketTestHelper();
     try {
       await sock.open();
-      assert.strictEqual((await sock.read(['flow'])).flow, null);
+      assert.deepStrictEqual((await sock.read()).flow, { phase: 'idle' });
     } finally {
       sock.disconnect();
     }

@@ -37,7 +37,7 @@ describe('Write Tests', () => {
       await actor.open();
       await observer.open();
 
-      const current = (await actor.read(['mute'])).mute;
+      const current = (await actor.read()).mute;
       const target = current === MuteState.MUTED ? MuteState.UNMUTED : MuteState.MUTED;
 
       const observed = observer.waitForState((patch) => patch.mute !== undefined);
@@ -58,7 +58,7 @@ describe('Write Tests', () => {
 
       // Server state is shared and persistent: switch to whichever song is not
       // current so the test is robust across reruns.
-      const current = (await actor.read(['song'])).song;
+      const current = (await actor.read()).song;
       const target = current === SongType.SLOW ? SongType.FAST : SongType.SLOW;
 
       const observed = actor.waitForState((patch) => patch.song !== undefined);
@@ -196,7 +196,7 @@ describe('Write Rejection Tests', () => {
     const actor = new SocketTestHelper();
     try {
       await actor.open();
-      const current = (await actor.read(['song'])).song as string;
+      const current = (await actor.read()).song as string;
 
       const quiet = actor.expectNoState((patch) => patch.song !== undefined, 400);
       actor.write('song', current);

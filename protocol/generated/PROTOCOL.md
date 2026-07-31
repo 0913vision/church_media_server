@@ -12,8 +12,10 @@ The server is modelled as a device that describes itself: it exposes attributes 
 - The server sends four things: ready (identity and what it supports, once), state (a patch of attributes that changed), rejected (why a write or invoke was refused), ping (heartbeat).
 - An attribute is state: it has a value you can read. A command is an action: it takes arguments and has no value. Nothing is modelled as the wrong one — there are no write-only attributes.
 - One write touches exactly one attribute, so each keeps its own timing and permission rules. Batch writes are deliberately not allowed.
-- A state patch contains only the attributes that changed. An absent field means unchanged; an explicit null means 'now nothing' (only flow reads as null).
-- Nothing is inferred from an empty or absent value. Ending something is its own command — stopping a flow is stopFlow, not a null write.
+- A state patch contains only the attributes that changed; an absent field means unchanged. That is the one place absence carries meaning, and it never means 'no value'.
+- There is no null anywhere in this protocol. Where a value could be absent, a tagged union says which case it is: an idle flow reads as { phase: 'idle' }, not as nothing. Every field a variant declares is always present in that variant, so a state the server is not in cannot even be written down.
+- A tag a client does not recognise is a fault, not a case: either the server broke its contract or the client is out of date. The client must surface it as a state it cannot interpret and point at updating — never fall back to the nearest familiar case, and never render it as blank. Blank is itself a claim: on this device it reads as 'nothing is happening', which is exactly the false statement these unions exist to prevent.
+- Nothing is inferred from an empty or absent value. Ending something is its own command — stopping a flow is stopFlow.
 - ready lists the attributes and commands this server actually implements. A client must hide controls for anything it does not see, so a server can gain features without a client release.
 - Every event carries exactly one object payload. No positional arguments, no bare scalars.
 - The server's state is always authoritative. A write or invoke expresses intent; the result arrives as a state patch.
@@ -39,7 +41,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `adminLock` | `boolean` | 읽기/쓰기 | admin | Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart. |
 | `audioLock` | `boolean` | 읽기 전용 | — | True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions. |
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
-| `flow` | `Flow \| null` | 읽기 전용 | — | The scheduled flow the server is running, or null when there is none. Read-only: startFlow and stopFlow change it. |
+| `flow` | `FlowStatus` | 읽기 전용 | — | What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it. |
 
 ## 명령 (인자를 받는 동작)
 
@@ -67,15 +69,12 @@ Switch a mixing console input on. Not subject to the audio lock, and open to any
 
 권한: admin
 
-Hand the server a whole scheduled flow to run: it engages the admin lock at lockAt, plays the sequence so it finishes at endsAt (joining mid-sequence if started late), restores the user's song, and releases the lock at unlockAt. One flow at a time.
+Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. A flow is a set of optional parts: give a part in full, or leave it out explicitly. At least one part is required, and only one flow runs at a time.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `name` | `string` | Display name, e.g. '수요 예배' |
-| `tracks` | `string[]` | Track ids in play order. Empty for a lock-only flow. |
-| `lockAt` | `string` | When to engage the admin lock. Already past means immediately. |
-| `endsAt` | `string \| null` | When the last track must finish. Required when tracks is non-empty. |
-| `unlockAt` | `string` | When to release the admin lock. Must be after lockAt. |
+| `parts` | `FlowPart[]` | What this run should do. At least one part, and at most one of each kind. |
 
 ### `stopFlow`
 
@@ -110,12 +109,6 @@ Selectable song in the two-song system users control directly
 Mixing console input. Inputs are independent, not alternatives.
 
 `"mic"` · `"aux"`
-
-### FlowPhase
-
-Stage of a running scheduled flow
-
-`"waitingLock"` · `"playing"` · `"holding"`
 
 ### Access
 
@@ -157,18 +150,6 @@ Which track of a flow is sounding right now
 | `index` | `number` | 1-based position in the sequence |
 | `total` | `number` |  |
 
-### Flow
-
-The scheduled flow the server is running
-
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `name` | `string` | Display name supplied by the caller |
-| `phase` | `FlowPhase` |  |
-| `track` | `FlowTrack \| null` | Null unless phase is playing |
-| `endsAt` | `string \| null` | When the track sequence finishes; null for a lock-only flow |
-| `unlockAt` | `string` | When the admin lock releases. Independent of endsAt. |
-
 ## 클라이언트 → 서버
 
 ### `hello`
@@ -182,11 +163,9 @@ First message after connecting. Identifies the client and declares the protocol 
 
 ### `read`
 
-Ask for attribute values, for example after waking from background. Omit fields to read everything.
+Ask for every attribute value, for example after waking from background. There is no field selection: the whole state is small, and one shape is easier to keep honest than two.
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `fields` | `string[] \| null` | Attribute names to read, or null for all |
+_필드 없음._
 
 ### `write`
 

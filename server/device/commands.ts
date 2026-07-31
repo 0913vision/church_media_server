@@ -7,19 +7,32 @@ import type { ServerDeps } from '../deps.ts';
 import { log } from '../utils/logger.ts';
 
 /**
+ * What running a command produced. A tagged result rather than "a reason, or
+ * nothing": the same rule the protocol follows, so success and failure are
+ * both something you have to look at.
+ */
+export type CommandOutcome = { ok: true } | { ok: false; reason: RejectReason };
+
+export const DONE: CommandOutcome = { ok: true };
+export function refuse(reason: RejectReason): CommandOutcome {
+  return { ok: false, reason };
+}
+
+/**
  * A command's implementation. Arguments arrive untrusted, so each run narrows
- * them itself and answers with a reject reason, or null when it succeeded.
+ * them itself.
  *
  * Gating lives here rather than in the invoke handler because it differs per
  * command: authenticate has to work while the admin lock is held, or nobody
  * could ever release it.
  */
 export interface CommandSpec {
-  run(args: unknown, deps: ServerDeps, socket: ServerSocket): Promise<RejectReason | null>;
+  run(args: unknown, deps: ServerDeps, socket: ServerSocket): Promise<CommandOutcome>;
 }
 
-function argsObject(args: unknown): Record<string, unknown> | null {
-  return typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : null;
+/** Untrusted args as a plain object; an empty one when the payload is not */
+function argsObject(args: unknown): Record<string, unknown> {
+  return typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {};
 }
 
 /**
@@ -30,28 +43,26 @@ function argsObject(args: unknown): Record<string, unknown> | null {
 export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   authenticate: {
     async run(args, deps, socket) {
-      const parsed = argsObject(args);
-      const password = parsed?.password;
-      if (typeof password !== 'string') return RejectReason.INVALID_VALUE;
+      const password = argsObject(args).password;
+      if (typeof password !== 'string') return refuse(RejectReason.INVALID_VALUE);
 
       if (!verifyPassword(password, ADMIN_CONFIG.ADMIN_PASSWORD_HASH)) {
         log.warn('command', socket, 'Socket failed admin authentication');
-        return RejectReason.INVALID_PASSWORD;
+        return refuse(RejectReason.INVALID_PASSWORD);
       }
 
       deps.adminSessionManager.addAdminSocket(socket);
       // isAdmin is per-connection, so it goes only to the client it describes.
       deps.notifier.stateTo(socket, { isAdmin: true });
       log.info('command', socket, 'Socket authenticated as admin');
-      return null;
+      return DONE;
     },
   },
 
   enableConsoleInput: {
     async run(args, deps, socket) {
-      const parsed = argsObject(args);
-      const input = parsed?.input;
-      if (!isConsoleInput(input)) return RejectReason.INVALID_VALUE;
+      const input = argsObject(args).input;
+      if (!isConsoleInput(input)) return refuse(RejectReason.INVALID_VALUE);
 
       // The console holds no protected state and its OSC bursts are
       // instantaneous, so this takes no audio lock — only the admin gate.
@@ -66,9 +77,9 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
 
       if (!allowed) {
         log.warn('command', socket, 'Console input blocked (admin lock)', { input });
-        return RejectReason.ADMIN_LOCKED;
+        return refuse(RejectReason.ADMIN_LOCKED);
       }
-      return null;
+      return DONE;
     },
   },
 };

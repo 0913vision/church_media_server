@@ -27,7 +27,7 @@ describe('Audio Lock Contention Tests', () => {
       assert.strictEqual((await muted).mute, MuteState.MUTED);
 
       // Start from paused (robust against an externally running server)
-      if ((await actor.read(['playback'])).playback === PlaybackState.PLAYING) {
+      if ((await actor.read()).playback === PlaybackState.PLAYING) {
         const paused = actor.waitForState((patch) => patch.playback !== undefined, 8000);
         actor.write('playback', PlaybackState.PAUSED);
         assert.strictEqual((await paused).playback, PlaybackState.PAUSED);
@@ -36,7 +36,7 @@ describe('Audio Lock Contention Tests', () => {
       // The setup writes above also took the audio lock. Drain them with a read
       // round-trip (the server answers in order), so the listeners below can
       // only see the play operation's lock transitions.
-      assert.strictEqual((await observer.read(['audioLock'])).audioLock, false);
+      assert.strictEqual((await observer.read()).audioLock, false);
 
       // Play: the ~3s fade-in holds the audio lock
       const lockAcquired = observer.waitForState((patch) => patch.audioLock === true);

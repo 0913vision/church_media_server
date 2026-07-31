@@ -62,14 +62,16 @@ describe('Handshake and Read Tests', () => {
     }
   });
 
-  test('read honours a field selection', async () => {
+  test('the idle flow slot reads as a value, never as nothing', async () => {
     const helper = new SocketTestHelper();
 
     try {
       await helper.open();
-      const state = await helper.read(['volume', 'song']);
+      const state = await helper.read();
 
-      assert.deepStrictEqual(Object.keys(state).sort(), ['song', 'volume']);
+      // Absence is spelled out, so a client cannot mistake "no flow" for
+      // "this field was not sent".
+      assert.deepStrictEqual(state.flow, { phase: 'idle' });
     } finally {
       helper.disconnect();
     }

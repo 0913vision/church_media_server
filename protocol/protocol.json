@@ -7,8 +7,10 @@
     "The server sends four things: ready (identity and what it supports, once), state (a patch of attributes that changed), rejected (why a write or invoke was refused), ping (heartbeat).",
     "An attribute is state: it has a value you can read. A command is an action: it takes arguments and has no value. Nothing is modelled as the wrong one — there are no write-only attributes.",
     "One write touches exactly one attribute, so each keeps its own timing and permission rules. Batch writes are deliberately not allowed.",
-    "A state patch contains only the attributes that changed. An absent field means unchanged; an explicit null means 'now nothing' (only flow reads as null).",
-    "Nothing is inferred from an empty or absent value. Ending something is its own command — stopping a flow is stopFlow, not a null write.",
+    "A state patch contains only the attributes that changed; an absent field means unchanged. That is the one place absence carries meaning, and it never means 'no value'.",
+    "There is no null anywhere in this protocol. Where a value could be absent, a tagged union says which case it is: an idle flow reads as { phase: 'idle' }, not as nothing. Every field a variant declares is always present in that variant, so a state the server is not in cannot even be written down.",
+    "A tag a client does not recognise is a fault, not a case: either the server broke its contract or the client is out of date. The client must surface it as a state it cannot interpret and point at updating — never fall back to the nearest familiar case, and never render it as blank. Blank is itself a claim: on this device it reads as 'nothing is happening', which is exactly the false statement these unions exist to prevent.",
+    "Nothing is inferred from an empty or absent value. Ending something is its own command — stopping a flow is stopFlow.",
     "ready lists the attributes and commands this server actually implements. A client must hide controls for anything it does not see, so a server can gain features without a client release.",
     "Every event carries exactly one object payload. No positional arguments, no bare scalars.",
     "The server's state is always authoritative. A write or invoke expresses intent; the result arrives as a state patch.",
@@ -31,14 +33,6 @@
     "ConsoleInput": {
       "description": "Mixing console input. Inputs are independent, not alternatives.",
       "values": { "MIC": "mic", "AUX": "aux" }
-    },
-    "FlowPhase": {
-      "description": "Stage of a running scheduled flow",
-      "values": {
-        "WAITING_LOCK": "waitingLock",
-        "PLAYING": "playing",
-        "HOLDING": "holding"
-      }
     },
     "Access": {
       "description": "How an attribute may be used",
@@ -81,15 +75,59 @@
         "index": { "type": "number", "description": "1-based position in the sequence" },
         "total": { "type": "number" }
       }
+    }
+  },
+  "unions": {
+    "FlowPart": {
+      "description": "One part of a flow. A flow is a set of these, so a run can play music, hold the admin lock, or both — and a new capability later is a new kind rather than a new command.",
+      "discriminator": "kind",
+      "variants": {
+        "music": {
+          "description": "Play these tracks in order so the last one finishes at endsAt. Started late, the server joins the timeline part-way through.",
+          "fields": {
+            "tracks": { "type": "string[]", "description": "Track ids in play order" },
+            "endsAt": { "type": "string", "description": "When the last track must finish" }
+          }
+        },
+        "lock": {
+          "description": "Hold the global admin gate for this window. Releasing is its own step: music ending does not release the lock.",
+          "fields": {
+            "at": { "type": "string", "description": "When to engage the lock. Already past means immediately." },
+            "until": { "type": "string", "description": "When to release it. Must be after at." }
+          }
+        }
+      }
     },
-    "Flow": {
-      "description": "The scheduled flow the server is running",
-      "fields": {
-        "name": { "type": "string", "description": "Display name supplied by the caller" },
-        "phase": { "type": "FlowPhase" },
-        "track": { "type": "FlowTrack?", "description": "Null unless phase is playing" },
-        "endsAt": { "type": "string?", "description": "When the track sequence finishes; null for a lock-only flow" },
-        "unlockAt": { "type": "string", "description": "When the admin lock releases. Independent of endsAt." }
+    "FlowStatus": {
+      "description": "What the server's one flow slot is doing. Each phase carries only the fields that mean something in it, so a status cannot describe a state the server is not in. A flow lives only for the length of its run — the schedule it came from stays with the client that submitted it.",
+      "discriminator": "phase",
+      "variants": {
+        "idle": {
+          "description": "No flow is running",
+          "fields": {}
+        },
+        "waiting": {
+          "description": "A flow is accepted but none of its parts has started yet",
+          "fields": {
+            "name": { "type": "string" },
+            "startsAt": { "type": "string", "description": "When its first part begins" }
+          }
+        },
+        "playing": {
+          "description": "The flow's music is sounding",
+          "fields": {
+            "name": { "type": "string" },
+            "track": { "type": "FlowTrack" },
+            "endsAt": { "type": "string", "description": "When the music finishes" }
+          }
+        },
+        "holding": {
+          "description": "Nothing is sounding, but the flow still holds the admin lock",
+          "fields": {
+            "name": { "type": "string" },
+            "unlockAt": { "type": "string", "description": "When the lock releases" }
+          }
+        }
       }
     }
   },
@@ -136,8 +174,8 @@
       "access": "ro"
     },
     "flow": {
-      "description": "The scheduled flow the server is running, or null when there is none. Read-only: startFlow and stopFlow change it.",
-      "type": "Flow?",
+      "description": "What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.",
+      "type": "FlowStatus",
       "access": "ro"
     }
   },
@@ -151,14 +189,11 @@
       "args": { "input": { "type": "ConsoleInput" } }
     },
     "startFlow": {
-      "description": "Hand the server a whole scheduled flow to run: it engages the admin lock at lockAt, plays the sequence so it finishes at endsAt (joining mid-sequence if started late), restores the user's song, and releases the lock at unlockAt. One flow at a time.",
+      "description": "Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. A flow is a set of optional parts: give a part in full, or leave it out explicitly. At least one part is required, and only one flow runs at a time.",
       "permission": "admin",
       "args": {
         "name": { "type": "string", "description": "Display name, e.g. '수요 예배'" },
-        "tracks": { "type": "string[]", "description": "Track ids in play order. Empty for a lock-only flow." },
-        "lockAt": { "type": "string", "description": "When to engage the admin lock. Already past means immediately." },
-        "endsAt": { "type": "string?", "description": "When the last track must finish. Required when tracks is non-empty." },
-        "unlockAt": { "type": "string", "description": "When to release the admin lock. Must be after lockAt." }
+        "parts": { "type": "FlowPart[]", "description": "What this run should do. At least one part, and at most one of each kind." }
       }
     },
     "stopFlow": {
@@ -177,10 +212,8 @@
         }
       },
       "read": {
-        "description": "Ask for attribute values, for example after waking from background. Omit fields to read everything.",
-        "payload": {
-          "fields": { "type": "string[]?", "description": "Attribute names to read, or null for all" }
-        }
+        "description": "Ask for every attribute value, for example after waking from background. There is no field selection: the whole state is small, and one shape is easier to keep honest than two.",
+        "payload": {}
       },
       "write": {
         "description": "Set one attribute. Refused when it is unknown, read-only, out of range, gated by the admin lock, or the device is busy.",

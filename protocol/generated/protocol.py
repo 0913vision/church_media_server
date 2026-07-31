@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 """
 The server is modelled as a device that describes itself: it exposes
@@ -41,13 +41,6 @@ class ConsoleInput(str, Enum):
     """Mixing console input. Inputs are independent, not alternatives."""
     MIC = "mic"
     AUX = "aux"
-
-
-class FlowPhase(str, Enum):
-    """Stage of a running scheduled flow"""
-    WAITING_LOCK = "waitingLock"
-    PLAYING = "playing"
-    HOLDING = "holding"
 
 
 class Access(str, Enum):
@@ -94,13 +87,68 @@ class FlowTrack(TypedDict):
     total: float
 
 
-class Flow(TypedDict):
-    """The scheduled flow the server is running"""
-    name: str  # Display name supplied by the caller
-    phase: FlowPhase
-    track: FlowTrack | None  # Null unless phase is playing
-    endsAt: str | None  # When the track sequence finishes; null for a lock-only flow
-    unlockAt: str  # When the admin lock releases. Independent of endsAt.
+class FlowPartMusic(TypedDict):
+    """
+    Play these tracks in order so the last one finishes at endsAt. Started
+    late, the server joins the timeline part-way through.
+    """
+    kind: Literal["music"]
+    tracks: list[str]  # Track ids in play order
+    endsAt: str  # When the last track must finish
+
+
+class FlowPartLock(TypedDict):
+    """
+    Hold the global admin gate for this window. Releasing is its own step:
+    music ending does not release the lock.
+    """
+    kind: Literal["lock"]
+    at: str  # When to engage the lock. Already past means immediately.
+    until: str  # When to release it. Must be after at.
+
+
+"""
+One part of a flow. A flow is a set of these, so a run can play music, hold
+the admin lock, or both — and a new capability later is a new kind rather than
+a new command.
+"""
+FlowPart = FlowPartMusic | FlowPartLock
+
+
+class FlowStatusIdle(TypedDict):
+    """No flow is running"""
+    phase: Literal["idle"]
+
+
+class FlowStatusWaiting(TypedDict):
+    """A flow is accepted but none of its parts has started yet"""
+    phase: Literal["waiting"]
+    name: str
+    startsAt: str  # When its first part begins
+
+
+class FlowStatusPlaying(TypedDict):
+    """The flow's music is sounding"""
+    phase: Literal["playing"]
+    name: str
+    track: FlowTrack
+    endsAt: str  # When the music finishes
+
+
+class FlowStatusHolding(TypedDict):
+    """Nothing is sounding, but the flow still holds the admin lock"""
+    phase: Literal["holding"]
+    name: str
+    unlockAt: str  # When the lock releases
+
+
+"""
+What the server's one flow slot is doing. Each phase carries only the fields
+that mean something in it, so a status cannot describe a state the server is
+not in. A flow lives only for the length of its run — the schedule it came
+from stays with the client that submitted it.
+"""
+FlowStatus = FlowStatusIdle | FlowStatusWaiting | FlowStatusPlaying | FlowStatusHolding
 
 
 class State(TypedDict):
@@ -112,7 +160,7 @@ class State(TypedDict):
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
-    flow: Flow | None  # The scheduled flow the server is running, or null when there is none. Read-only: startFlow and stopFlow change it.
+    flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
 
 
 class StatePatch(TypedDict, total=False):
@@ -124,7 +172,7 @@ class StatePatch(TypedDict, total=False):
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
-    flow: Flow | None  # The scheduled flow the server is running, or null when there is none. Read-only: startFlow and stopFlow change it.
+    flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
 
 
 class WriteRequest(TypedDict):
@@ -153,16 +201,16 @@ class EnableConsoleInputArgs(TypedDict):
 
 class StartFlowArgs(TypedDict):
     """
-    Hand the server a whole scheduled flow to run: it engages the admin lock
-    at lockAt, plays the sequence so it finishes at endsAt (joining
-    mid-sequence if started late), restores the user's song, and releases the
-    lock at unlockAt. One flow at a time.
+    Hand the server one flow to run, and it owns that run to the end: it keeps
+    to the wall clock, restores the user's song afterwards, and cleans up
+    however it finishes. The schedule this came from stays with the caller —
+    the server holds no flow definitions and no calendar, it only executes
+    what it is given. A flow is a set of optional parts: give a part in full,
+    or leave it out explicitly. At least one part is required, and only one
+    flow runs at a time.
     """
     name: str  # Display name, e.g. '수요 예배'
-    tracks: list[str]  # Track ids in play order. Empty for a lock-only flow.
-    lockAt: str  # When to engage the admin lock. Already past means immediately.
-    endsAt: str | None  # When the last track must finish. Required when tracks is non-empty.
-    unlockAt: str  # When to release the admin lock. Must be after lockAt.
+    parts: list[FlowPart]  # What this run should do. At least one part, and at most one of each kind.
 
 
 class StopFlowArgs(TypedDict):
@@ -226,10 +274,11 @@ class HelloPayload(TypedDict):
 
 class ReadPayload(TypedDict):
     """
-    Ask for attribute values, for example after waking from background. Omit
-    fields to read everything.
+    Ask for every attribute value, for example after waking from background.
+    There is no field selection: the whole state is small, and one shape is
+    easier to keep honest than two.
     """
-    fields: list[str] | None  # Attribute names to read, or null for all
+    pass
 
 
 class ReadyPayload(TypedDict):

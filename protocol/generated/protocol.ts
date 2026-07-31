@@ -52,17 +52,6 @@ export function isConsoleInput(value: unknown): value is ConsoleInput {
   return typeof value === 'string' && (Object.values(ConsoleInput) as string[]).includes(value);
 }
 
-/** Stage of a running scheduled flow */
-export const FlowPhase = {
-  WAITING_LOCK: 'waitingLock',
-  PLAYING: 'playing',
-  HOLDING: 'holding',
-} as const;
-export type FlowPhase = (typeof FlowPhase)[keyof typeof FlowPhase];
-export function isFlowPhase(value: unknown): value is FlowPhase {
-  return typeof value === 'string' && (Object.values(FlowPhase) as string[]).includes(value);
-}
-
 /** How an attribute may be used */
 export const Access = {
   READ_ONLY: 'ro',
@@ -123,18 +112,50 @@ export interface FlowTrack {
   total: number;
 }
 
-/** The scheduled flow the server is running */
-export interface Flow {
-  /** Display name supplied by the caller */
-  name: string;
-  phase: FlowPhase;
-  /** Null unless phase is playing */
-  track: FlowTrack | null;
-  /** When the track sequence finishes; null for a lock-only flow */
-  endsAt: string | null;
-  /** When the admin lock releases. Independent of endsAt. */
-  unlockAt: string;
-}
+/**
+ * One part of a flow. A flow is a set of these, so a run can play music, hold the
+ * admin lock, or both — and a new capability later is a new kind rather than a new
+ * command.
+ */
+export type FlowPart =
+  /**
+   * Play these tracks in order so the last one finishes at endsAt. Started late, the
+   * server joins the timeline part-way through.
+   */
+  | { kind: 'music'; tracks: string[]; endsAt: string }
+  /**
+   * Hold the global admin gate for this window. Releasing is its own step: music
+   * ending does not release the lock.
+   */
+  | { kind: 'lock'; at: string; until: string }
+  ;
+export const FlowPartKind = {
+  MUSIC: 'music',
+  LOCK: 'lock',
+} as const;
+
+/**
+ * What the server's one flow slot is doing. Each phase carries only the fields that
+ * mean something in it, so a status cannot describe a state the server is not in. A
+ * flow lives only for the length of its run — the schedule it came from stays with the
+ * client that submitted it.
+ */
+export type FlowStatus =
+  /** No flow is running */
+  | { phase: 'idle' }
+  /** A flow is accepted but none of its parts has started yet */
+  | { phase: 'waiting'; name: string; startsAt: string }
+  /** The flow's music is sounding */
+  | { phase: 'playing'; name: string; track: FlowTrack; endsAt: string }
+  /** Nothing is sounding, but the flow still holds the admin lock */
+  | { phase: 'holding'; name: string; unlockAt: string }
+  ;
+export const FlowStatusKind = {
+  IDLE: 'idle',
+  WAITING: 'waiting',
+  PLAYING: 'playing',
+  HOLDING: 'holding',
+} as const;
 
 /** Every attribute this protocol defines, with how it may be used */
 export const ATTRIBUTES = {
@@ -171,8 +192,8 @@ export const ATTRIBUTES = {
    */
   isAdmin: { access: 'ro' },
   /**
-   * The scheduled flow the server is running, or null when there is none. Read-only:
-   * startFlow and stopFlow change it.
+   * What the server's one flow slot is doing. Always readable: an idle slot says so
+   * rather than reading as nothing. Read-only — startFlow and stopFlow change it.
    */
   flow: { access: 'ro' },
 } as const;
@@ -192,10 +213,12 @@ export const COMMANDS = {
    */
   enableConsoleInput: { permission: 'any' },
   /**
-   * Hand the server a whole scheduled flow to run: it engages the admin lock at
-   * lockAt, plays the sequence so it finishes at endsAt (joining mid-sequence if
-   * started late), restores the user's song, and releases the lock at unlockAt. One
-   * flow at a time.
+   * Hand the server one flow to run, and it owns that run to the end: it keeps to the
+   * wall clock, restores the user's song afterwards, and cleans up however it
+   * finishes. The schedule this came from stays with the caller — the server holds no
+   * flow definitions and no calendar, it only executes what it is given. A flow is a
+   * set of optional parts: give a part in full, or leave it out explicitly. At least
+   * one part is required, and only one flow runs at a time.
    */
   startFlow: { permission: 'admin' },
   /**
@@ -241,10 +264,10 @@ export interface State {
    */
   isAdmin: boolean;
   /**
-   * The scheduled flow the server is running, or null when there is none. Read-only:
-   * startFlow and stopFlow change it.
+   * What the server's one flow slot is doing. Always readable: an idle slot says so
+   * rather than reading as nothing. Read-only — startFlow and stopFlow change it.
    */
-  flow: Flow | null;
+  flow: FlowStatus;
 }
 export type StatePatch = Partial<State>;
 
@@ -261,7 +284,7 @@ export type WriteRequest =
 export type InvokeRequest =
   | { command: 'authenticate'; args: { password: string } }
   | { command: 'enableConsoleInput'; args: { input: ConsoleInput } }
-  | { command: 'startFlow'; args: { name: string; tracks: string[]; lockAt: string; endsAt: string | null; unlockAt: string } }
+  | { command: 'startFlow'; args: { name: string; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
   ;
 
@@ -286,13 +309,11 @@ export interface C2SPayloads {
     protocolVersion: number;
   };
   /**
-   * Ask for attribute values, for example after waking from background. Omit fields to
-   * read everything.
+   * Ask for every attribute value, for example after waking from background. There is
+   * no field selection: the whole state is small, and one shape is easier to keep
+   * honest than two.
    */
-  read: {
-    /** Attribute names to read, or null for all */
-    fields: string[] | null;
-  };
+  read: Record<string, never>;
   /**
    * Set one attribute. Refused when it is unknown, read-only, out of range, gated by
    * the admin lock, or the device is busy.

@@ -35,7 +35,7 @@ describe('Admin Auth Tests', () => {
     const admin = await connectAuthedAdmin();
 
     try {
-      assert.strictEqual((await admin.read(['isAdmin'])).isAdmin, true);
+      assert.strictEqual((await admin.read()).isAdmin, true);
     } finally {
       admin.disconnect();
     }
@@ -49,7 +49,7 @@ describe('Admin Auth Tests', () => {
       sock.invoke('authenticate', { password: 'definitely-wrong' });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_PASSWORD);
-      assert.strictEqual((await sock.read(['isAdmin'])).isAdmin, false);
+      assert.strictEqual((await sock.read()).isAdmin, false);
     } finally {
       sock.disconnect();
     }
@@ -134,7 +134,7 @@ describe('Admin Lock Tests', () => {
       // The setter disconnects: the global lock must persist, with no auto-release
       adminA.disconnect();
       assert.strictEqual(
-        (await observer.read(['adminLock'])).adminLock,
+        (await observer.read()).adminLock,
         true,
         'lock persists after the setting admin disconnects',
       );

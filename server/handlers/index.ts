@@ -62,11 +62,9 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
  * question beats answering none of it.
  */
 const registerRead = (socket: ServerSocket, deps: ServerDeps): void => {
-  socket.on(C2S.READ, (payload: unknown) => {
+  socket.on(C2S.READ, () => {
     try {
-      const raw = asObject(payload)?.fields;
-      const fields = Array.isArray(raw) ? raw.filter((field): field is string => typeof field === 'string') : undefined;
-      deps.notifier.stateTo(socket, readState(deps, socket, fields));
+      deps.notifier.stateTo(socket, readState(deps, socket));
     } catch (error) {
       log.error('read', socket, 'Error reading attributes', { error: errorMessage(error) });
     }
@@ -110,8 +108,8 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
-      const work = spec.write.prepare(parsed?.value, deps);
-      if (!work) {
+      const plan = spec.write.prepare(parsed?.value, deps);
+      if (!plan.ok) {
         log.warn('write', socket, 'Invalid value, write denied', { field, value: parsed?.value });
         deps.notifier.rejected(socket, target, RejectReason.INVALID_VALUE);
         return;
@@ -127,7 +125,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
       let patch: StatePatch = {};
       if (spec.write.holdsAudioLock) {
         const ran = await deps.lockCoordinator.withAudioLock(isAdmin, async () => {
-          patch = await work();
+          patch = await plan.apply();
         });
         if (!ran) {
           log.warn('write', socket, 'Write blocked, device busy', { field });
@@ -135,7 +133,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
           return;
         }
       } else {
-        patch = await work();
+        patch = await plan.apply();
       }
 
       // An empty patch means the value was already what was asked for.
@@ -179,9 +177,9 @@ const registerInvoke = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
-      const reason = await spec.run(parsed?.args, deps, socket);
-      if (reason) {
-        deps.notifier.rejected(socket, target, reason);
+      const outcome = await spec.run(parsed?.args, deps, socket);
+      if (!outcome.ok) {
+        deps.notifier.rejected(socket, target, outcome.reason);
       }
     } catch (error) {
       log.error('invoke', socket, 'Error invoking command', { error: errorMessage(error), command });

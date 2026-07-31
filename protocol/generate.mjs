@@ -25,6 +25,7 @@ const BANNER = [
 const attributes = Object.entries(spec.attributes);
 const writable = attributes.filter(([, attr]) => attr.access === 'rw');
 const commands = Object.entries(spec.commands);
+const unions = Object.entries(spec.unions ?? {});
 
 // --- shared helpers ---
 
@@ -117,6 +118,24 @@ function generateTypeScript() {
   for (const [name, def] of Object.entries(spec.types)) {
     out.push(tsDoc(def.description));
     out.push(`export interface ${name} {`, ...tsFields(def.fields, '  '), '}', '');
+  }
+
+  // Tagged unions stand in for anything that could otherwise be null: each
+  // variant carries exactly the fields that mean something in it.
+  for (const [name, def] of unions) {
+    out.push(tsDoc(def.description));
+    out.push(`export type ${name} =`);
+    for (const [tag, variant] of Object.entries(def.variants)) {
+      const fields = Object.entries(variant.fields)
+        .map(([field, spec_]) => `; ${field}: ${tsType(spec_.type)}`)
+        .join('');
+      out.push(tsDoc(variant.description, '  '));
+      out.push(`  | { ${def.discriminator}: '${tag}'${fields} }`);
+    }
+    out.push('  ;');
+    out.push(`export const ${name}Kind = {`);
+    out.push(...Object.keys(def.variants).map((tag) => `  ${screaming(tag)}: '${tag}',`));
+    out.push('} as const;', '');
   }
 
   // --- attributes ---
@@ -231,7 +250,7 @@ function pyFields(fields, indent) {
 function generatePython() {
   const out = [];
   out.push(BANNER.map((line) => `# ${line}`).join('\n'), '');
-  out.push('from __future__ import annotations', '', 'from enum import Enum', 'from typing import TypedDict', '');
+  out.push('from __future__ import annotations', '', 'from enum import Enum', 'from typing import Literal, TypedDict', '');
   out.push(...pyDoc(spec.model, ''));
   out.push('', `PROTOCOL_VERSION = ${spec.version}`);
 
@@ -247,6 +266,21 @@ function generatePython() {
     out.push('', '', `class ${name}(TypedDict):`);
     out.push(...pyDoc(def.description, '    '));
     out.push(...pyFields(def.fields, '    '));
+  }
+
+  for (const [name, def] of unions) {
+    const variantNames = [];
+    for (const [tag, variant] of Object.entries(def.variants)) {
+      const className = `${name}${pascal(tag)}`;
+      variantNames.push(className);
+      out.push('', '', `class ${className}(TypedDict):`);
+      out.push(...pyDoc(variant.description, '    '));
+      out.push(`    ${def.discriminator}: Literal["${tag}"]`);
+      out.push(...Object.keys(variant.fields).length ? pyFields(variant.fields, '    ') : []);
+    }
+    out.push('', '');
+    out.push(...pyDoc(def.description, ''));
+    out.push(`${name} = ${variantNames.join(' | ')}`);
   }
 
   const attrFields = Object.fromEntries(attributes);
