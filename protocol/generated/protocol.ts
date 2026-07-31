@@ -77,6 +77,7 @@ export const RejectReason = {
   UNKNOWN_TRACK: 'unknownTrack',
   FLOW_ACTIVE: 'flowActive',
   NO_FLOW: 'noFlow',
+  WINDOW_PASSED: 'windowPassed',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -220,8 +221,9 @@ export const COMMANDS = {
    * wall clock, restores the user's song afterwards, and cleans up however it
    * finishes. The schedule this came from stays with the caller — the server holds no
    * flow definitions and no calendar, it only executes what it is given. A flow is a
-   * set of optional parts: give a part in full, or leave it out explicitly. At least
-   * one part is required, and only one flow runs at a time.
+   * set of parts, at least one, and only one flow runs at a time. A flow whose every
+   * part has already finished is refused with windowPassed rather than accepted and
+   * completed instantly, so pressing start never looks like nothing happened.
    */
   startFlow: { permission: 'admin' },
   /**

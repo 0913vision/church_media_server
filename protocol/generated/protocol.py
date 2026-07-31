@@ -64,6 +64,7 @@ class RejectReason(str, Enum):
     UNKNOWN_TRACK = "unknownTrack"
     FLOW_ACTIVE = "flowActive"
     NO_FLOW = "noFlow"
+    WINDOW_PASSED = "windowPassed"
     PROTOCOL_MISMATCH = "protocolMismatch"
 
 
@@ -208,9 +209,10 @@ class StartFlowArgs(TypedDict):
     to the wall clock, restores the user's song afterwards, and cleans up
     however it finishes. The schedule this came from stays with the caller —
     the server holds no flow definitions and no calendar, it only executes
-    what it is given. A flow is a set of optional parts: give a part in full,
-    or leave it out explicitly. At least one part is required, and only one
-    flow runs at a time.
+    what it is given. A flow is a set of parts, at least one, and only one
+    flow runs at a time. A flow whose every part has already finished is
+    refused with windowPassed rather than accepted and completed instantly, so
+    pressing start never looks like nothing happened.
     """
     name: str  # Display name, e.g. '수요 예배'
     parts: list[FlowPart]  # What this run should do. At least one part, and at most one of each kind.

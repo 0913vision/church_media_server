@@ -354,6 +354,13 @@ class FlowRunner {
       return { ok: false, reason: RejectReason.INVALID_VALUE };
     }
 
+    // A flow whose every part is already over would be accepted and finish in
+    // the same millisecond, which reads to the operator as the button doing
+    // nothing. Refusing says what actually happened.
+    if (parts.every((part) => endOf(part).getTime() <= now.getTime())) {
+      return { ok: false, reason: RejectReason.WINDOW_PASSED };
+    }
+
     return { ok: true, value: { name, parts } };
   }
 
@@ -392,6 +399,11 @@ class FlowRunner {
     const startsAt = new Date(endsAt.getTime() - totalMs);
     return { ok: true, value: { kind: 'music', tracks, startsAt, endsAt } };
   }
+}
+
+/** When a part has nothing left to do */
+function endOf(part: PartPlan): Date {
+  return part.kind === 'lock' ? part.until : part.endsAt;
 }
 
 /** Absolute instant each track of a music part begins */

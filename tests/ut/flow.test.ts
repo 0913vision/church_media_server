@@ -228,6 +228,23 @@ describe('Flow Validation Tests', () => {
     }
   });
 
+  test('a flow whose window has already passed is refused, not silently completed', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      const rejected = admin.waitForRejected('startFlow');
+      // Accepting this would engage and release in the same millisecond, which
+      // looks to the operator like the button did nothing.
+      admin.invoke('startFlow', {
+        name: '지난 순서',
+        parts: [{ kind: 'lock', at: clock(-120), until: clock(-60) }],
+      });
+
+      assert.strictEqual(await rejected, RejectReason.WINDOW_PASSED);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
   test('music with no tracks is refused', async () => {
     const admin = await connectAuthedAdmin();
     try {

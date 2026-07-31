@@ -69,7 +69,7 @@ Switch a mixing console input on. Not subject to the audio lock, and open to any
 
 권한: admin
 
-Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. A flow is a set of optional parts: give a part in full, or leave it out explicitly. At least one part is required, and only one flow runs at a time.
+Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. A flow is a set of parts, at least one, and only one flow runs at a time. A flow whose every part has already finished is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -120,7 +120,7 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"protocolMismatch"`
 
 ## 객체
 
