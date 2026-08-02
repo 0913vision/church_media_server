@@ -32,7 +32,7 @@ after(async () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     admin.disconnect();
   } catch {
-    // best effort
+    // Note(yoochan.kim): best effort
   }
   await stopServer();
 });

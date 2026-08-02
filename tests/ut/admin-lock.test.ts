@@ -15,7 +15,7 @@ after(async () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     admin.disconnect();
   } catch {
-    // best effort
+    // Note(yoochan.kim): best effort
   }
   await stopServer();
 });
