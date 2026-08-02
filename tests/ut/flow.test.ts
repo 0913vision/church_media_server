@@ -4,11 +4,25 @@ import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from 
 import { RejectReason } from '../../server/protocol.ts';
 import type { StatePatch } from '../../server/protocol.ts';
 
-// Note(yoochan.kim): every flow here is lock-only. A music part would start
-// audible playback on the host, so the music timeline is covered by the
-// FlowRunner's own scheduling rather than by sound.
+// Note(yoochan.kim): no flow here ever reaches playback. A music part would
+// start audible sound on the host, so the music timeline is covered by the
+// FlowRunner's own scheduling — and the music tests below are all refusals,
+// which are decided before anything is loaded.
 
-before(() => ensureServer());
+// Read from the handshake rather than hardcoded: these tests need "a real
+// track", not a particular one, and the library is fixed at boot anyway.
+let firstTrackId = '';
+
+before(async () => {
+  await ensureServer();
+  const probe = new SocketTestHelper();
+  try {
+    const { ready } = await probe.open('flow-probe');
+    firstTrackId = ready.tracks[0]!.id;
+  } finally {
+    probe.disconnect();
+  }
+});
 
 after(async () => {
   // A leftover flow would hold the admin lock and block every other test file.
@@ -23,14 +37,14 @@ after(async () => {
   await stopServer();
 });
 
+/** An absolute instant this many minutes from now, as the protocol wants it */
 function clock(offsetMinutes: number): string {
-  const at = new Date(Date.now() + offsetMinutes * 60_000);
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return new Date(Date.now() + offsetMinutes * 60_000).toISOString();
 }
 
 /** A lock-only flow that engages now and would release in an hour */
 function lockFlow(name = '테스트 순서'): Record<string, unknown> {
-  return { name, parts: [{ kind: 'lock', at: clock(0), until: clock(60) }] };
+  return { name, lock: { at: clock(0), until: clock(60) }, parts: [] };
 }
 
 async function connectAuthedAdmin(): Promise<SocketTestHelper> {
@@ -157,11 +171,11 @@ describe('Flow Tests', () => {
 });
 
 describe('Flow Validation Tests', () => {
-  test('a flow with no parts is refused', async () => {
+  test('a flow with no lock is refused', async () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      admin.invoke('startFlow', { name: '빈 순서', parts: [] });
+      admin.invoke('startFlow', { name: '락 없는 순서', parts: [] });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
     } finally {
@@ -175,9 +189,10 @@ describe('Flow Validation Tests', () => {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
         name: '중복',
+        lock: { at: clock(0), until: clock(60) },
         parts: [
-          { kind: 'lock', at: clock(0), until: clock(30) },
-          { kind: 'lock', at: clock(0), until: clock(60) },
+          { kind: 'music', tracks: [], endsAt: clock(30) },
+          { kind: 'music', tracks: [], endsAt: clock(40) },
         ],
       });
 
@@ -191,7 +206,11 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      admin.invoke('startFlow', { name: '미래 기능', parts: [{ kind: 'lights', on: true }] });
+      admin.invoke('startFlow', {
+        name: '미래 기능',
+        lock: { at: clock(0), until: clock(60) },
+        parts: [{ kind: 'lights', on: true }],
+      });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
     } finally {
@@ -203,7 +222,8 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      admin.invoke('startFlow', { name: '나쁜 시각', parts: [{ kind: 'lock', at: '25:00', until: '26:00' }] });
+      // A bare clock time is not an instant: the server will not guess a date.
+      admin.invoke('startFlow', { name: '나쁜 시각', lock: { at: '19:30', until: '21:30' }, parts: [] });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
     } finally {
@@ -217,6 +237,7 @@ describe('Flow Validation Tests', () => {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
         name: '없는 곡',
+        lock: { at: clock(0), until: clock(60) },
         parts: [{ kind: 'music', tracks: ['no-such-track'], endsAt: clock(30) }],
       });
 
@@ -236,7 +257,8 @@ describe('Flow Validation Tests', () => {
       // looks to the operator like the button did nothing.
       admin.invoke('startFlow', {
         name: '지난 순서',
-        parts: [{ kind: 'lock', at: clock(-120), until: clock(-60) }],
+        lock: { at: clock(-120), until: clock(-60) },
+        parts: [],
       });
 
       assert.strictEqual(await rejected, RejectReason.WINDOW_PASSED);
@@ -249,9 +271,73 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      admin.invoke('startFlow', { name: '빈 음악', parts: [{ kind: 'music', tracks: [], endsAt: clock(30) }] });
+      admin.invoke('startFlow', {
+        name: '빈 음악',
+        lock: { at: clock(0), until: clock(60) },
+        parts: [{ kind: 'music', tracks: [], endsAt: clock(30) }],
+      });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  // Only the finish is bound to the window: music running past the unlock
+  // would sound on an open panel, where a tablet could take the deck out from
+  // under the run.
+  test('music finishing after the lock releases is refused', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      const rejected = admin.waitForRejected('startFlow');
+      admin.invoke('startFlow', {
+        name: '락보다 늦게 끝나는 음악',
+        lock: { at: clock(0), until: clock(60) },
+        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(90) }],
+      });
+
+      assert.strictEqual(await rejected, RejectReason.MUSIC_OUTSIDE_LOCK);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  test('music that would end before the lock engages is refused', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      const rejected = admin.waitForRejected('startFlow');
+      // Ends fully before the gate: with the front cut at the lock instant,
+      // nothing of it could ever sound, so accepting it would look like the
+      // button doing nothing.
+      admin.invoke('startFlow', {
+        name: '락 전에 끝나는 음악',
+        lock: { at: clock(30), until: clock(60) },
+        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(20) }],
+      });
+
+      assert.strictEqual(await rejected, RejectReason.MUSIC_OUTSIDE_LOCK);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  // The front of a timeline is cut, not refused: the sound would start with
+  // the lock and seek to where the timeline already is. Nothing plays here —
+  // the lock is half an hour away and the flow is stopped while still waiting.
+  test('music timed to begin before the lock is accepted', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      // The library's first track is longer than the one minute between the
+      // lock and the finish, so the derived start lands before the gate.
+      const waiting = admin.waitForState((patch) => patch.flow?.phase === 'waiting');
+      admin.invoke('startFlow', {
+        name: '앞이 잘리는 음악',
+        lock: { at: clock(30), until: clock(60) },
+        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(31) }],
+      });
+      await waiting;
+
+      await stopFlow(admin);
     } finally {
       admin.disconnect();
     }

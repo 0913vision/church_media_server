@@ -5,14 +5,13 @@ import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
+import type Clock from '../clock/Clock.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
 /** Result of checking part of a request */
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 
-const CLOCK_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // A flow's own audio work can collide with an admin writing at the same
 // moment. Contention lasts at most one fade, so retry across that window
@@ -21,12 +20,17 @@ const AUDIO_LOCK_ATTEMPTS = 12;
 const AUDIO_LOCK_RETRY_MS = 300;
 
 /** A part of a validated plan, mirroring the protocol's FlowPart */
-type PartPlan =
-  | { kind: 'music'; tracks: LibraryEntry[]; startsAt: Date; endsAt: Date }
-  | { kind: 'lock'; at: Date; until: Date };
+type PartPlan = { kind: 'music'; tracks: LibraryEntry[]; startsAt: Date; endsAt: Date };
+
+/** The window this run holds the admin gate for. Every run has one. */
+interface LockPlan {
+  at: Date;
+  until: Date;
+}
 
 interface Plan {
   name: string;
+  lock: LockPlan;
   parts: PartPlan[];
 }
 
@@ -45,27 +49,23 @@ interface ActiveRun {
   finished: Promise<void>;
 }
 
-function clockOf(value: unknown): Checked<{ hours: number; minutes: number }> {
+/**
+ * An absolute instant, or a refusal.
+ *
+ * Only ISO 8601 with a date is accepted. A bare "19:30" would leave the server
+ * deciding which day it meant, and that guess is the caller's to make: the
+ * calendar lives on the client that submitted the run.
+ */
+function instantOf(value: unknown): Checked<Date> {
   if (typeof value !== 'string') return { ok: false, reason: RejectReason.INVALID_VALUE };
-  const match = CLOCK_PATTERN.exec(value);
-  if (!match) return { ok: false, reason: RejectReason.INVALID_VALUE };
-  return { ok: true, value: { hours: Number(match[1]), minutes: Number(match[2]) } };
-}
-
-function todayAt(now: Date, clock: { hours: number; minutes: number }): Date {
-  const at = new Date(now);
-  at.setHours(clock.hours, clock.minutes, 0, 0);
-  return at;
-}
-
-/** Today's occurrence, rolled to tomorrow when it would not be after `anchor` */
-function firstAfter(anchor: Date, now: Date, clock: { hours: number; minutes: number }): Date {
-  const at = todayAt(now, clock);
-  return at.getTime() > anchor.getTime() ? at : new Date(at.getTime() + MS_PER_DAY);
-}
-
-function formatClock(at: Date): string {
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return { ok: false, reason: RejectReason.INVALID_VALUE };
+  // Date.parse takes "2026-08-05" and other partial forms; a run needs the
+  // time of day and the offset spelled out.
+  if (!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+    return { ok: false, reason: RejectReason.INVALID_VALUE };
+  }
+  return { ok: true, value: at };
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -79,10 +79,15 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * is finished, stopped, or fails. The schedule a flow came from is none of the
  * server's business: it holds no definitions and no calendar, only the run.
  *
- * A flow's parts are independent — the lock window and the music timeline each
- * keep to the wall clock on their own, and the run ends when both are done.
- * Whatever ends it, cleanup restores the user's song and releases the lock, so
- * a lock can never outlive the client that asked for it.
+ * Every run holds the admin gate for a window it names: music playing on an
+ * open panel could be taken over from the tablet mid-run, so the gate is not
+ * optional. Music must finish inside that window, but its timeline may begin
+ * earlier — sound waits for the lock and joins the timeline where it already
+ * is, the opening cut exactly like a late start. Within the window the lock
+ * and the music timeline each keep to the wall clock on their own, and the
+ * run ends when both are done. Whatever ends it, cleanup restores the user's
+ * song and releases the lock, so a lock can never outlive the client that asked
+ * for it.
  */
 class FlowRunner {
   private active: ActiveRun | undefined;
@@ -93,6 +98,9 @@ class FlowRunner {
     private readonly trackLibrary: TrackLibrary,
     private readonly lockCoordinator: LockCoordinator,
     private readonly notifier: Notifier,
+    // Every instant in a plan is church time, so the runner never reads the
+    // system clock directly.
+    private readonly clock: Clock,
   ) {}
 
   /**
@@ -104,13 +112,12 @@ class FlowRunner {
     if (!run) return { phase: 'idle' };
 
     if (run.playing) {
-      return { phase: 'playing', name: run.plan.name, track: run.playing.track, endsAt: formatClock(run.playing.endsAt) };
+      return { phase: 'playing', name: run.plan.name, track: run.playing.track, endsAt: run.playing.endsAt.toISOString() };
     }
     if (run.lockEngaged) {
-      const lock = run.plan.parts.find((part) => part.kind === 'lock');
-      if (lock) return { phase: 'holding', name: run.plan.name, unlockAt: formatClock(lock.until) };
+      return { phase: 'holding', name: run.plan.name, unlockAt: run.plan.lock.until.toISOString() };
     }
-    return { phase: 'waiting', name: run.plan.name, startsAt: formatClock(run.startsAt) };
+    return { phase: 'waiting', name: run.plan.name, startsAt: run.startsAt.toISOString() };
   }
 
   /** Whether a running flow is the one holding the admin lock */
@@ -128,13 +135,9 @@ class FlowRunner {
     const plan = planned.value;
     this.active = {
       plan,
-      startsAt: plan.parts.reduce(
-        (earliest, part) => {
-          const at = part.kind === 'lock' ? part.at : part.startsAt;
-          return at.getTime() < earliest.getTime() ? at : earliest;
-        },
-        part0Start(plan),
-      ),
+      // Nothing sounds before the gate engages, so the run begins when the
+      // lock does — even when a music timeline is timed to have begun earlier.
+      startsAt: plan.lock.at,
       lockEngaged: false,
       playing: undefined,
       finished: Promise.resolve(),
@@ -142,7 +145,11 @@ class FlowRunner {
     this.active.finished = this.run(plan);
     this.publish();
 
-    log.info('flow', null, 'Flow accepted', { name: plan.name, parts: plan.parts.map((part) => part.kind) });
+    log.info('flow', null, 'Flow accepted', {
+      name: plan.name,
+      lock: `${plan.lock.at.toISOString()} → ${plan.lock.until.toISOString()}`,
+      parts: plan.parts.map((part) => part.kind).join(',') || 'none',
+    });
     return { ok: true };
   }
 
@@ -166,9 +173,7 @@ class FlowRunner {
 
   private async run(plan: Plan): Promise<void> {
     try {
-      await Promise.all(
-        plan.parts.map((part) => (part.kind === 'lock' ? this.runLock(part) : this.runMusic(part))),
-      );
+      await Promise.all([this.runLock(plan.lock), ...plan.parts.map((part) => this.runMusic(part, plan.lock))]);
     } catch (error) {
       if (!(error instanceof FlowAborted)) {
         log.error('flow', null, 'Flow failed, cleaning up', { name: plan.name, error: errorMessage(error) });
@@ -178,33 +183,36 @@ class FlowRunner {
     }
   }
 
-  private async runLock(part: Extract<PartPlan, { kind: 'lock' }>): Promise<void> {
-    await this.sleepUntil(part.at);
+  private async runLock(lock: LockPlan): Promise<void> {
+    await this.sleepUntil(lock.at);
     this.lockCoordinator.setAdminLock(true);
     if (this.active) this.active.lockEngaged = true;
     this.publish();
 
-    await this.sleepUntil(part.until);
+    await this.sleepUntil(lock.until);
     // Releasing is left to cleanup, so every way out of a run releases it once.
   }
 
-  private async runMusic(part: Extract<PartPlan, { kind: 'music' }>): Promise<void> {
-    if (Date.now() >= part.endsAt.getTime()) {
+  private async runMusic(part: Extract<PartPlan, { kind: 'music' }>, lock: LockPlan): Promise<void> {
+    if (this.clock.hasPassed(part.endsAt)) {
       log.warn('flow', null, 'Music window already over, skipping playback');
       return;
     }
-    await this.sleepUntil(part.startsAt);
+    // Sound never precedes the gate. A timeline that begins earlier is joined
+    // at the lock instant instead, its opening cut — the same arithmetic below
+    // that lets a late start join part-way through.
+    await this.sleepUntil(part.startsAt.getTime() < lock.at.getTime() ? lock.at : part.startsAt);
 
     // Track boundaries are absolute instants off the anchor, so a late start
     // joins the timeline where it actually is and nothing accumulates drift.
     const starts = boundariesOf(part);
-    const now = Date.now();
+    const now = this.clock.now().getTime();
     const first = starts.findIndex((start, index) => now < start.getTime() + part.tracks[index]!.durationSec * 1000);
     if (first < 0) return;
 
     for (let index = first; index < part.tracks.length; index++) {
       if (index > first) await this.sleepUntil(starts[index]!);
-      if (Date.now() >= part.endsAt.getTime()) break;
+      if (this.clock.hasPassed(part.endsAt)) break;
 
       const played = await this.playTrack(part.tracks[index]!, starts[index]!, index, part.tracks.length, part.endsAt);
       if (!played) return;
@@ -231,7 +239,7 @@ class FlowRunner {
   ): Promise<boolean> {
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck();
-      const offsetSec = Math.max(0, (Date.now() - startedAt.getTime()) / 1000);
+      const offsetSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
       await this.player.playTrackAt(track.file, offsetSec);
     });
     if (!ran) {
@@ -242,6 +250,11 @@ class FlowRunner {
     if (this.active) {
       this.active.playing = { track: { title: track.title, index: index + 1, total }, endsAt };
     }
+    log.info('flow', null, 'Track started', {
+      track: `${index + 1}/${total}`,
+      title: track.title,
+      offset: `${offsetOf(this.clock, startedAt)}s`,
+    });
     this.notifier.state({ playback: this.player.getState(), flow: this.status() });
     return true;
   }
@@ -291,7 +304,7 @@ class FlowRunner {
   // --- waiting ---
 
   private sleepUntil(target: Date): Promise<void> {
-    const ms = target.getTime() - Date.now();
+    const ms = this.clock.msUntil(target);
     if (ms <= 0) return Promise.resolve();
 
     return new Promise<void>((resolve, reject) => {
@@ -326,10 +339,19 @@ class FlowRunner {
     const name = parsed.name;
     if (typeof name !== 'string' || name.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    const raw = parsed.parts;
-    if (!Array.isArray(raw) || raw.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
+    const now = this.clock.now();
+    const locked = this.lockOf(asObject(parsed.lock));
+    if (!locked.ok) return locked;
+    const lock = locked.value;
 
-    const now = new Date();
+    // A window that has already closed would be accepted and finish in the
+    // same millisecond, which reads to the operator as the button doing
+    // nothing. Refusing says what actually happened.
+    if (lock.until.getTime() <= now.getTime()) return { ok: false, reason: RejectReason.WINDOW_PASSED };
+
+    const raw = parsed.parts;
+    if (!Array.isArray(raw)) return { ok: false, reason: RejectReason.INVALID_VALUE };
+
     const parts: PartPlan[] = [];
     const seen = new Set<string>();
 
@@ -339,45 +361,30 @@ class FlowRunner {
       if (typeof kind !== 'string' || seen.has(kind)) return { ok: false, reason: RejectReason.INVALID_VALUE };
       seen.add(kind);
 
-      if (kind === 'lock') {
-        const planned = this.lockPartOf(part, now);
-        if (!planned.ok) return planned;
-        parts.push(planned.value);
-        continue;
-      }
-      if (kind === 'music') {
-        const planned = this.musicPartOf(part, now);
-        if (!planned.ok) return planned;
-        parts.push(planned.value);
-        continue;
-      }
-      return { ok: false, reason: RejectReason.INVALID_VALUE };
+      if (kind !== 'music') return { ok: false, reason: RejectReason.INVALID_VALUE };
+      const planned = this.musicPartOf(part, lock);
+      if (!planned.ok) return planned;
+      parts.push(planned.value);
     }
 
-    // A flow whose every part is already over would be accepted and finish in
-    // the same millisecond, which reads to the operator as the button doing
-    // nothing. Refusing says what actually happened.
-    if (parts.every((part) => endOf(part).getTime() <= now.getTime())) {
-      return { ok: false, reason: RejectReason.WINDOW_PASSED };
-    }
-
-    return { ok: true, value: { name, parts } };
+    return { ok: true, value: { name, lock, parts } };
   }
 
-  private lockPartOf(part: Record<string, unknown>, now: Date): Checked<PartPlan> {
-    const at = clockOf(part.at);
+  private lockOf(lock: Record<string, unknown>): Checked<LockPlan> {
+    const at = instantOf(lock.at);
     if (!at.ok) return at;
-    const until = clockOf(part.until);
+    const until = instantOf(lock.until);
     if (!until.ok) return until;
 
-    // "Already past means immediately", and the window always closes after it
-    // opens — a release before midnight-crossing is the next day's.
-    const opensAt = todayAt(now, at.value);
-    const closesAt = firstAfter(opensAt, now, until.value);
-    return { ok: true, value: { kind: 'lock', at: opensAt, until: closesAt } };
+    // A window has to have room in it. Crossing midnight needs no special case
+    // now that both ends carry their own date.
+    if (until.value.getTime() <= at.value.getTime()) {
+      return { ok: false, reason: RejectReason.INVALID_VALUE };
+    }
+    return { ok: true, value: { at: at.value, until: until.value } };
   }
 
-  private musicPartOf(part: Record<string, unknown>, now: Date): Checked<PartPlan> {
+  private musicPartOf(part: Record<string, unknown>, lock: LockPlan): Checked<PartPlan> {
     const ids = part.tracks;
     if (!Array.isArray(ids) || ids.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
@@ -389,21 +396,31 @@ class FlowRunner {
       tracks.push(track);
     }
 
-    const endsAtClock = clockOf(part.endsAt);
-    if (!endsAtClock.ok) return endsAtClock;
+    const finish = instantOf(part.endsAt);
+    if (!finish.ok) return finish;
 
     // The anchor is the finish, so the start is derived: this is what lets a
     // late start join part-way through instead of running long.
-    const endsAt = todayAt(now, endsAtClock.value);
+    const endsAt = finish.value;
     const totalMs = tracks.reduce((sum, track) => sum + track.durationSec, 0) * 1000;
     const startsAt = new Date(endsAt.getTime() - totalMs);
+
+    // Only the finish is bound to the window. Music running past the unlock
+    // would sound on an open panel, and music ending before the gate engages
+    // could never sound at all — both refused rather than quietly reshaped,
+    // because the caller wrote those times on purpose. A start before the
+    // window is fine: the sound begins with the lock, its opening cut.
+    if (endsAt.getTime() > lock.until.getTime() || endsAt.getTime() <= lock.at.getTime()) {
+      return { ok: false, reason: RejectReason.MUSIC_OUTSIDE_LOCK };
+    }
+
     return { ok: true, value: { kind: 'music', tracks, startsAt, endsAt } };
   }
 }
 
-/** When a part has nothing left to do */
-function endOf(part: PartPlan): Date {
-  return part.kind === 'lock' ? part.until : part.endsAt;
+/** How far into a track the deck actually landed, for the log */
+function offsetOf(clock: Clock, startedAt: Date): string {
+  return (Math.max(0, (clock.now().getTime() - startedAt.getTime()) / 1000)).toFixed(1);
 }
 
 /** Absolute instant each track of a music part begins */
@@ -415,12 +432,6 @@ function boundariesOf(part: Extract<PartPlan, { kind: 'music' }>): Date[] {
     offsetMs += track.durationSec * 1000;
   }
   return starts;
-}
-
-/** Seed for the earliest-start reduction; every plan has at least one part */
-function part0Start(plan: Plan): Date {
-  const first = plan.parts[0]!;
-  return first.kind === 'lock' ? first.at : first.startsAt;
 }
 
 export default FlowRunner;
