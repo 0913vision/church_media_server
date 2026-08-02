@@ -5,7 +5,7 @@ import { RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 
-// The offset is global and persisted, so put it back or later files inherit it.
+// Note(yoochan.kim): The offset is global and persisted, so put it back or later files inherit it.
 after(async () => {
   try {
     const admin = await connectAuthedAdmin();
@@ -58,7 +58,7 @@ describe('Church clock', () => {
     }
   });
 
-  // The offset is not decoration: scheduling is judged against it. A window
+  // Note(yoochan.kim): The offset is not decoration: scheduling is judged against it. A window
   // still half an hour away by the wall clock is already gone once the church
   // clock runs an hour ahead of it.
   test('a flow is scheduled against church time, not standard time', async () => {
@@ -112,7 +112,7 @@ describe('Church clock', () => {
     }
   });
 
-  // The rule that makes the whole feature safe: a flow holds the gate for its
+  // Note(yoochan.kim): The rule that makes the whole feature safe: a flow holds the gate for its
   // entire run, so refusing here means the clock can never move under music.
   test('the clock cannot move while the admin gate is held', async () => {
     const admin = await connectAuthedAdmin();

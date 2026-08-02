@@ -7,7 +7,7 @@ import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
 import type { PersistedState } from '../../server/state/StateStore.ts';
 
-// Pure unit tests: no server, no socket, no real MPV. A fake AudioOutput is
+// Note(yoochan.kim): Pure unit tests: no server, no socket, no real MPV. A fake AudioOutput is
 // injected so the Player's mute / volume-memory / song-switch logic, and its
 // persistence + restore behavior, can be asserted directly — behavior that is
 // invisible at the socket level (the console never reports device volume).
@@ -31,7 +31,7 @@ class FakeAudioOutput implements AudioOutput {
   }
 }
 
-// Player imports the logger, which validates LOG_LEVEL at module load, so set
+// Note(yoochan.kim): Player imports the logger, which validates LOG_LEVEL at module load, so set
 // it before importing and load Player dynamically.
 type PlayerCtor = typeof import('../../server/player/Player.ts').default;
 let Player: PlayerCtor;

@@ -9,7 +9,7 @@ import type { StatePatch } from '../../server/protocol.ts';
 // FlowRunner's own scheduling — and the music tests below are all refusals,
 // which are decided before anything is loaded.
 
-// Read from the handshake rather than hardcoded: these tests need "a real
+// Note(yoochan.kim): Read from the handshake rather than hardcoded: these tests need "a real
 // track", not a particular one, and the library is fixed at boot anyway.
 let firstTrackId = '';
 
@@ -25,7 +25,7 @@ before(async () => {
 });
 
 after(async () => {
-  // A leftover flow would hold the admin lock and block every other test file.
+  // Note(yoochan.kim): A leftover flow would hold the admin lock and block every other test file.
   try {
     const admin = await connectAuthedAdmin();
     admin.invoke('stopFlow', {});
@@ -92,7 +92,7 @@ describe('Flow Tests', () => {
       const lockedForEveryone = observer.waitForState((patch) => patch.adminLock === true);
       const holding = await startHoldingFlow(admin, '수요 예배');
 
-      // The status describes itself: name and release time, no separate lookup.
+      // Note(yoochan.kim): The status describes itself: name and release time, no separate lookup.
       assert.deepStrictEqual(holding.flow?.phase, 'holding');
       assert.strictEqual(holding.flow?.phase === 'holding' ? holding.flow.name : '', '수요 예배');
       await lockedForEveryone;
@@ -114,7 +114,7 @@ describe('Flow Tests', () => {
     try {
       await startHoldingFlow(admin);
 
-      // Toggling the gate by hand would leave the flow describing a lock that
+      // Note(yoochan.kim): Toggling the gate by hand would leave the flow describing a lock that
       // is no longer there, so it is refused and stopping is the way out.
       const rejected = admin.waitForRejected('adminLock');
       admin.write('adminLock', false);
@@ -222,7 +222,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      // A bare clock time is not an instant: the server will not guess a date.
+      // Note(yoochan.kim): A bare clock time is not an instant: the server will not guess a date.
       admin.invoke('startFlow', { name: '나쁜 시각', lock: { at: '19:30', until: '21:30' }, parts: [] });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
@@ -241,7 +241,7 @@ describe('Flow Validation Tests', () => {
         parts: [{ kind: 'music', tracks: ['no-such-track'], endsAt: clock(30) }],
       });
 
-      // Distinguished from a malformed request, so the client can say which
+      // Note(yoochan.kim): Distinguished from a malformed request, so the client can say which
       // track went missing rather than blaming the whole plan.
       assert.strictEqual(await rejected, RejectReason.UNKNOWN_TRACK);
     } finally {
@@ -253,7 +253,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      // Accepting this would engage and release in the same millisecond, which
+      // Note(yoochan.kim): Accepting this would engage and release in the same millisecond, which
       // looks to the operator like the button did nothing.
       admin.invoke('startFlow', {
         name: '지난 순서',
@@ -283,7 +283,7 @@ describe('Flow Validation Tests', () => {
     }
   });
 
-  // Only the finish is bound to the window: music running past the unlock
+  // Note(yoochan.kim): Only the finish is bound to the window: music running past the unlock
   // would sound on an open panel, where a tablet could take the deck out from
   // under the run.
   test('music finishing after the lock releases is refused', async () => {
@@ -306,7 +306,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      // Ends fully before the gate: with the front cut at the lock instant,
+      // Note(yoochan.kim): Ends fully before the gate: with the front cut at the lock instant,
       // nothing of it could ever sound, so accepting it would look like the
       // button doing nothing.
       admin.invoke('startFlow', {
@@ -321,13 +321,13 @@ describe('Flow Validation Tests', () => {
     }
   });
 
-  // The front of a timeline is cut, not refused: the sound would start with
+  // Note(yoochan.kim): The front of a timeline is cut, not refused: the sound would start with
   // the lock and seek to where the timeline already is. Nothing plays here —
   // the lock is half an hour away and the flow is stopped while still waiting.
   test('music timed to begin before the lock is accepted', async () => {
     const admin = await connectAuthedAdmin();
     try {
-      // The library's first track is longer than the one minute between the
+      // Note(yoochan.kim): The library's first track is longer than the one minute between the
       // lock and the finish, so the derived start lands before the gate.
       const waiting = admin.waitForState((patch) => patch.flow?.phase === 'waiting');
       admin.invoke('startFlow', {

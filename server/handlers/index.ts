@@ -49,11 +49,11 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
         accepted,
         attributes: [...IMPLEMENTED_ATTRIBUTES],
         commands: [...IMPLEMENTED_COMMANDS],
-        // The catalogues clients render from: the server names what a song is
+        // Note(yoochan.kim): The catalogues clients render from: the server names what a song is
         // called, so a rename never means a client release.
         songs: SONG_CATALOGUE,
         tracks: deps.trackLibrary.list(),
-        // Printed on a client's error screens, so whoever is on duty can
+        // Note(yoochan.kim): Printed on a client's error screens, so whoever is on duty can
         // change without anyone shipping a new app.
         contact: ADMIN_CONTACT,
       });
@@ -116,7 +116,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
-      // The attribute decides why it said no: usually the value, but it may
+      // Note(yoochan.kim): The attribute decides why it said no: usually the value, but it may
       // also be something only it knows, like a flow owning the admin lock.
       const plan = spec.write.prepare(parsed?.value, deps);
       if (!plan.ok) {
@@ -125,7 +125,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
-      // The gate decides who may start work; the audio lock decides whether the
+      // Note(yoochan.kim): The gate decides who may start work; the audio lock decides whether the
       // device is free. They are checked separately so the client learns which.
       if (!deps.lockCoordinator.passesAdminGate(isAdmin)) {
         deps.notifier.rejected(socket, target, RejectReason.ADMIN_LOCKED);
@@ -146,7 +146,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         patch = await plan.apply();
       }
 
-      // An empty patch means the value was already what was asked for.
+      // Note(yoochan.kim): An empty patch means the value was already what was asked for.
       if (Object.keys(patch).length > 0) {
         deps.notifier.state(patch);
       }

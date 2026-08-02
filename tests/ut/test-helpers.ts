@@ -13,23 +13,23 @@ import type { RejectReason, S2CPayloads, StatePatch } from '../../server/protoco
 // (e.g. changeVolume('loud')), which a protocol-typed emit would reject at
 // compile time. The server side is fully protocol-typed instead.
 
-// Explicit test environment. These are declared test parameters — not hidden
+// Note(yoochan.kim): Explicit test environment. These are declared test parameters — not hidden
 // fallbacks — and may be overridden via env when targeting an externally
 // running server.
 export const TEST_PORT = Number(process.env.PORT ?? '4000');
 export const TEST_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 const TEST_CONSOLE_MODE = process.env.CONSOLE_MODE ?? 'MOCK';
 const TEST_LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
-// X32 config is required at module load even in MOCK mode; supply test values.
+// Note(yoochan.kim): X32 config is required at module load even in MOCK mode; supply test values.
 const TEST_X32_REMOTE_ADDRESS = process.env.X32_REMOTE_ADDRESS ?? '127.0.0.1';
 const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
-// libmpv path is required at module load (real mpv boots even in MOCK mode).
+// Note(yoochan.kim): libmpv path is required at module load (real mpv boots even in MOCK mode).
 const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
-// Isolate persisted state to a temp file so tests never read/write the real one.
+// Note(yoochan.kim): Isolate persisted state to a temp file so tests never read/write the real one.
 const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
-// Track library manifest (repo asset; tests only list tracks, never play them).
+// Note(yoochan.kim): Track library manifest (repo asset; tests only list tracks, never play them).
 const TEST_TRACKS_MANIFEST_PATH = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
-// Who clients are told to call. Required like everything else, so it has to be
+// Note(yoochan.kim): Who clients are told to call. Required like everything else, so it has to be
 // declared here too — the bootstrap lists the environment rather than reading
 // .env, which is what keeps a developer's own config out of the test run.
 const TEST_ADMIN_CONTACT_NAME = process.env.ADMIN_CONTACT_NAME ?? '테스트 담당자';
@@ -63,12 +63,12 @@ function isPortOpen(port: number): Promise<boolean> {
 export async function ensureServer(): Promise<void> {
   if (await isPortOpen(TEST_PORT)) return;
 
-  // The server requires every env variable explicitly (fail-fast, no
+  // Note(yoochan.kim): The server requires every env variable explicitly (fail-fast, no
   // defaults), so the test bootstrap supplies its declared test environment
   // before the server module graph is loaded.
   process.env.PORT = String(TEST_PORT);
   process.env.CONSOLE_MODE = TEST_CONSOLE_MODE;
-  // The server stores only a hash; auth tests send the matching plaintext.
+  // Note(yoochan.kim): The server stores only a hash; auth tests send the matching plaintext.
   process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH ?? hashPassword(TEST_ADMIN_PASSWORD);
   process.env.LOG_LEVEL = TEST_LOG_LEVEL;
   process.env.X32_REMOTE_ADDRESS = TEST_X32_REMOTE_ADDRESS;
@@ -78,7 +78,7 @@ export async function ensureServer(): Promise<void> {
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
   process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
-  // Start from a clean slate so boot uses INITIAL defaults, not a prior run.
+  // Note(yoochan.kim): Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
 
   const { default: MediaServer } = await import('../../server/server.ts');
@@ -141,7 +141,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Wait for an event (e.g. a broadcast) without emitting anything.
+  // Note(yoochan.kim): Wait for an event (e.g. a broadcast) without emitting anything.
   waitFor<T>(responseEvent: string, ms = 5000): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No ${responseEvent}`)), ms);
@@ -152,7 +152,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Collect every payload of an event for `ms`, then resolve the array
+  // Note(yoochan.kim): Collect every payload of an event for `ms`, then resolve the array
   // (used to assert an ordered sequence of broadcasts, e.g. lock true/false).
   collectFor<T>(event: string, ms: number): Promise<T[]> {
     return new Promise((resolve) => {
@@ -166,7 +166,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Emit an event and resolve true if responseEvent does NOT arrive within ms
+  // Note(yoochan.kim): Emit an event and resolve true if responseEvent does NOT arrive within ms
   // (used to assert that an operation was blocked).
   emitAndExpectNoResponse(event: string, responseEvent: string, ms: number, ...args: unknown[]): Promise<boolean> {
     return new Promise((resolve) => {

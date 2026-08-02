@@ -33,7 +33,7 @@ class FileStateStore implements StateStore {
         serverVolume: parsed.serverVolume,
         muted: parsed.muted,
         currentSong: parsed.currentSong,
-        // A file written before the clock existed simply declares no
+        // Note(yoochan.kim): A file written before the clock existed simply declares no
         // correction, which is what no correction means.
         clockOffsetSec: typeof offset === 'number' && Number.isFinite(offset) ? offset : 0,
       };
@@ -50,7 +50,7 @@ class FileStateStore implements StateStore {
       fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
       fs.renameSync(tmp, this.filePath);
     } catch (error) {
-      // Persistence is best-effort: a write failure must never break playback.
+      // Note(yoochan.kim): Persistence is best-effort: a write failure must never break playback.
       log.error('stateStore', null, 'Failed to persist state', { error: errorMessage(error) });
     }
   }

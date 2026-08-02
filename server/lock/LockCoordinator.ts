@@ -35,7 +35,7 @@ class LockCoordinator {
    * @param notifier - Announces each lock's state changes
    */
   constructor(notifier: Notifier) {
-    // Each lock announces its own transitions, so no caller has to remember to
+    // Note(yoochan.kim): Each lock announces its own transitions, so no caller has to remember to
     // report them. Both are attributes, so both travel as a state patch.
     this.audioLock = new Lock((locked) => notifier.state({ audioLock: locked }));
     this.adminLock = new Lock((locked) => notifier.state({ adminLock: locked }));

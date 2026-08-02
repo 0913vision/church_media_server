@@ -1,15 +1,15 @@
 import { requireEnvOneOf } from './env.ts';
 
-// Severity order for level filtering
+// Note(yoochan.kim): Severity order for level filtering
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 
 type LogLevel = keyof typeof LOG_LEVELS;
 const LOG_LEVEL_NAMES: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
-// Minimum level to print — LOG_LEVEL is a required, validated env variable
+// Note(yoochan.kim): Minimum level to print — LOG_LEVEL is a required, validated env variable
 const MIN_LEVEL: number = LOG_LEVELS[requireEnvOneOf('LOG_LEVEL', LOG_LEVEL_NAMES)];
 
-// Anything with an id — a Socket.IO socket in practice
+// Note(yoochan.kim): Anything with an id — a Socket.IO socket in practice
 interface SocketLike {
   id: string;
 }
@@ -54,7 +54,7 @@ function createContext(
 ): LogExtra {
   return {
     module,
-    // Only include socketId for socket-scoped logs (avoid "socketId=undefined")
+    // Note(yoochan.kim): Only include socketId for socket-scoped logs (avoid "socketId=undefined")
     ...(socket ? { socketId: socket.id } : {}),
     ...extra
   };

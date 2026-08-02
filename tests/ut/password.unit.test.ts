@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { hashPassword, verifyPassword } from '../../server/auth/password.ts';
 
-// Pure unit test (no server / no env): the password module only uses node:crypto.
+// Note(yoochan.kim): Pure unit test (no server / no env): the password module only uses node:crypto.
 describe('Password hashing (unit)', () => {
   test('verifies the correct password', () => {
     const hash = hashPassword('s3cret');

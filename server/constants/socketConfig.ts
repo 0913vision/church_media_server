@@ -2,7 +2,7 @@ import type { Socket } from 'socket.io';
 import { requireIntEnv } from '../utils/env.ts';
 import type { ClientToServerEventsUnsafe, ServerToClientEvents } from '../protocol.ts';
 
-// Socket server configuration constants. The protocol itself lives in
+// Note(yoochan.kim): Socket server configuration constants. The protocol itself lives in
 // protocol/protocol.json and is generated — this file only carries transport
 // settings.
 interface ServerConfig {

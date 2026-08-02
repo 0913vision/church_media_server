@@ -13,7 +13,7 @@ import { errorMessage } from '../utils/errors.ts';
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 
 
-// A flow's own audio work can collide with an admin writing at the same
+// Note(yoochan.kim): A flow's own audio work can collide with an admin writing at the same
 // moment. Contention lasts at most one fade, so retry across that window
 // rather than dropping a track.
 const AUDIO_LOCK_ATTEMPTS = 12;
@@ -60,7 +60,7 @@ function instantOf(value: unknown): Checked<Date> {
   if (typeof value !== 'string') return { ok: false, reason: RejectReason.INVALID_VALUE };
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return { ok: false, reason: RejectReason.INVALID_VALUE };
-  // Date.parse takes "2026-08-05" and other partial forms; a run needs the
+  // Note(yoochan.kim): Date.parse takes "2026-08-05" and other partial forms; a run needs the
   // time of day and the offset spelled out.
   if (!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
     return { ok: false, reason: RejectReason.INVALID_VALUE };
@@ -98,7 +98,7 @@ class FlowRunner {
     private readonly trackLibrary: TrackLibrary,
     private readonly lockCoordinator: LockCoordinator,
     private readonly notifier: Notifier,
-    // Every instant in a plan is church time, so the runner never reads the
+    // Note(yoochan.kim): Every instant in a plan is church time, so the runner never reads the
     // system clock directly.
     private readonly clock: Clock,
   ) {}
@@ -135,8 +135,8 @@ class FlowRunner {
     const plan = planned.value;
     this.active = {
       plan,
-      // Nothing sounds before the gate engages, so the run begins when the
-      // lock does — even when a music timeline is timed to have begun earlier.
+      // Note(yoochan.kim): nothing sounds before the gate engages, so the run
+      // begins when the lock does, even for a timeline timed earlier.
       startsAt: plan.lock.at,
       lockEngaged: false,
       playing: undefined,
@@ -190,7 +190,7 @@ class FlowRunner {
     this.publish();
 
     await this.sleepUntil(lock.until);
-    // Releasing is left to cleanup, so every way out of a run releases it once.
+    // Note(yoochan.kim): Releasing is left to cleanup, so every way out of a run releases it once.
   }
 
   private async runMusic(part: Extract<PartPlan, { kind: 'music' }>, lock: LockPlan): Promise<void> {
@@ -198,12 +198,12 @@ class FlowRunner {
       log.warn('flow', null, 'Music window already over, skipping playback');
       return;
     }
-    // Sound never precedes the gate. A timeline that begins earlier is joined
-    // at the lock instant instead, its opening cut — the same arithmetic below
-    // that lets a late start join part-way through.
+    // Note(yoochan.kim): sound never precedes the gate. A timeline that begins
+    // earlier is joined at the lock instant, its opening cut — the same
+    // arithmetic below that lets a late start join part-way through.
     await this.sleepUntil(part.startsAt.getTime() < lock.at.getTime() ? lock.at : part.startsAt);
 
-    // Track boundaries are absolute instants off the anchor, so a late start
+    // Note(yoochan.kim): Track boundaries are absolute instants off the anchor, so a late start
     // joins the timeline where it actually is and nothing accumulates drift.
     const starts = boundariesOf(part);
     const now = this.clock.now().getTime();
@@ -290,7 +290,7 @@ class FlowRunner {
 
   private async withAudio(work: () => Promise<void>): Promise<boolean> {
     for (let attempt = 0; attempt < AUDIO_LOCK_ATTEMPTS; attempt++) {
-      // A flow always runs with admin standing: it is the server's own work.
+      // Note(yoochan.kim): A flow always runs with admin standing: it is the server's own work.
       if (await this.lockCoordinator.withAudioLock(true, work)) return true;
       await delay(AUDIO_LOCK_RETRY_MS);
     }
@@ -344,7 +344,7 @@ class FlowRunner {
     if (!locked.ok) return locked;
     const lock = locked.value;
 
-    // A window that has already closed would be accepted and finish in the
+    // Note(yoochan.kim): A window that has already closed would be accepted and finish in the
     // same millisecond, which reads to the operator as the button doing
     // nothing. Refusing says what actually happened.
     if (lock.until.getTime() <= now.getTime()) return { ok: false, reason: RejectReason.WINDOW_PASSED };
@@ -376,7 +376,7 @@ class FlowRunner {
     const until = instantOf(lock.until);
     if (!until.ok) return until;
 
-    // A window has to have room in it. Crossing midnight needs no special case
+    // Note(yoochan.kim): A window has to have room in it. Crossing midnight needs no special case
     // now that both ends carry their own date.
     if (until.value.getTime() <= at.value.getTime()) {
       return { ok: false, reason: RejectReason.INVALID_VALUE };
@@ -399,17 +399,17 @@ class FlowRunner {
     const finish = instantOf(part.endsAt);
     if (!finish.ok) return finish;
 
-    // The anchor is the finish, so the start is derived: this is what lets a
+    // Note(yoochan.kim): The anchor is the finish, so the start is derived: this is what lets a
     // late start join part-way through instead of running long.
     const endsAt = finish.value;
     const totalMs = tracks.reduce((sum, track) => sum + track.durationSec, 0) * 1000;
     const startsAt = new Date(endsAt.getTime() - totalMs);
 
-    // Only the finish is bound to the window. Music running past the unlock
-    // would sound on an open panel, and music ending before the gate engages
-    // could never sound at all — both refused rather than quietly reshaped,
-    // because the caller wrote those times on purpose. A start before the
-    // window is fine: the sound begins with the lock, its opening cut.
+    // Note(yoochan.kim): only the finish is bound to the window. Running past
+    // the unlock would sound on an open panel, and ending before the gate
+    // engages could never sound — both refused, because the caller wrote those
+    // times on purpose. A start before the window is fine: the sound begins
+    // with the lock, its opening cut.
     if (endsAt.getTime() > lock.until.getTime() || endsAt.getTime() <= lock.at.getTime()) {
       return { ok: false, reason: RejectReason.MUSIC_OUTSIDE_LOCK };
     }

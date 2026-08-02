@@ -6,7 +6,7 @@ import { RejectReason } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// The track library is fixed at boot, so it rides along with the handshake
+// Note(yoochan.kim): The track library is fixed at boot, so it rides along with the handshake
 // rather than needing a request of its own.
 describe('Track Library Tests', () => {
   test('ready carries the manifest entries', async () => {

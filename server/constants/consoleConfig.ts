@@ -1,8 +1,8 @@
 import { requireEnv, requireIntEnv } from '../utils/env.ts';
 
-// X32 Console configuration constants
+// Note(yoochan.kim): X32 Console configuration constants
 export const CONSOLE_CONFIG = {
-  // Network settings — the X32's address/port are deployment-specific and come
+  // Note(yoochan.kim): Network settings — the X32's address/port are deployment-specific and come
   // from required env (validated, fail-fast). Local bind stays a constant.
   NETWORK: {
     LOCAL_ADDRESS: "0.0.0.0",
@@ -11,13 +11,13 @@ export const CONSOLE_CONFIG = {
     REMOTE_PORT: requireIntEnv('X32_REMOTE_PORT')
   },
 
-  // OSC command values
+  // Note(yoochan.kim): OSC command values
   OSC_VALUES: {
     UNMUTE: 1,
     MUTE: 0
   },
 
-  // Pastor microphone settings
+  // Note(yoochan.kim): Pastor microphone settings
   PASTOR_MIC: {
     CHANNELS: {
       CH1: {
@@ -33,7 +33,7 @@ export const CONSOLE_CONFIG = {
     }
   },
 
-  // Auxiliary input settings
+  // Note(yoochan.kim): Auxiliary input settings
   AUX_INPUT: {
     MUTE_ADDRESS: "/auxin/05/mix/on",
     FADER_LEVEL_ADDRESS: "/auxin/05/mix/fader",

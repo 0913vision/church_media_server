@@ -28,7 +28,7 @@ class Player {
     private readonly persist: (state: PersistedState) => void
   ) {
     this.state = { ...initialConfig };
-    // Initialize hardware with the starting volume (silent if muted)
+    // Note(yoochan.kim): Initialize hardware with the starting volume (silent if muted)
     this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
   }
 
@@ -41,7 +41,7 @@ class Player {
     };
   }
 
-  // Volume methods
+  // Note(yoochan.kim): Volume methods
   /**
    * Gets the current volume level
    * @returns Current volume (0-100)
@@ -61,7 +61,7 @@ class Player {
     this.persist(this.snapshot());
   }
 
-  // State methods
+  // Note(yoochan.kim): State methods
   /**
    * Gets the current playback state
    */
@@ -95,7 +95,7 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
-  // Mute methods
+  // Note(yoochan.kim): Mute methods
   /**
    * Gets the current mute status
    */
@@ -116,7 +116,7 @@ class Player {
     this.persist(this.snapshot());
   }
 
-  // Song methods
+  // Note(yoochan.kim): Song methods
   /**
    * Gets the currently selected song
    */
@@ -145,7 +145,7 @@ class Player {
     }
 
     try {
-      // While a scheduled track occupies the deck, the live position belongs
+      // Note(yoochan.kim): While a scheduled track occupies the deck, the live position belongs
       // to the track — saving it would corrupt the song's time memory.
       if (!this.trackMode) {
         this.device.captureSongTime(currentSong);
@@ -241,7 +241,7 @@ class Player {
     this.trackMode = false;
   }
 
-  // Utility methods
+  // Note(yoochan.kim): Utility methods
 
   /**
    * Checks if the player is currently playing

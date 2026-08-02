@@ -9,7 +9,7 @@ after(() => stopServer());
 
 const DEFAULT_SONG_VOLUMES: Record<string, number> = { calm: 50, fervent: 35 };
 
-// Safety net: pins the write -> state contract, and the refusal reasons a
+// Note(yoochan.kim): Safety net: pins the write -> state contract, and the refusal reasons a
 // client relies on to explain why nothing happened.
 describe('Write Tests', () => {
   test('a volume write reaches every client', async () => {
@@ -57,7 +57,7 @@ describe('Write Tests', () => {
     try {
       await actor.open();
 
-      // Server state is shared and persistent: switch to whichever song is not
+      // Note(yoochan.kim): Server state is shared and persistent: switch to whichever song is not
       // current so the test is robust across reruns.
       const current = (await actor.read()).song;
       const target = current === SongType.CALM ? SongType.FERVENT : SongType.CALM;
@@ -65,7 +65,7 @@ describe('Write Tests', () => {
       const observed = actor.waitForState((patch) => patch.song !== undefined);
       actor.write('song', target);
 
-      // Switching a song changes three things at once, and one patch carrying
+      // Note(yoochan.kim): Switching a song changes three things at once, and one patch carrying
       // all of them is what keeps a client from rendering a half-applied state.
       const patch = await observed;
       assert.strictEqual(patch.song, target);

@@ -52,7 +52,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       }
 
       deps.adminSessionManager.addAdminSocket(socket);
-      // isAdmin is per-connection, so it goes only to the client it describes.
+      // Note(yoochan.kim): isAdmin is per-connection, so it goes only to the client it describes.
       deps.notifier.stateTo(socket, { isAdmin: true });
       log.info('command', socket, 'Socket authenticated as admin');
       return DONE;
@@ -64,7 +64,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       const input = argsObject(args).input;
       if (!isConsoleInput(input)) return refuse(RejectReason.INVALID_VALUE);
 
-      // The console holds no protected state and its OSC bursts are
+      // Note(yoochan.kim): The console holds no protected state and its OSC bursts are
       // instantaneous, so this takes no audio lock — only the admin gate.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
@@ -84,7 +84,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   },
 
   startFlow: {
-    // The whole plan arrives here; the server keeps none of it once the run
+    // Note(yoochan.kim): The whole plan arrives here; the server keeps none of it once the run
     // is over. Validation and scheduling belong to the runner.
     async run(args, deps) {
       return deps.flowRunner.start(args);

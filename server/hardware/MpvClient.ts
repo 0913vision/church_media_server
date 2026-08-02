@@ -79,8 +79,8 @@ class MpvClient {
    */
   setProperty(property: string, value: string, quiet = false): void {
     const code = this.api.mpv_set_property_string(this.playerInstance, property, value);
-    // quiet is for retry loops that expect "unavailable" right after a load:
-    // their final failure speaks once, loudly, instead of one warn per try.
+    // Note(yoochan.kim): quiet is for retry loops that expect "unavailable"
+    // right after a load; their final failure speaks once instead.
     if (code < 0 && !quiet) {
       log.warn('mpvClient', null, 'mpv_set_property_string failed', { property, value, code });
     }

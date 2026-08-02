@@ -5,7 +5,7 @@ import { RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 
-// The admin lock is global state that persists across disconnects, so clear it
+// Note(yoochan.kim): The admin lock is global state that persists across disconnects, so clear it
 // after this file — otherwise a leftover lock would block writes in other test
 // files sharing the server.
 after(async () => {
@@ -23,7 +23,7 @@ after(async () => {
 async function connectAuthedAdmin(): Promise<SocketTestHelper> {
   const admin = new SocketTestHelper();
   await admin.open('test-admin');
-  // Success is reported as a per-connection attribute, not a bespoke event.
+  // Note(yoochan.kim): Success is reported as a per-connection attribute, not a bespoke event.
   const authed = admin.waitForState((patch) => patch.isAdmin !== undefined);
   admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
   assert.strictEqual((await authed).isAdmin, true);
@@ -63,7 +63,7 @@ describe('Admin Auth Tests', () => {
       admin.write('adminLock', true);
       assert.strictEqual((await admin.waitForState((p) => p.adminLock !== undefined)).adminLock, true);
 
-      // Otherwise a held lock could never be released by anyone else.
+      // Note(yoochan.kim): Otherwise a held lock could never be released by anyone else.
       second = await connectAuthedAdmin();
 
       admin.write('adminLock', false);
@@ -127,11 +127,11 @@ describe('Admin Lock Tests', () => {
     let adminB: SocketTestHelper | null = null;
 
     try {
-      // A turns the lock on — everyone, including the observer, sees it
+      // Note(yoochan.kim): A turns the lock on — everyone, including the observer, sees it
       adminA.write('adminLock', true);
       assert.strictEqual((await observer.waitForState((p) => p.adminLock !== undefined)).adminLock, true);
 
-      // The setter disconnects: the global lock must persist, with no auto-release
+      // Note(yoochan.kim): The setter disconnects: the global lock must persist, with no auto-release
       adminA.disconnect();
       assert.strictEqual(
         (await observer.read()).adminLock,
@@ -139,7 +139,7 @@ describe('Admin Lock Tests', () => {
         'lock persists after the setting admin disconnects',
       );
 
-      // A different admin can release it, and everyone is told
+      // Note(yoochan.kim): A different admin can release it, and everyone is told
       adminB = await connectAuthedAdmin();
       const released = observer.waitForState((patch) => patch.adminLock !== undefined);
       adminB.write('adminLock', false);
