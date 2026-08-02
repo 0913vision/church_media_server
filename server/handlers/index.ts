@@ -1,5 +1,6 @@
 import { ATTRIBUTES, C2S, COMMANDS, PROTOCOL_VERSION, RejectReason } from '../protocol.ts';
 import type { AttributeName, CommandName, StatePatch } from '../protocol.ts';
+import { ADMIN_CONTACT } from '../constants/contactConfig.ts';
 import { SONG_CATALOGUE } from '../constants/songs.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
@@ -52,6 +53,9 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
         // called, so a rename never means a client release.
         songs: SONG_CATALOGUE,
         tracks: deps.trackLibrary.list(),
+        // Printed on a client's error screens, so whoever is on duty can
+        // change without anyone shipping a new app.
+        contact: ADMIN_CONTACT,
       });
       deps.notifier.stateTo(socket, readState(deps, socket));
     } catch (error) {
