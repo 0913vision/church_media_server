@@ -52,11 +52,11 @@ class MediaServer {
     });
     this.io = io;
 
-    // Shared singletons (created once, reused across all connections).
+    // Note(yoochan.kim): Shared singletons (created once, reused across all connections).
     // Only the Notifier touches io directly; everything else speaks domain.
     const notifier = new Notifier(io);
 
-    // Restore persisted preferences (volume / mute / song) across restarts and
+    // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();
@@ -66,7 +66,7 @@ class MediaServer {
       state: PlaybackState.PAUSED
     };
 
-    // The clock correction outlives a reboot too: it describes the building,
+    // Note(yoochan.kim): The clock correction outlives a reboot too: it describes the building,
     // not the run, and nobody should have to set it again after a power cut.
     const clock = new Clock(restored?.clockOffsetSec ?? 0);
     let preferences: PersistedState = {
@@ -91,6 +91,7 @@ class MediaServer {
     const consoleDevice: ConsoleDevice =
       DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
+    mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
@@ -116,7 +117,7 @@ class MediaServer {
       registerHandlers(socket, deps);
 
       socket.on('disconnect', (reason) => {
-        // The admin lock is global state and intentionally persists past a
+        // Note(yoochan.kim): The admin lock is global state and intentionally persists past a
         // disconnect; only the admin session is dropped (by AdminSessionManager).
         log.info('server', socket, 'Socket disconnected', { reason });
       });
@@ -130,7 +131,7 @@ class MediaServer {
   stop(): void {
     log.info('server', null, 'Shutting down');
 
-    // Cancel a run in flight so its timers cannot outlive the process.
+    // Note(yoochan.kim): Cancel a run in flight so its timers cannot outlive the process.
     if (this.flowRunner) {
       this.flowRunner.dispose();
       this.flowRunner = null;

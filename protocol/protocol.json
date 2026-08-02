@@ -95,6 +95,13 @@
         "index": { "type": "number", "description": "1-based position in the sequence" },
         "total": { "type": "number" }
       }
+    },
+    "ConsoleState": {
+      "description": "Both inputs this server drives. mic covers the pastor's channel pair, and reads on only while every channel of the pair is on.",
+      "fields": {
+        "mic": { "type": "ConsoleRead" },
+        "aux": { "type": "ConsoleRead" }
+      }
     }
   },
   "unions": {
@@ -107,6 +114,23 @@
           "fields": {
             "tracks": { "type": "string[]", "description": "Track ids in play order" },
             "endsAt": { "type": "string", "description": "Instant the last track must finish" }
+          }
+        }
+      }
+    },
+    "ConsoleRead": {
+      "description": "One console input as last heard from the desk. The console answers over UDP with no session, so silence is a real state: unknown says nobody has heard, not that the input is off.",
+      "discriminator": "kind",
+      "variants": {
+        "unknown": {
+          "description": "No answer from the console yet, or the last one has gone stale",
+          "fields": {}
+        },
+        "read": {
+          "description": "The desk's own answer",
+          "fields": {
+            "on": { "type": "boolean" },
+            "fader": { "type": "number", "description": "Fader position 0..1, as the console speaks it" }
           }
         }
       }
@@ -197,6 +221,11 @@
       "access": "rw",
       "permission": "admin",
       "range": { "min": -3600, "max": 3600 }
+    },
+    "console": {
+      "description": "What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.",
+      "type": "ConsoleState",
+      "access": "ro"
     }
   },
   "commands": {

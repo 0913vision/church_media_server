@@ -119,7 +119,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       (value) => (isSongType(value) ? accept(value) : BAD_VALUE),
       async (song, deps) => {
         if (song === deps.player.getCurrentSong()) return {};
-        // Switching songs also pauses the deck and moves the volume to that
+        // Note(yoochan.kim): Switching songs also pauses the deck and moves the volume to that
         // song's default, so all three are reported together.
         await deps.player.changeSong(song);
         return { song, playback: PlaybackState.PAUSED, volume: DEFAULT_SONG_VOLUMES[song] };
@@ -129,13 +129,13 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   adminLock: {
     read: (deps) => deps.lockCoordinator.getLockState().admin,
-    // No audio lock: the gate decides who may start work, it does not touch
+    // Note(yoochan.kim): No audio lock: the gate decides who may start work, it does not touch
     // the device. The lock announces its own transitions, so the patch is empty.
     write: writable(
       false,
       (value, deps) => {
         if (typeof value !== 'boolean') return BAD_VALUE;
-        // A running flow owns the lock it engaged. Letting it be toggled from
+        // Note(yoochan.kim): A running flow owns the lock it engaged. Letting it be toggled from
         // outside would leave the flow describing a gate that is not there;
         // stopping the flow is the way out.
         if (deps.flowRunner.ownsAdminLock()) return reject(RejectReason.FLOW_ACTIVE);
@@ -157,13 +157,13 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
   },
 
   flow: {
-    // Read-only: startFlow and stopFlow are what move it.
+    // Note(yoochan.kim): Read-only: startFlow and stopFlow are what move it.
     read: (deps) => deps.flowRunner.status(),
   },
 
   clockOffsetSec: {
     read: (deps) => deps.clock.offset(),
-    // No audio lock: this moves the reference every instant is read against,
+    // Note(yoochan.kim): No audio lock: this moves the reference every instant is read against,
     // not the device.
     write: writable(
       false,
@@ -171,7 +171,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         const { min, max } = ATTRIBUTES.clockOffsetSec.range;
         if (typeof value !== 'number' || !Number.isFinite(value)) return BAD_VALUE;
         if (value < min || value > max) return BAD_VALUE;
-        // A flow holds the gate for its whole run, so refusing while the gate
+        // Note(yoochan.kim): A flow holds the gate for its whole run, so refusing while the gate
         // is held is what makes it impossible to move the clock out from under
         // music that is already playing. The music timeline is derived from
         // instants; shifting the reference would drag the next track with it.
@@ -183,6 +183,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return { clockOffsetSec };
       },
     ),
+  },
+
+  console: {
+    read: (deps) => deps.mixerConsole.read(),
   },
 };
 
@@ -197,6 +201,6 @@ export function readState(deps: ServerDeps, socket: ServerSocket): StatePatch {
   for (const name of ALL_ATTRIBUTES) {
     patch[name] = ATTRIBUTE_IMPL[name].read(deps, socket);
   }
-  // Safe by construction: every key comes from the attribute table.
+  // Note(yoochan.kim): Safe by construction: every key comes from the attribute table.
   return patch as StatePatch;
 }

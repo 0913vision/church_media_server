@@ -9,11 +9,18 @@ declare module 'osc' {
     remotePort: number;
   }
 
+  /** An incoming OSC message with plain (non-annotated) argument values */
+  export interface OscMessage {
+    address: string;
+    args: (number | string)[];
+  }
+
   export class UDPPort {
     constructor(options: UdpPortOptions);
     open(): void;
-    on(event: string, callback: () => void): void;
-    send(message: { address: string; args: number }): void;
+    on(event: 'ready', callback: () => void): void;
+    on(event: 'message', callback: (message: OscMessage) => void): void;
+    send(message: { address: string; args?: number }): void;
   }
 
   const osc: { UDPPort: typeof UDPPort };

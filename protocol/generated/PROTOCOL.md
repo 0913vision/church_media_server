@@ -44,6 +44,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
 | `flow` | `FlowStatus` | 읽기 전용 | — | What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it. |
 | `clockOffsetSec` | `number` (-3600–3600) | 읽기/쓰기 | admin | How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts. |
+| `console` | `ConsoleState` | 읽기 전용 | — | What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face. |
 
 ## 명령 (인자를 받는 동작)
 
@@ -173,6 +174,15 @@ Which track of a flow is sounding right now
 | `title` | `string` |  |
 | `index` | `number` | 1-based position in the sequence |
 | `total` | `number` |  |
+
+### ConsoleState
+
+Both inputs this server drives. mic covers the pastor's channel pair, and reads on only while every channel of the pair is on.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `mic` | `ConsoleRead` |  |
+| `aux` | `ConsoleRead` |  |
 
 ## 클라이언트 → 서버
 

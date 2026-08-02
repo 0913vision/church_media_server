@@ -8,7 +8,7 @@ before(() => ensureServer());
 after(() => stopServer());
 
 const EXPECTED_ATTRIBUTES = [
-  'playback', 'volume', 'mute', 'song', 'adminLock', 'audioLock', 'isAdmin', 'flow', 'clockOffsetSec',
+  'playback', 'volume', 'mute', 'song', 'adminLock', 'audioLock', 'isAdmin', 'flow', 'clockOffsetSec', 'console',
 ];
 
 describe('Handshake and Read Tests', () => {
@@ -20,7 +20,7 @@ describe('Handshake and Read Tests', () => {
 
       assert.strictEqual(ready.protocolVersion, PROTOCOL_VERSION);
       assert.strictEqual(ready.accepted, true);
-      // A client renders from this one patch, so every attribute must be there.
+      // Note(yoochan.kim): A client renders from this one patch, so every attribute must be there.
       assert.deepStrictEqual(Object.keys(state).sort(), [...EXPECTED_ATTRIBUTES].sort());
     } finally {
       helper.disconnect();
@@ -34,12 +34,12 @@ describe('Handshake and Read Tests', () => {
       const { ready } = await helper.open();
 
       assert.deepStrictEqual([...ready.attributes].sort(), [...EXPECTED_ATTRIBUTES].sort());
-      // Commands are advertised only when implemented, so a client can hide
+      // Note(yoochan.kim): Commands are advertised only when implemented, so a client can hide
       // controls for the rest instead of guessing.
       assert.ok(ready.commands.includes('authenticate'));
       assert.ok(ready.commands.includes('enableConsoleInput'));
 
-      // Songs are named by the server, so renaming one never means a client
+      // Note(yoochan.kim): Songs are named by the server, so renaming one never means a client
       // release — the catalogue arrives with the handshake.
       assert.ok(ready.songs.length > 0);
       for (const song of ready.songs) {
@@ -48,7 +48,7 @@ describe('Handshake and Read Tests', () => {
       }
       assert.ok(Array.isArray(ready.tracks));
 
-      // Clients print this on their error screens, so it has to be there
+      // Note(yoochan.kim): Clients print this on their error screens, so it has to be there
       // before anything goes wrong.
       assert.ok(ready.contact.name.length > 0, 'someone is named as responsible');
       assert.ok(ready.contact.phone.length > 0, 'and can be called');
@@ -84,7 +84,7 @@ describe('Handshake and Read Tests', () => {
       await helper.open();
       const state = await helper.read();
 
-      // Absence is spelled out, so a client cannot mistake "no flow" for
+      // Note(yoochan.kim): Absence is spelled out, so a client cannot mistake "no flow" for
       // "this field was not sent".
       assert.deepStrictEqual(state.flow, { phase: 'idle' });
     } finally {
@@ -104,7 +104,7 @@ describe('Handshake and Read Tests', () => {
       assert.strictEqual(ready.accepted, false);
       assert.strictEqual(ready.protocolVersion, PROTOCOL_VERSION);
 
-      // State still flows, so a stale client can at least display something.
+      // Note(yoochan.kim): State still flows, so a stale client can at least display something.
       const rejected = helper.waitForRejected('volume');
       helper.write('volume', 42);
       assert.strictEqual(await rejected, RejectReason.PROTOCOL_MISMATCH);

@@ -140,6 +140,15 @@ export interface FlowTrack {
 }
 
 /**
+ * Both inputs this server drives. mic covers the pastor's channel pair, and reads on
+ * only while every channel of the pair is on.
+ */
+export interface ConsoleState {
+  mic: ConsoleRead;
+  aux: ConsoleRead;
+}
+
+/**
  * One thing a flow does on top of holding the gate. The lock is not among these: every
  * flow holds it, so it is a field of the flow rather than a part that could be left
  * out. A new capability later is a new kind here rather than a new command.
@@ -154,6 +163,22 @@ export type FlowPart =
   ;
 export const FlowPartKind = {
   MUSIC: 'music',
+} as const;
+
+/**
+ * One console input as last heard from the desk. The console answers over UDP with no
+ * session, so silence is a real state: unknown says nobody has heard, not that the
+ * input is off.
+ */
+export type ConsoleRead =
+  /** No answer from the console yet, or the last one has gone stale */
+  | { kind: 'unknown' }
+  /** The desk's own answer */
+  | { kind: 'read'; on: boolean; fader: number }
+  ;
+export const ConsoleReadKind = {
+  UNKNOWN: 'unknown',
+  READ: 'read',
 } as const;
 
 /**
@@ -228,6 +253,13 @@ export const ATTRIBUTES = {
    * music that is already playing. Survives restarts.
    */
   clockOffsetSec: { access: 'rw', permission: 'admin', range: { min: -3600, max: 3600 } },
+  /**
+   * What the mixing desk itself reports for the inputs this server drives. Read-only:
+   * enableConsoleInput changes the desk, and the desk's next answer changes this. It
+   * starts unknown and falls back to unknown when the desk stops answering, so a dead
+   * console never wears a live face.
+   */
+  console: { access: 'ro' },
 } as const;
 export type AttributeName = keyof typeof ATTRIBUTES;
 
@@ -316,6 +348,13 @@ export interface State {
    * music that is already playing. Survives restarts.
    */
   clockOffsetSec: number;
+  /**
+   * What the mixing desk itself reports for the inputs this server drives. Read-only:
+   * enableConsoleInput changes the desk, and the desk's next answer changes this. It
+   * starts unknown and falls back to unknown when the desk stops answering, so a dead
+   * console never wears a live face.
+   */
+  console: ConsoleState;
 }
 export type StatePatch = Partial<State>;
 

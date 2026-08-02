@@ -1,40 +1,50 @@
+import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
 import { log } from '../utils/logger.ts';
+import type { ConsoleState } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 
-/**
- * Mock console implementation for development/testing
- */
+/** Mock console for development/testing. Being its own desk, it always knows its state. */
 class MockConsole implements ConsoleDevice {
+  private state: ConsoleState = {
+    mic: { kind: 'read', on: false, fader: 0 },
+    aux: { kind: 'read', on: false, fader: 0 },
+  };
+  private readonly listeners: (() => void)[] = [];
+
   constructor() {
     log.info('mockConsole', null, 'Mock console initialized');
   }
 
-  /**
-   * Creates a delay for consistent API behavior
-   */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /**
-   * Mock pastor microphone enable operation
-   */
   async enablePastorMic(): Promise<void> {
     log.info('mockConsole', null, 'Enabling pastor microphone');
-    log.info('mockConsole', null, '→ Channel 01: mix/on = 1, fader = 0.687');
-    log.info('mockConsole', null, '→ Channel 02: mix/on = 1, fader = 0.837');
     await this.delay(50);
+    this.state = { ...this.state, mic: { kind: 'read', on: true, fader: CONSOLE_CONFIG.PASTOR_MIC.CHANNELS.CH1.FADER_LEVEL } };
+    this.announce();
     log.info('mockConsole', null, 'Pastor microphone enabled');
   }
 
-  /**
-   * Mock auxiliary input enable operation
-   */
   async enableAux(): Promise<void> {
     log.info('mockConsole', null, 'Enabling auxiliary input');
-    log.info('mockConsole', null, '→ AuxIn 05: mix/on = 1, fader = 0.75');
     await this.delay(50);
+    this.state = { ...this.state, aux: { kind: 'read', on: true, fader: CONSOLE_CONFIG.AUX_INPUT.FADER_LEVEL } };
+    this.announce();
     log.info('mockConsole', null, 'Auxiliary input enabled');
+  }
+
+  read(): ConsoleState {
+    return this.state;
+  }
+
+  onChange(listener: () => void): void {
+    this.listeners.push(listener);
+  }
+
+  private announce(): void {
+    for (const listener of this.listeners) listener();
   }
 }
 
