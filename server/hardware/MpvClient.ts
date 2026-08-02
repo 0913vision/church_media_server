@@ -77,9 +77,11 @@ class MpvClient {
    * Sets a property on the MPV player instance. libmpv returns a negative
    * code on failure; surface it instead of failing silently.
    */
-  setProperty(property: string, value: string): void {
+  setProperty(property: string, value: string, quiet = false): void {
     const code = this.api.mpv_set_property_string(this.playerInstance, property, value);
-    if (code < 0) {
+    // quiet is for retry loops that expect "unavailable" right after a load:
+    // their final failure speaks once, loudly, instead of one warn per try.
+    if (code < 0 && !quiet) {
       log.warn('mpvClient', null, 'mpv_set_property_string failed', { property, value, code });
     }
   }

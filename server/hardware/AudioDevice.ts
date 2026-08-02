@@ -150,7 +150,7 @@ class AudioDevice implements AudioOutput {
     let succeeded = false;
 
     do {
-      this.mpv.setProperty("playback-time", targetTime.toString());
+      this.mpv.setProperty("playback-time", targetTime.toString(), true);
       await this.delay(DEVICE_CONFIG.PROPERTY_SET_RETRY_DELAY_MS);
       attempts++;
 
