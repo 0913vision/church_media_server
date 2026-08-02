@@ -7,7 +7,9 @@ import type { S2CPayloads, StatePatch } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-const EXPECTED_ATTRIBUTES = ['playback', 'volume', 'mute', 'song', 'adminLock', 'audioLock', 'isAdmin', 'flow'];
+const EXPECTED_ATTRIBUTES = [
+  'playback', 'volume', 'mute', 'song', 'adminLock', 'audioLock', 'isAdmin', 'flow', 'clockOffsetSec',
+];
 
 describe('Handshake and Read Tests', () => {
   test('hello is answered with ready, then the full state', async () => {
@@ -45,6 +47,11 @@ describe('Handshake and Read Tests', () => {
         assert.ok(song.title.length > 0, 'every song carries a name to show');
       }
       assert.ok(Array.isArray(ready.tracks));
+
+      // Clients print this on their error screens, so it has to be there
+      // before anything goes wrong.
+      assert.ok(ready.contact.name.length > 0, 'someone is named as responsible');
+      assert.ok(ready.contact.phone.length > 0, 'and can be called');
     } finally {
       helper.disconnect();
     }

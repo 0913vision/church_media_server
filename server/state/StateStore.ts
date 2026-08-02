@@ -7,10 +7,13 @@ import type { PlayerConfig } from '../constants/playerConfig.ts';
  */
 export type PersistedState = Pick<PlayerConfig, 'serverVolume' | 'muted' | 'currentSong'>;
 
+/** Everything the file holds: the player's preferences plus the church clock. */
+export type PersistedAll = PersistedState & { clockOffsetSec: number };
+
 /** Persists the player's preferences across process restarts / reboots. */
 export interface StateStore {
   /** Returns the saved state, or null if absent or invalid. */
-  load(): PersistedState | null;
+  load(): PersistedAll | null;
   /** Persists the given state. Best-effort — implementations must not throw. */
-  save(state: PersistedState): void;
+  save(state: PersistedAll): void;
 }

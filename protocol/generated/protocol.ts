@@ -78,6 +78,7 @@ export const RejectReason = {
   FLOW_ACTIVE: 'flowActive',
   NO_FLOW: 'noFlow',
   WINDOW_PASSED: 'windowPassed',
+  MUSIC_OUTSIDE_LOCK: 'musicOutsideLock',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -94,6 +95,30 @@ export interface Song {
   id: string;
   /** Human-readable name to show */
   title: string;
+}
+
+/**
+ * Who to call when this server is not working. Configured on the server, for the same
+ * reason song titles are: the person responsible changes far more often than the
+ * clients do, and nobody should need a release to print a new number.
+ */
+export interface Contact {
+  /** Person responsible for this server */
+  name: string;
+  /** Number to call, already formatted for display */
+  phone: string;
+}
+
+/**
+ * The window a flow holds the admin gate for. Every flow has one: a run that plays
+ * music while the panel is still open lets the tablet take the deck out from under it,
+ * so the gate is not something a caller can decline.
+ */
+export interface FlowLock {
+  /** Instant to engage the lock. Already past means immediately. */
+  at: string;
+  /** Instant to release it. Must be after at, and must cover every part. */
+  until: string;
 }
 
 /** A playable library entry. File paths never leave the server. */
@@ -115,25 +140,20 @@ export interface FlowTrack {
 }
 
 /**
- * One part of a flow. A flow is a set of these, so a run can play music, hold the
- * admin lock, or both — and a new capability later is a new kind rather than a new
- * command.
+ * One thing a flow does on top of holding the gate. The lock is not among these: every
+ * flow holds it, so it is a field of the flow rather than a part that could be left
+ * out. A new capability later is a new kind here rather than a new command.
  */
 export type FlowPart =
   /**
    * Play these tracks in order so the last one finishes at endsAt. Started late, the
-   * server joins the timeline part-way through.
+   * server joins the timeline part-way through. The whole span must fall inside the
+   * flow's lock window.
    */
   | { kind: 'music'; tracks: string[]; endsAt: string }
-  /**
-   * Hold the global admin gate for this window. Releasing is its own step: music
-   * ending does not release the lock.
-   */
-  | { kind: 'lock'; at: string; until: string }
   ;
 export const FlowPartKind = {
   MUSIC: 'music',
-  LOCK: 'lock',
 } as const;
 
 /**
@@ -200,6 +220,14 @@ export const ATTRIBUTES = {
    * rather than reading as nothing. Read-only — startFlow and stopFlow change it.
    */
   flow: { access: 'ro' },
+  /**
+   * How far ahead of standard time the church clock runs, in seconds. Negative means
+   * behind. Every instant on this wire is read against it, so writing it moves the
+   * whole schedule. Refused with adminLocked while the gate is held: a flow holds the
+   * gate for its whole run, which makes it impossible to move the clock out from under
+   * music that is already playing. Survives restarts.
+   */
+  clockOffsetSec: { access: 'rw', permission: 'admin', range: { min: -3600, max: 3600 } },
 } as const;
 export type AttributeName = keyof typeof ATTRIBUTES;
 
@@ -220,9 +248,14 @@ export const COMMANDS = {
    * Hand the server one flow to run, and it owns that run to the end: it keeps to the
    * wall clock, restores the user's song afterwards, and cleans up however it
    * finishes. The schedule this came from stays with the caller — the server holds no
-   * flow definitions and no calendar, it only executes what it is given. A flow is a
-   * set of parts, at least one, and only one flow runs at a time. A flow whose every
-   * part has already finished is refused with windowPassed rather than accepted and
+   * flow definitions and no calendar, it only executes what it is given. Every flow
+   * holds the admin gate for a window it names, and music must finish inside that
+   * window: running past the unlock is refused with musicOutsideLock rather than
+   * played on an open panel, as is music that would end before the gate even engages,
+   * since it could never sound. A timeline that begins before the window is accepted —
+   * the sound starts with the lock and joins the timeline where it already is, the
+   * opening cut exactly like a late start. Only one flow runs at a time. A flow whose
+   * window has already closed is refused with windowPassed rather than accepted and
    * completed instantly, so pressing start never looks like nothing happened.
    */
   startFlow: { permission: 'admin' },
@@ -275,6 +308,14 @@ export interface State {
    * rather than reading as nothing. Read-only — startFlow and stopFlow change it.
    */
   flow: FlowStatus;
+  /**
+   * How far ahead of standard time the church clock runs, in seconds. Negative means
+   * behind. Every instant on this wire is read against it, so writing it moves the
+   * whole schedule. Refused with adminLocked while the gate is held: a flow holds the
+   * gate for its whole run, which makes it impossible to move the clock out from under
+   * music that is already playing. Survives restarts.
+   */
+  clockOffsetSec: number;
 }
 export type StatePatch = Partial<State>;
 
@@ -285,13 +326,14 @@ export type WriteRequest =
   | { field: 'mute'; value: MuteState }
   | { field: 'song'; value: string }
   | { field: 'adminLock'; value: boolean }
+  | { field: 'clockOffsetSec'; value: number }
   ;
 
 /** One invoke runs one command, so command and args stay in step. */
 export type InvokeRequest =
   | { command: 'authenticate'; args: { password: string } }
   | { command: 'enableConsoleInput'; args: { input: ConsoleInput } }
-  | { command: 'startFlow'; args: { name: string; parts: FlowPart[] } }
+  | { command: 'startFlow'; args: { name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
   ;
 
@@ -362,6 +404,11 @@ export interface S2CPayloads {
     songs: Song[];
     /** Track library for flows, fixed at boot */
     tracks: Track[];
+    /**
+     * Who a client should tell the user to call when something is broken. Fixed at
+     * boot.
+     */
+    contact: Contact;
   };
   /**
    * Attributes that changed. Merge into the state held locally — absent fields are
@@ -378,8 +425,16 @@ export interface S2CPayloads {
     target: string;
     reason: RejectReason;
   };
-  /** Application-level heartbeat */
-  ping: Record<string, never>;
+  /**
+   * Application-level heartbeat, carrying the server's own church time. A client draws
+   * 'now' from this rather than from its own clock — the point of the offset is that
+   * local clocks disagree, and a countdown drawn against a wrong one would be wrong in
+   * exactly the situation this exists for.
+   */
+  ping: {
+    /** Church time at the moment this was sent */
+    at: string;
+  };
 }
 
 /** Socket.IO map for clients: payloads are typed both ways */

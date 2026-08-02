@@ -160,6 +160,30 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     // Read-only: startFlow and stopFlow are what move it.
     read: (deps) => deps.flowRunner.status(),
   },
+
+  clockOffsetSec: {
+    read: (deps) => deps.clock.offset(),
+    // No audio lock: this moves the reference every instant is read against,
+    // not the device.
+    write: writable(
+      false,
+      (value, deps) => {
+        const { min, max } = ATTRIBUTES.clockOffsetSec.range;
+        if (typeof value !== 'number' || !Number.isFinite(value)) return BAD_VALUE;
+        if (value < min || value > max) return BAD_VALUE;
+        // A flow holds the gate for its whole run, so refusing while the gate
+        // is held is what makes it impossible to move the clock out from under
+        // music that is already playing. The music timeline is derived from
+        // instants; shifting the reference would drag the next track with it.
+        if (deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_LOCKED);
+        return accept(Math.round(value));
+      },
+      async (clockOffsetSec, deps) => {
+        deps.clock.setOffset(clockOffsetSec);
+        return { clockOffsetSec };
+      },
+    ),
+  },
 };
 
 const ALL_ATTRIBUTES = Object.keys(ATTRIBUTE_IMPL) as AttributeName[];

@@ -50,8 +50,13 @@ class Notifier {
     socket.emit(S2C.REJECTED, { target, reason });
   }
 
-  ping(): void {
-    this.io.emit(S2C.PING, {});
+  /**
+   * Heartbeat carrying church time. Clients draw "now" from this instead of
+   * their own clock — the whole point of the offset is that local clocks
+   * disagree with the one the building follows.
+   */
+  ping(at: Date): void {
+    this.io.emit(S2C.PING, { at: at.toISOString() });
   }
 }
 

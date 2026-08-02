@@ -19,7 +19,8 @@ The server is modelled as a device that describes itself: it exposes attributes 
 - ready lists the attributes and commands this server actually implements. A client must hide controls for anything it does not see, so a server can gain features without a client release.
 - Every event carries exactly one object payload. No positional arguments, no bare scalars.
 - The server's state is always authoritative. A write or invoke expresses intent; the result arrives as a state patch.
-- Times are 'HH:MM' local wall-clock for the current day. If unlockAt is not after lockAt it means the following day.
+- Every time is an absolute instant, written in ISO 8601 with an explicit offset (2026-08-05T19:30:00+09:00, or ...Z). The server never works out which day a bare clock time belongs to — that inference is exactly what the no-null rule forbids elsewhere, and it is the caller's calendar that knows. Clients format instants for display.
+- Every instant on this wire is church time, not standard time. The service follows the clock on the sanctuary wall, so the server does too: clockOffsetSec says how far ahead of standard time that clock runs, and the server converts to standard time only when it arms a timer. A client never applies the offset itself — it sends and prints instants as they are, and reads ping.at rather than its own clock to know where 'now' is. The one thing not on church time is the server's log, which records when things actually happened.
 - Nothing here is transport-specific: an event name plus an object payload maps cleanly onto Socket.IO today, or topics later.
 
 ## 연결 절차
@@ -42,6 +43,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `audioLock` | `boolean` | 읽기 전용 | — | True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions. |
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
 | `flow` | `FlowStatus` | 읽기 전용 | — | What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it. |
+| `clockOffsetSec` | `number` (-3600–3600) | 읽기/쓰기 | admin | How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts. |
 
 ## 명령 (인자를 받는 동작)
 
@@ -69,12 +71,13 @@ Switch a mixing console input on. Not subject to the audio lock, and open to any
 
 권한: admin
 
-Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. A flow is a set of parts, at least one, and only one flow runs at a time. A flow whose every part has already finished is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
+Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `name` | `string` | Display name, e.g. '수요 예배' |
-| `parts` | `FlowPart[]` | What this run should do. At least one part, and at most one of each kind. |
+| `lock` | `FlowLock` | The window this run holds the admin gate for |
+| `parts` | `FlowPart[]` | What this run does besides holding the gate. Empty for a lock-only flow; at most one of each kind. |
 
 ### `stopFlow`
 
@@ -120,7 +123,7 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"protocolMismatch"`
 
 ## 객체
 
@@ -132,6 +135,24 @@ A song a user can select and leave looping. The server names these, so renaming 
 | --- | --- | --- |
 | `id` | `string` | Value to write to the song attribute |
 | `title` | `string` | Human-readable name to show |
+
+### Contact
+
+Who to call when this server is not working. Configured on the server, for the same reason song titles are: the person responsible changes far more often than the clients do, and nobody should need a release to print a new number.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `name` | `string` | Person responsible for this server |
+| `phone` | `string` | Number to call, already formatted for display |
+
+### FlowLock
+
+The window a flow holds the admin gate for. Every flow has one: a run that plays music while the panel is still open lets the tablet take the deck out from under it, so the gate is not something a caller can decline.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `at` | `string` | Instant to engage the lock. Already past means immediately. |
+| `until` | `string` | Instant to release it. Must be after at, and must cover every part. |
 
 ### Track
 
@@ -202,6 +223,7 @@ Answer to hello: what this server speaks, what it supports, and the fixed track 
 | `commands` | `string[]` | Commands this server implements. Hide controls for anything absent. |
 | `songs` | `Song[]` | Songs a user may select, with the names to show. Fixed at boot. |
 | `tracks` | `Track[]` | Track library for flows, fixed at boot |
+| `contact` | `Contact` | Who a client should tell the user to call when something is broken. Fixed at boot. |
 
 ### `state` _(전체 브로드캐스트)_
 
@@ -220,6 +242,8 @@ A write or invoke was refused. Sent only to the client that issued it, so it can
 
 ### `ping` _(전체 브로드캐스트)_
 
-Application-level heartbeat
+Application-level heartbeat, carrying the server's own church time. A client draws 'now' from this rather than from its own clock — the point of the offset is that local clocks disagree, and a countdown drawn against a wrong one would be wrong in exactly the situation this exists for.
 
-_필드 없음._
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `at` | `string` | Church time at the moment this was sent |

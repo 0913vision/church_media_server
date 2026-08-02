@@ -65,6 +65,7 @@ class RejectReason(str, Enum):
     FLOW_ACTIVE = "flowActive"
     NO_FLOW = "noFlow"
     WINDOW_PASSED = "windowPassed"
+    MUSIC_OUTSIDE_LOCK = "musicOutsideLock"
     PROTOCOL_MISMATCH = "protocolMismatch"
 
 
@@ -75,6 +76,27 @@ class Song(TypedDict):
     """
     id: str  # Value to write to the song attribute
     title: str  # Human-readable name to show
+
+
+class Contact(TypedDict):
+    """
+    Who to call when this server is not working. Configured on the server, for
+    the same reason song titles are: the person responsible changes far more
+    often than the clients do, and nobody should need a release to print a new
+    number.
+    """
+    name: str  # Person responsible for this server
+    phone: str  # Number to call, already formatted for display
+
+
+class FlowLock(TypedDict):
+    """
+    The window a flow holds the admin gate for. Every flow has one: a run that
+    plays music while the panel is still open lets the tablet take the deck
+    out from under it, so the gate is not something a caller can decline.
+    """
+    at: str  # Instant to engage the lock. Already past means immediately.
+    until: str  # Instant to release it. Must be after at, and must cover every part.
 
 
 class Track(TypedDict):
@@ -94,29 +116,21 @@ class FlowTrack(TypedDict):
 class FlowPartMusic(TypedDict):
     """
     Play these tracks in order so the last one finishes at endsAt. Started
-    late, the server joins the timeline part-way through.
+    late, the server joins the timeline part-way through. The whole span must
+    fall inside the flow's lock window.
     """
     kind: Literal["music"]
     tracks: list[str]  # Track ids in play order
-    endsAt: str  # When the last track must finish
-
-
-class FlowPartLock(TypedDict):
-    """
-    Hold the global admin gate for this window. Releasing is its own step:
-    music ending does not release the lock.
-    """
-    kind: Literal["lock"]
-    at: str  # When to engage the lock. Already past means immediately.
-    until: str  # When to release it. Must be after at.
+    endsAt: str  # Instant the last track must finish
 
 
 """
-One part of a flow. A flow is a set of these, so a run can play music, hold
-the admin lock, or both — and a new capability later is a new kind rather than
-a new command.
+One thing a flow does on top of holding the gate. The lock is not among these:
+every flow holds it, so it is a field of the flow rather than a part that
+could be left out. A new capability later is a new kind here rather than a new
+command.
 """
-FlowPart = FlowPartMusic | FlowPartLock
+FlowPart = FlowPartMusic
 
 
 class FlowStatusIdle(TypedDict):
@@ -128,7 +142,7 @@ class FlowStatusWaiting(TypedDict):
     """A flow is accepted but none of its parts has started yet"""
     phase: Literal["waiting"]
     name: str
-    startsAt: str  # When its first part begins
+    startsAt: str  # Instant its first part begins
 
 
 class FlowStatusPlaying(TypedDict):
@@ -136,14 +150,14 @@ class FlowStatusPlaying(TypedDict):
     phase: Literal["playing"]
     name: str
     track: FlowTrack
-    endsAt: str  # When the music finishes
+    endsAt: str  # Instant the music finishes
 
 
 class FlowStatusHolding(TypedDict):
     """Nothing is sounding, but the flow still holds the admin lock"""
     phase: Literal["holding"]
     name: str
-    unlockAt: str  # When the lock releases
+    unlockAt: str  # Instant the lock releases
 
 
 """
@@ -165,6 +179,7 @@ class State(TypedDict):
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
+    clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
 
 
 class StatePatch(TypedDict, total=False):
@@ -177,6 +192,7 @@ class StatePatch(TypedDict, total=False):
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
+    clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
 
 
 class WriteRequest(TypedDict):
@@ -209,13 +225,20 @@ class StartFlowArgs(TypedDict):
     to the wall clock, restores the user's song afterwards, and cleans up
     however it finishes. The schedule this came from stays with the caller —
     the server holds no flow definitions and no calendar, it only executes
-    what it is given. A flow is a set of parts, at least one, and only one
-    flow runs at a time. A flow whose every part has already finished is
-    refused with windowPassed rather than accepted and completed instantly, so
-    pressing start never looks like nothing happened.
+    what it is given. Every flow holds the admin gate for a window it names,
+    and music must finish inside that window: running past the unlock is
+    refused with musicOutsideLock rather than played on an open panel, as is
+    music that would end before the gate even engages, since it could never
+    sound. A timeline that begins before the window is accepted — the sound
+    starts with the lock and joins the timeline where it already is, the
+    opening cut exactly like a late start. Only one flow runs at a time. A
+    flow whose window has already closed is refused with windowPassed rather
+    than accepted and completed instantly, so pressing start never looks like
+    nothing happened.
     """
     name: str  # Display name, e.g. '수요 예배'
-    parts: list[FlowPart]  # What this run should do. At least one part, and at most one of each kind.
+    lock: FlowLock  # The window this run holds the admin gate for
+    parts: list[FlowPart]  # What this run does besides holding the gate. Empty for a lock-only flow; at most one of each kind.
 
 
 class StopFlowArgs(TypedDict):
@@ -241,6 +264,7 @@ ATTRIBUTES: dict[str, dict] = {
     "audioLock": {"access": "ro"},
     "isAdmin": {"access": "ro"},
     "flow": {"access": "ro"},
+    "clockOffsetSec": {"access": "rw", "permission": "admin", "range": (-3600, 3600)},
 }
 
 COMMANDS: dict[str, dict] = {
@@ -299,6 +323,7 @@ class ReadyPayload(TypedDict):
     commands: list[str]  # Commands this server implements. Hide controls for anything absent.
     songs: list[Song]  # Songs a user may select, with the names to show. Fixed at boot.
     tracks: list[Track]  # Track library for flows, fixed at boot
+    contact: Contact  # Who a client should tell the user to call when something is broken. Fixed at boot.
 
 
 class RejectedPayload(TypedDict):
@@ -311,5 +336,10 @@ class RejectedPayload(TypedDict):
 
 
 class PingPayload(TypedDict):
-    """Application-level heartbeat"""
-    pass
+    """
+    Application-level heartbeat, carrying the server's own church time. A
+    client draws 'now' from this rather than from its own clock — the point of
+    the offset is that local clocks disagree, and a countdown drawn against a
+    wrong one would be wrong in exactly the situation this exists for.
+    """
+    at: str  # Church time at the moment this was sent

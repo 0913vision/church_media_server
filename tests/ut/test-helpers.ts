@@ -29,6 +29,11 @@ const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib
 const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
 // Track library manifest (repo asset; tests only list tracks, never play them).
 const TEST_TRACKS_MANIFEST_PATH = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
+// Who clients are told to call. Required like everything else, so it has to be
+// declared here too — the bootstrap lists the environment rather than reading
+// .env, which is what keeps a developer's own config out of the test run.
+const TEST_ADMIN_CONTACT_NAME = process.env.ADMIN_CONTACT_NAME ?? '테스트 담당자';
+const TEST_ADMIN_CONTACT_PHONE = process.env.ADMIN_CONTACT_PHONE ?? '010-0000-0000';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -71,6 +76,8 @@ export async function ensureServer(): Promise<void> {
   process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
   process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
+  process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
+  process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
   // Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
 

@@ -19,6 +19,8 @@ import FlowRunner from './flow/FlowRunner.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
+import type { PersistedState } from './state/StateStore.ts';
+import Clock from './clock/Clock.ts';
 import { registerHandlers } from './handlers/index.ts';
 import type { ServerDeps } from './deps.ts';
 import { requireEnv } from './utils/env.ts';
@@ -57,15 +59,31 @@ class MediaServer {
     // Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
+    const restored = stateStore.load();
     const initialConfig: PlayerConfig = {
       ...INITIAL_PLAYER_CONFIG,
-      ...(stateStore.load() ?? {}),
+      ...(restored ?? {}),
       state: PlaybackState.PAUSED
     };
+
+    // The clock correction outlives a reboot too: it describes the building,
+    // not the run, and nobody should have to set it again after a power cut.
+    const clock = new Clock(restored?.clockOffsetSec ?? 0);
+    let preferences: PersistedState = {
+      serverVolume: initialConfig.serverVolume,
+      muted: initialConfig.muted,
+      currentSong: initialConfig.currentSong,
+    };
+    const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset() });
+    clock.onChange(persist);
+
     const player = new Player(
       new AudioDevice(new MpvClient(), initialConfig.currentSong),
       initialConfig,
-      (snapshot) => stateStore.save(snapshot)
+      (snapshot) => {
+        preferences = snapshot;
+        persist();
+      }
     );
 
     const adminSessionManager = new AdminSessionManager();
@@ -74,7 +92,7 @@ class MediaServer {
       DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
-    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier);
+    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
 
     const deps: ServerDeps = {
@@ -85,10 +103,11 @@ class MediaServer {
       mixerConsole,
       trackLibrary,
       flowRunner,
+      clock,
     };
 
     this.pingInterval = setInterval(() => {
-      notifier.ping();
+      notifier.ping(clock.now());
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
     io.on('connection', (socket) => {

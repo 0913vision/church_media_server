@@ -4,7 +4,7 @@ import { isMuteState } from '../protocol.ts';
 import { isSongType } from '../constants/songs.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
-import type { StateStore, PersistedState } from './StateStore.ts';
+import type { StateStore, PersistedState, PersistedAll } from './StateStore.ts';
 
 /**
  * File-backed StateStore: a small JSON document written atomically
@@ -14,7 +14,7 @@ import type { StateStore, PersistedState } from './StateStore.ts';
 class FileStateStore implements StateStore {
   constructor(private readonly filePath: string) {}
 
-  load(): PersistedState | null {
+  load(): PersistedAll | null {
     let raw: string;
     try {
       raw = fs.readFileSync(this.filePath, 'utf8');
@@ -28,14 +28,22 @@ class FileStateStore implements StateStore {
         log.warn('stateStore', null, 'Persisted state invalid, ignoring', { filePath: this.filePath });
         return null;
       }
-      return { serverVolume: parsed.serverVolume, muted: parsed.muted, currentSong: parsed.currentSong };
+      const offset = (parsed as Record<string, unknown>).clockOffsetSec;
+      return {
+        serverVolume: parsed.serverVolume,
+        muted: parsed.muted,
+        currentSong: parsed.currentSong,
+        // A file written before the clock existed simply declares no
+        // correction, which is what no correction means.
+        clockOffsetSec: typeof offset === 'number' && Number.isFinite(offset) ? offset : 0,
+      };
     } catch (error) {
       log.error('stateStore', null, 'Failed to read persisted state', { error: errorMessage(error) });
       return null;
     }
   }
 
-  save(state: PersistedState): void {
+  save(state: PersistedAll): void {
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       const tmp = `${this.filePath}.tmp`;

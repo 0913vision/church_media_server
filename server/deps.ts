@@ -5,6 +5,7 @@ import type AdminSessionManager from './auth/AdminSessionManager.ts';
 import type MixerConsole from './console/MixerConsole.ts';
 import type TrackLibrary from './tracks/TrackLibrary.ts';
 import type FlowRunner from './flow/FlowRunner.ts';
+import type Clock from './clock/Clock.ts';
 
 /**
  * Shared dependency context built once by the composition root (server.ts) and
@@ -24,4 +25,6 @@ export interface ServerDeps {
   trackLibrary: TrackLibrary;
   /** Runs the one flow this server may have in flight */
   flowRunner: FlowRunner;
+  /** Church time — every instant on the wire is read against it */
+  clock: Clock;
 }
