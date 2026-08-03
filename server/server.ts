@@ -77,8 +77,9 @@ class MediaServer {
     const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset() });
     clock.onChange(persist);
 
+    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
     const player = new Player(
-      new AudioDevice(new MpvClient(), initialConfig.currentSong),
+      new AudioDevice(new MpvClient(), initialConfig.currentSong, trackLibrary.songFiles()),
       initialConfig,
       (snapshot) => {
         preferences = snapshot;
@@ -92,7 +93,6 @@ class MediaServer {
       DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
-    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
 

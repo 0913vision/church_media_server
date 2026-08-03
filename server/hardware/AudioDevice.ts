@@ -16,9 +16,15 @@ class AudioDevice implements AudioOutput {
    * @param mpv - Low-level MPV client (injected by the composition root)
    * @param initialSong - Song to load on startup (the player's initial current
    *   song, injected so this layer isn't coupled to player defaults)
+   * @param playlist - Audio file per song, from the track manifest — the one
+   *   place every audio asset is registered
    */
-  constructor(private readonly mpv: MpvClient, private readonly initialSong: SongType) {
-    this.playlist = { ...DEVICE_CONFIG.PLAYLIST };
+  constructor(
+    private readonly mpv: MpvClient,
+    private readonly initialSong: SongType,
+    playlist: Record<SongType, string>,
+  ) {
+    this.playlist = { ...playlist };
     this.currentSongTimes = { ...DEVICE_CONFIG.INITIAL_SONG_TIMES };
     this.initialize();
   }

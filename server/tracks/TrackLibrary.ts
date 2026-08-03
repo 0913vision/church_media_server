@@ -58,6 +58,13 @@ class TrackLibrary {
     return Object.values(SongType).map((id) => ({ id, title: this.tracks.get(id)!.title }));
   }
 
+  /** The deck's audio files, one per song — the manifest owns these too */
+  songFiles(): Record<SongType, string> {
+    const files = {} as Record<SongType, string>;
+    for (const song of Object.values(SongType)) files[song] = this.tracks.get(song)!.file;
+    return files;
+  }
+
   /** The client-facing slice: file paths never leave the server. */
   list(): Track[] {
     return [...this.tracks.values()].map(({ id, title, durationSec }) => ({ id, title, durationSec }));

@@ -10,12 +10,6 @@ export const DEVICE_CONFIG = {
   // env (validated, fail-fast) rather than guessing from process.platform
   MPV_LIBRARY_PATH: requireEnv('MPV_LIBRARY_PATH'),
 
-  // Note(yoochan.kim): Audio file per song — explicit mapping, no positional index coupling
-  PLAYLIST: {
-    [SongType.CALM]: './assets/audio/music_slow.mp3',
-    [SongType.FERVENT]: './assets/audio/music_fast.mp3'
-  } satisfies Record<SongType, string>,
-
   // Note(yoochan.kim): Initial song times
   INITIAL_SONG_TIMES: {
     [SongType.CALM]: 0.0,
