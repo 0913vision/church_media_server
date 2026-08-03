@@ -93,17 +93,30 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   volume: {
     read: (deps) => deps.player.getVolume(),
-    write: writable(true, checkVolume, async (volume, deps) => {
-      deps.player.setVolume(volume);
-      return { volume };
-    }),
+    // Note(yoochan.kim): an instant write needs no lock of its own — it only
+    // has to stay out of a running fade. Holding the lock per write made
+    // audioLock flap on every drag tick, for every client.
+    write: writable(
+      false,
+      (value, deps) => {
+        if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
+        return checkVolume(value);
+      },
+      async (volume, deps) => {
+        deps.player.setVolume(volume);
+        return { volume };
+      },
+    ),
   },
 
   mute: {
     read: (deps) => deps.player.getMute(),
     write: writable(
-      true,
-      (value) => (isMuteState(value) ? accept(value) : BAD_VALUE),
+      false,
+      (value, deps) => {
+        if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
+        return isMuteState(value) ? accept(value) : BAD_VALUE;
+      },
       async (mute, deps) => {
         if (mute === deps.player.getMute()) return {};
         deps.player.setMute(mute);

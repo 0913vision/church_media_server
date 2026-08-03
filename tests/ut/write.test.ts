@@ -76,7 +76,10 @@ describe('Write Tests', () => {
     }
   });
 
-  test('an audio write brackets itself with the audio lock', async () => {
+  // Note(yoochan.kim): a volume write is instant and holds no lock of its own —
+  // per-write flaps made every client's controls flicker during a drag. It only
+  // stays out of a running fade, which audio-lock.test covers.
+  test('a volume write leaves the audio lock alone', async () => {
     const actor = new SocketTestHelper();
     const observer = new SocketTestHelper();
 
@@ -86,14 +89,10 @@ describe('Write Tests', () => {
 
       const collected = observer.collectStates(400);
       actor.write('volume', 55);
-      const locks = (await collected)
-        .filter((patch) => patch.audioLock !== undefined)
-        .map((patch) => patch.audioLock);
+      const patches = await collected;
 
-      assert.ok(locks.includes(true), 'should announce the lock being taken');
-      assert.ok(locks.includes(false), 'should announce the lock being released');
-      assert.strictEqual(locks[0], true, 'acquire must come first');
-      assert.strictEqual(locks[locks.length - 1], false, 'release must come last');
+      assert.ok(patches.some((patch) => patch.volume === 55), 'the write itself lands');
+      assert.ok(patches.every((patch) => patch.audioLock === undefined), 'no lock announcements');
     } finally {
       actor.disconnect();
       observer.disconnect();
