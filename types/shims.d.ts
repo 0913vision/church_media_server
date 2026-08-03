@@ -20,6 +20,7 @@ declare module 'osc' {
     open(): void;
     on(event: 'ready', callback: () => void): void;
     on(event: 'message', callback: (message: OscMessage) => void): void;
+    on(event: 'error', callback: (error: Error) => void): void;
     send(message: { address: string; args?: number }): void;
   }
 

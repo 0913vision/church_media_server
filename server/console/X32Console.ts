@@ -31,6 +31,7 @@ class X32Console implements ConsoleDevice {
   private readonly heard = new Map<string, { value: number; at: number }>();
   private readonly listeners: (() => void)[] = [];
   private lastAnnounced = '';
+  private lastNetworkError = '';
 
   constructor() {
     this.client = new UDPPort({
@@ -49,6 +50,13 @@ class X32Console implements ConsoleDevice {
       log.info('x32Console', null, 'X32 console client is ready');
       this.lastAnnounced = JSON.stringify(this.read());
       setInterval(() => this.poll(), POLL_MS);
+    });
+    // Note(yoochan.kim): without this handler one EHOSTUNREACH from the poll
+    // kills the whole server; an absent desk is already just unknown.
+    this.client.on("error", (error) => {
+      if (error.message === this.lastNetworkError) return;
+      this.lastNetworkError = error.message;
+      log.warn('x32Console', null, 'Console unreachable', { error: error.message });
     });
     this.client.on("message", (message) => {
       const value = message.args[0];
