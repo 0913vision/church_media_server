@@ -1,7 +1,6 @@
 import { ATTRIBUTES, C2S, COMMANDS, PROTOCOL_VERSION, RejectReason } from '../protocol.ts';
 import type { AttributeName, CommandName, StatePatch } from '../protocol.ts';
 import { ADMIN_CONTACT } from '../constants/contactConfig.ts';
-import { SONG_CATALOGUE } from '../constants/songs.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 import { ATTRIBUTE_IMPL, IMPLEMENTED_ATTRIBUTES, readState } from '../device/attributes.ts';
@@ -51,7 +50,7 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
         commands: [...IMPLEMENTED_COMMANDS],
         // Note(yoochan.kim): The catalogues clients render from: the server names what a song is
         // called, so a rename never means a client release.
-        songs: SONG_CATALOGUE,
+        songs: deps.trackLibrary.songCatalogue(),
         tracks: deps.trackLibrary.list(),
         // Note(yoochan.kim): Printed on a client's error screens, so whoever is on duty can
         // change without anyone shipping a new app.

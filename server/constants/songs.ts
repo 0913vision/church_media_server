@@ -1,5 +1,3 @@
-import type { Song } from '../protocol.ts';
-
 /**
  * The two-song system users control directly. This is a server-side domain
  * type, not a wire type: the protocol carries a song id and lets the server
@@ -13,20 +11,10 @@ export enum SongType {
   FERVENT = 'fervent'
 }
 
-/**
- * Display names the server hands to clients in `ready`.
- *
- * Note(yoochan.kim): these were once 'slow' and 'fast', which named a tempo.
- * What actually separates them is the kind of prayer they carry, so the ids
- * say that instead.
- */
-export const SONG_TITLES: Record<SongType, string> = {
-  [SongType.CALM]: '잔잔한 음악',
-  [SongType.FERVENT]: '통성기도 음악'
-};
-
-/** The song catalogue as clients see it */
-export const SONG_CATALOGUE: Song[] = Object.values(SongType).map((id) => ({ id, title: SONG_TITLES[id] }));
+// Note(yoochan.kim): the ids were once 'slow' and 'fast', which named a tempo;
+// what separates them is the kind of prayer they carry. Titles are not here:
+// the track manifest owns every display name, and a deck song is the manifest
+// entry whose id equals the song id.
 
 /** Runtime guard for untrusted client payloads */
 export function isSongType(value: unknown): value is SongType {

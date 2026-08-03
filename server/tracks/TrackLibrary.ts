@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Track } from '../protocol.ts';
+import { SongType } from '../constants/songs.ts';
+import type { Song, Track } from '../protocol.ts';
 
 /** A library entry as stored here: the protocol's Track plus its file path */
 export interface LibraryEntry extends Track {
@@ -41,6 +42,20 @@ class TrackLibrary {
       }
       this.tracks.set(id, { id, title, file: resolvedFile, durationSec });
     }
+
+    // Note(yoochan.kim): the manifest owns every display name. A deck song is
+    // the entry whose id equals the song id, so a manifest without one cannot
+    // name the deck and must not boot.
+    for (const song of Object.values(SongType)) {
+      if (!this.tracks.has(song)) {
+        throw new Error(`Track manifest has no entry for deck song '${song}': ${manifestPath}`);
+      }
+    }
+  }
+
+  /** The two-song catalogue for ready, named by the manifest */
+  songCatalogue(): Song[] {
+    return Object.values(SongType).map((id) => ({ id, title: this.tracks.get(id)!.title }));
   }
 
   /** The client-facing slice: file paths never leave the server. */
