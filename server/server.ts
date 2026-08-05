@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.ts';
 import type { SocketData } from './constants/socketConfig.ts';
@@ -21,6 +22,7 @@ import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
 import type { PersistedState } from './state/StateStore.ts';
 import Clock from './clock/Clock.ts';
+import { serveApk } from './update/apkProxy.ts';
 import { registerHandlers } from './handlers/index.ts';
 import type { ServerDeps } from './deps.ts';
 import { requireEnv } from './utils/env.ts';
@@ -42,14 +44,18 @@ class MediaServer {
   start(): void {
     log.info('server', null, 'Socket is initializing');
 
+    // Note(yoochan.kim): the one plain-HTTP door this server has: an outdated
+    // app downloads its update here, everything else speaks the socket protocol.
+    const httpServer = createServer((req, res) => { void serveApk(req, res); });
     const io: TypedServer = new Server<
       ClientToServerEventsUnsafe,
       ServerToClientEvents,
       Record<string, never>,
       SocketData
-    >(SOCKET_CONFIG.PORT, {
+    >(httpServer, {
       cors: SOCKET_CONFIG.CORS,
     });
+    httpServer.listen(SOCKET_CONFIG.PORT);
     this.io = io;
 
     // Note(yoochan.kim): Shared singletons (created once, reused across all connections).

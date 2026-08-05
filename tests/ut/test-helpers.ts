@@ -34,6 +34,10 @@ const TEST_TRACKS_MANIFEST_PATH = process.env.TRACKS_MANIFEST_PATH ?? './assets/
 // .env, which is what keeps a developer's own config out of the test run.
 const TEST_ADMIN_CONTACT_NAME = process.env.ADMIN_CONTACT_NAME ?? '테스트 담당자';
 const TEST_ADMIN_CONTACT_PHONE = process.env.ADMIN_CONTACT_PHONE ?? '010-0000-0000';
+// Note(yoochan.kim): The APK relay's upstream. Points at a port nothing answers,
+// so a test that reached it would fail fast instead of downloading a real APK.
+const TEST_FILESERVER_URL = process.env.FILESERVER_URL ?? 'http://localhost:1';
+const TEST_FILESERVER_PASSWORD = process.env.FILESERVER_PASSWORD ?? 'test';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -78,6 +82,8 @@ export async function ensureServer(): Promise<void> {
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
   process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
+  process.env.FILESERVER_URL = TEST_FILESERVER_URL;
+  process.env.FILESERVER_PASSWORD = TEST_FILESERVER_PASSWORD;
   // Note(yoochan.kim): Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
 
