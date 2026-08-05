@@ -115,8 +115,8 @@ class FlowTrack(TypedDict):
 
 class ConsoleState(TypedDict):
     """
-    Both inputs this server drives. mic covers the pastor's channel pair, and
-    reads on only while every channel of the pair is on.
+    Both inputs this server drives. Enabling mic drives the pastor's channel
+    pair, but its reading follows the pair's first channel alone.
     """
     mic: ConsoleRead
     aux: ConsoleRead

@@ -6,17 +6,20 @@ import type { ConsoleDevice } from './ConsoleDevice.ts';
 
 const { UDPPort } = osc;
 
-// Note(yoochan.kim): the desk answers a bare address with its current value;
+// Note(yoochan.kim): /xremote makes the desk push changes the moment they
+// happen, but it expires after 10s and never sends current state — so it is
+// renewed on an interval, and the poll stays for initial values and liveness:
 // answers older than STALE_MS stop counting as answers.
 const POLL_MS = 2000;
 const STALE_MS = 7000;
+const XREMOTE_RENEW_MS = 5000;
 
+// Note(yoochan.kim): enabling drives the pastor's channel pair, but the
+// reading follows CH1 alone.
 const MIC1 = CONSOLE_CONFIG.PASTOR_MIC.CHANNELS.CH1;
-const MIC2 = CONSOLE_CONFIG.PASTOR_MIC.CHANNELS.CH2;
 const AUX = CONSOLE_CONFIG.AUX_INPUT;
 const POLLED: readonly string[] = [
   MIC1.MUTE_ADDRESS, MIC1.FADER_LEVEL_ADDRESS,
-  MIC2.MUTE_ADDRESS, MIC2.FADER_LEVEL_ADDRESS,
   AUX.MUTE_ADDRESS, AUX.FADER_LEVEL_ADDRESS,
 ];
 
@@ -49,6 +52,8 @@ class X32Console implements ConsoleDevice {
     this.client.on("ready", () => {
       log.info('x32Console', null, 'X32 console client is ready');
       this.lastAnnounced = JSON.stringify(this.read());
+      this.subscribe();
+      setInterval(() => this.subscribe(), XREMOTE_RENEW_MS);
       setInterval(() => this.poll(), POLL_MS);
     });
     // Note(yoochan.kim): without this handler one EHOSTUNREACH from the poll
@@ -66,13 +71,17 @@ class X32Console implements ConsoleDevice {
     });
   }
 
+  private subscribe(): void {
+    this.client.send({ address: '/xremote' });
+  }
+
   private poll(): void {
     for (const address of POLLED) this.client.send({ address });
     this.announceIfChanged();
   }
 
   read(): ConsoleState {
-    return { mic: this.readPair(MIC1, MIC2), aux: this.readSingle(AUX) };
+    return { mic: this.readSingle(MIC1), aux: this.readSingle(AUX) };
   }
 
   onChange(listener: () => void): void {
@@ -90,14 +99,6 @@ class X32Console implements ConsoleDevice {
     if (on === undefined || fader === undefined) return { kind: 'unknown' };
     // Note(yoochan.kim): rounded so float noise is not a state change
     return { kind: 'read', on: on === CONSOLE_CONFIG.OSC_VALUES.UNMUTE, fader: Math.round(fader * 1000) / 1000 };
-  }
-
-  /** The pastor's pair is one voice: on only when both are, fader as CH1 speaks it */
-  private readPair(first: Input, second: Input): ConsoleRead {
-    const a = this.readSingle(first);
-    const b = this.readSingle(second);
-    if (a.kind !== 'read' || b.kind !== 'read') return { kind: 'unknown' };
-    return { kind: 'read', on: a.on && b.on, fader: a.fader };
   }
 
   private announceIfChanged(): void {

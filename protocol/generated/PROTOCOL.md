@@ -177,7 +177,7 @@ Which track of a flow is sounding right now
 
 ### ConsoleState
 
-Both inputs this server drives. mic covers the pastor's channel pair, and reads on only while every channel of the pair is on.
+Both inputs this server drives. Enabling mic drives the pastor's channel pair, but its reading follows the pair's first channel alone.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
