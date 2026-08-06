@@ -25,15 +25,15 @@ function library(entries: unknown[]): TrackLibrary {
 }
 
 function track(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { id, title: `${id} 곡`, file: AUDIO, durationSec: 100, ...extra };
+  return { id, title: `${id} 곡`, file: AUDIO, durationSec: 100, volume: 40, ...extra };
 }
 
 describe('Deck songs come from the manifest', () => {
-  test('every deck entry becomes a song, in manifest order', () => {
+  test('every selectable entry becomes a song, in manifest order', () => {
     const lib = library([
-      track('third', { deck: { volume: 30 } }),
-      track('first', { deck: { volume: 40 } }),
-      track('second', { deck: { volume: 50 } }),
+      track('third', { selectable: true }),
+      track('first', { selectable: true }),
+      track('second', { selectable: true }),
     ]);
 
     assert.deepStrictEqual(lib.deckSongs(), [
@@ -44,31 +44,32 @@ describe('Deck songs come from the manifest', () => {
     assert.strictEqual(lib.defaultSong(), 'third', 'the deck starts on the first one listed');
   });
 
-  test('a single deck song is a complete manifest', () => {
-    const lib = library([track('only', { deck: { volume: 60 } })]);
+  test('a single song is a complete manifest', () => {
+    const lib = library([track('only', { volume: 60, selectable: true })]);
 
     assert.strictEqual(lib.deckSongs().length, 1);
     assert.deepStrictEqual(lib.songVolumes(), { only: 60 });
   });
 
-  test('a track without a deck is schedulable but not selectable', () => {
+  test('an unselectable track is schedulable, and still has a level of its own', () => {
     const lib = library([
-      track('song', { deck: { volume: 40 } }),
-      { id: 'special', title: '특별 찬양', file: OTHER_AUDIO, durationSec: 200 },
+      track('song', { selectable: true }),
+      { id: 'special', title: '특별 찬양', file: OTHER_AUDIO, durationSec: 200, volume: 55 },
     ]);
 
     assert.deepStrictEqual(lib.deckSongs().map((s) => s.id), ['song']);
     assert.strictEqual(lib.isDeckSong('special'), false);
     assert.strictEqual(lib.list().length, 2, 'a flow can still schedule it');
+    assert.strictEqual(lib.get('special')?.volume, 55, 'a flow can read its level');
     assert.deepStrictEqual(Object.keys(lib.songFiles()), ['song'], 'the deck loads only its own');
   });
 
-  test('a manifest with no deck song does not boot', () => {
-    assert.throws(() => library([track('nothing-selectable')]), /no deck song/);
+  test('a manifest with nothing selectable does not boot', () => {
+    assert.throws(() => library([track('schedule-only')]), /no selectable track/);
   });
 
-  test('a deck song without a usable volume does not boot', () => {
-    assert.throws(() => library([track('loud', { deck: {} })]), /volume/);
-    assert.throws(() => library([track('loud', { deck: { volume: 140 } })]), /volume/);
+  test('every track needs a usable volume, selectable or not', () => {
+    assert.throws(() => library([{ id: 'x', title: 'x', file: AUDIO, durationSec: 100 }]), /volume/);
+    assert.throws(() => library([track('loud', { volume: 140, selectable: true })]), /volume/);
   });
 });
