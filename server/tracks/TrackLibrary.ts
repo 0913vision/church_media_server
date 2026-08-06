@@ -6,23 +6,24 @@ import type { Song, Track } from '../protocol.ts';
 /** A library entry as stored here: the protocol's Track plus what stays server-side */
 export interface LibraryEntry extends Track {
   file: string;
-  /** The level this audio sits at, whoever plays it */
+  /** The level this audio sits at when nobody says otherwise */
   volume: number;
   /** Whether a person may pick this one at the panel */
-  selectable: boolean;
+  userSelectable: boolean;
 }
 
 /**
  * Track library: loads a JSON manifest at boot
- * (`[{ id, title, file, durationSec, volume, selectable? }]`, file paths
+ * (`[{ id, title, file, durationSec, volume, userSelectable? }]`, file paths
  * relative to the manifest) and fails fast on any invalid entry, matching the
  * server's no-defaults policy.
  *
  * Every entry is a piece of audio a flow can schedule, and carries the volume
- * it should sound at. `selectable` marks the ones a person may also pick at the
- * panel: those, in manifest order, are the deck's songs. So the deck's size,
- * order, names, files and levels are all data — adding a song is a line of JSON
- * and a restart, with no code and no client release.
+ * it sounds at unless a flow says otherwise. `userSelectable` marks the ones a
+ * person may also pick at the panel: those, in manifest order, are the deck's
+ * songs. So the deck's size, order, names, files and levels are all data —
+ * adding a song is a line of JSON and a restart, with no code and no client
+ * release.
  */
 class TrackLibrary {
   private readonly tracks = new Map<string, LibraryEntry>();
@@ -35,7 +36,7 @@ class TrackLibrary {
     }
 
     for (const entry of parsed) {
-      const { id, title, file, durationSec, volume, selectable } = entry as Record<string, unknown>;
+      const { id, title, file, durationSec, volume, userSelectable } = entry as Record<string, unknown>;
       if (typeof id !== 'string' || id.length === 0 ||
           typeof title !== 'string' || title.length === 0 ||
           typeof file !== 'string' || file.length === 0 ||
@@ -45,8 +46,8 @@ class TrackLibrary {
       if (typeof volume !== 'number' || !Number.isInteger(volume) || volume < 0 || volume > 100) {
         throw new Error(`Track '${id}' needs an integer volume 0-100: ${JSON.stringify(volume)}`);
       }
-      if (selectable !== undefined && typeof selectable !== 'boolean') {
-        throw new Error(`Track '${id}' has a non-boolean selectable: ${JSON.stringify(selectable)}`);
+      if (userSelectable !== undefined && typeof userSelectable !== 'boolean') {
+        throw new Error(`Track '${id}' has a non-boolean userSelectable: ${JSON.stringify(userSelectable)}`);
       }
       if (this.tracks.has(id)) {
         throw new Error(`Duplicate track id in manifest: ${id}`);
@@ -56,14 +57,14 @@ class TrackLibrary {
         throw new Error(`Track file not found: ${resolvedFile} (track ${id})`);
       }
       this.tracks.set(id, {
-        id, title, file: resolvedFile, durationSec, volume, selectable: selectable === true,
+        id, title, file: resolvedFile, durationSec, volume, userSelectable: userSelectable === true,
       });
     }
 
-    // Note(yoochan.kim): with nothing selectable the panel has no song to offer
-    // and the deck no file to load, so an empty deck is a broken manifest
+    // Note(yoochan.kim): with nothing user-selectable the panel has no song to
+    // offer and the deck no file to load, so that is a broken manifest
     if (this.songs().length === 0) {
-      throw new Error(`Track manifest declares no selectable track: ${manifestPath}`);
+      throw new Error(`Track manifest declares no userSelectable track: ${manifestPath}`);
     }
   }
 
@@ -78,7 +79,7 @@ class TrackLibrary {
   }
 
   isDeckSong(id: unknown): id is SongId {
-    return typeof id === 'string' && this.tracks.get(id)?.selectable === true;
+    return typeof id === 'string' && this.tracks.get(id)?.userSelectable === true;
   }
 
   /** The deck's audio files, one per song — the manifest owns these too */
@@ -91,9 +92,12 @@ class TrackLibrary {
     return Object.fromEntries(this.songs().map((entry) => [entry.id, entry.volume]));
   }
 
-  /** The client-facing slice: file paths and levels never leave the server. */
+  /**
+   * The client-facing slice: file paths stay here, but the volume goes out —
+   * an editor offers it as the starting level when a track joins a flow.
+   */
   list(): Track[] {
-    return [...this.tracks.values()].map(({ id, title, durationSec }) => ({ id, title, durationSec }));
+    return [...this.tracks.values()].map(({ id, title, durationSec, volume }) => ({ id, title, durationSec, volume }));
   }
 
   get(id: string): LibraryEntry | undefined {
@@ -101,7 +105,7 @@ class TrackLibrary {
   }
 
   private songs(): LibraryEntry[] {
-    return [...this.tracks.values()].filter((entry) => entry.selectable);
+    return [...this.tracks.values()].filter((entry) => entry.userSelectable);
   }
 }
 

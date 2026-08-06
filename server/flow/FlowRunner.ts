@@ -20,7 +20,10 @@ const AUDIO_LOCK_ATTEMPTS = 12;
 const AUDIO_LOCK_RETRY_MS = 300;
 
 /** A part of a validated plan, mirroring the protocol's FlowPart */
-type PartPlan = { kind: 'music'; tracks: LibraryEntry[]; startsAt: Date; endsAt: Date };
+/** A library track as one flow scheduled it: same audio, that flow's level */
+type ScheduledEntry = LibraryEntry;
+
+type PartPlan = { kind: 'music'; tracks: ScheduledEntry[]; startsAt: Date; endsAt: Date };
 
 /** The window this run holds the admin gate for. Every run has one. */
 interface LockPlan {
@@ -240,7 +243,7 @@ class FlowRunner {
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck();
       const offsetSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
-      await this.player.playTrackAt(track.file, offsetSec);
+      await this.player.playTrackAt(track.file, offsetSec, track.volume);
     });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
@@ -385,15 +388,22 @@ class FlowRunner {
   }
 
   private musicPartOf(part: Record<string, unknown>, lock: LockPlan): Checked<PartPlan> {
-    const ids = part.tracks;
-    if (!Array.isArray(ids) || ids.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
+    const cues = part.tracks;
+    if (!Array.isArray(cues) || cues.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    const tracks: LibraryEntry[] = [];
-    for (const id of ids) {
+    // Note(yoochan.kim): every cue carries its own level. The caller decided how
+    // loud this flow sounds when they wrote it, rather than inheriting whatever
+    // the panel happened to be left at.
+    const tracks: ScheduledEntry[] = [];
+    for (const cue of cues) {
+      const { id, volume } = (cue ?? {}) as Record<string, unknown>;
       if (typeof id !== 'string') return { ok: false, reason: RejectReason.INVALID_VALUE };
+      if (typeof volume !== 'number' || !Number.isInteger(volume) || volume < 0 || volume > 100) {
+        return { ok: false, reason: RejectReason.INVALID_VALUE };
+      }
       const track = this.trackLibrary.get(id);
       if (!track) return { ok: false, reason: RejectReason.UNKNOWN_TRACK };
-      tracks.push(track);
+      tracks.push({ ...track, volume });
     }
 
     const finish = instantOf(part.endsAt);

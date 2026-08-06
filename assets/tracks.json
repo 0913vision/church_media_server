@@ -5,7 +5,7 @@
     "file": "./audio/music_slow.mp3",
     "durationSec": 3684.6,
     "volume": 50,
-    "selectable": true
+    "userSelectable": true
   },
   {
     "id": "fervent",
@@ -13,6 +13,6 @@
     "file": "./audio/music_fast.mp3",
     "durationSec": 10404.5,
     "volume": 35,
-    "selectable": true
+    "userSelectable": true
   }
 ]

@@ -13,6 +13,9 @@ import type { StatePatch } from '../../server/protocol.ts';
 // track", not a particular one, and the library is fixed at boot anyway.
 let firstTrackId = '';
 
+/** A track as a flow schedules it: an id and the level it plays at. */
+const cue = (id: string, volume = 40): { id: string; volume: number } => ({ id, volume });
+
 before(async () => {
   await ensureServer();
   const probe = new SocketTestHelper();
@@ -238,12 +241,32 @@ describe('Flow Validation Tests', () => {
       admin.invoke('startFlow', {
         name: '없는 곡',
         lock: { at: clock(0), until: clock(60) },
-        parts: [{ kind: 'music', tracks: ['no-such-track'], endsAt: clock(30) }],
+        parts: [{ kind: 'music', tracks: [cue('no-such-track')], endsAt: clock(30) }],
       });
 
       // Note(yoochan.kim): Distinguished from a malformed request, so the client can say which
       // track went missing rather than blaming the whole plan.
       assert.strictEqual(await rejected, RejectReason.UNKNOWN_TRACK);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  // Note(yoochan.kim): a track with no level would fall back to whatever the
+  // panel was left at, which is exactly the surprise the level exists to stop.
+  test('a scheduled track without a usable level is refused', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      for (const bad of [{ id: firstTrackId }, { id: firstTrackId, volume: 140 }, { id: firstTrackId, volume: '40' }]) {
+        const rejected = admin.waitForRejected('startFlow');
+        admin.invoke('startFlow', {
+          name: '볼륨 없는 곡',
+          lock: { at: clock(0), until: clock(60) },
+          parts: [{ kind: 'music', tracks: [bad], endsAt: clock(30) }],
+        });
+
+        assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
+      }
     } finally {
       admin.disconnect();
     }
@@ -293,7 +316,7 @@ describe('Flow Validation Tests', () => {
       admin.invoke('startFlow', {
         name: '락보다 늦게 끝나는 음악',
         lock: { at: clock(0), until: clock(60) },
-        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(90) }],
+        parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(90) }],
       });
 
       assert.strictEqual(await rejected, RejectReason.MUSIC_OUTSIDE_LOCK);
@@ -312,7 +335,7 @@ describe('Flow Validation Tests', () => {
       admin.invoke('startFlow', {
         name: '락 전에 끝나는 음악',
         lock: { at: clock(30), until: clock(60) },
-        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(20) }],
+        parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(20) }],
       });
 
       assert.strictEqual(await rejected, RejectReason.MUSIC_OUTSIDE_LOCK);
@@ -333,7 +356,7 @@ describe('Flow Validation Tests', () => {
       admin.invoke('startFlow', {
         name: '앞이 잘리는 음악',
         lock: { at: clock(30), until: clock(60) },
-        parts: [{ kind: 'music', tracks: [firstTrackId], endsAt: clock(31) }],
+        parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(31) }],
       });
       await waiting;
 

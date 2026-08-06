@@ -209,12 +209,21 @@ class Player {
     }
   }
 
-  async playTrackAt(filePath: string, offsetSec: number): Promise<void> {
+  /**
+   * Plays a scheduled track at the level its flow asked for.
+   *
+   * The user's own volume is left untouched in state: a flow borrows the deck
+   * and hands it back, so restoreSong puts their level back with their song.
+   * Muted still means silent — a flow may take the deck, but not the decision
+   * to make noise.
+   */
+  async playTrackAt(filePath: string, offsetSec: number, volume: number): Promise<void> {
     try {
       await this.takeDeck();
+      this.device.setVolume(this.isMuted() ? 0 : volume);
       await this.device.playFileAt(filePath, offsetSec);
     } catch (error) {
-      log.error('player', null, 'Failed to play track', { filePath, offsetSec, error: errorMessage(error) });
+      log.error('player', null, 'Failed to play track', { filePath, offsetSec, volume, error: errorMessage(error) });
       throw error;
     }
     this.state.state = PlaybackState.PLAYING;
@@ -232,6 +241,9 @@ class Player {
       if (this.isPlaying()) {
         await this.device.pause();
       }
+      // Note(yoochan.kim): the flow played at its own level; the user's comes
+      // back with their song
+      this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
       this.device.loadSong(this.state.currentSong);
       await this.device.loadLastSongTime(this.state.currentSong);
     } catch (error) {

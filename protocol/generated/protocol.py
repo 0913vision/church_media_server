@@ -16,7 +16,7 @@ everything the same way — but the vocabulary is the device-model one
 named slots, not addressed words.
 """
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 class PlaybackState(str, Enum):
@@ -104,6 +104,19 @@ class Track(TypedDict):
     id: str  # Stable identifier used by startFlow
     title: str  # Human-readable name
     durationSec: float  # Length in seconds, measured from the file
+    volume: float  # The level this track sounds at when nobody says otherwise, 0-100. Sent so an editor can offer it as the starting value when someone adds this track to a flow; the flow itself then carries a level for every track it plays.
+
+
+class ScheduledTrack(TypedDict):
+    """
+    One track in a flow's music sequence, with the level it plays at. The
+    level is always given: an editor starts it at the track's own volume and
+    the person can lower or raise it there, so what a flow will sound like is
+    decided when it is written rather than inherited from whatever the panel
+    was left at.
+    """
+    id: str  # Track id from ready.tracks
+    volume: float  # Level for this track in this flow, 0-100
 
 
 class FlowTrack(TypedDict):
@@ -129,7 +142,7 @@ class FlowPartMusic(TypedDict):
     fall inside the flow's lock window.
     """
     kind: Literal["music"]
-    tracks: list[str]  # Track ids in play order
+    tracks: list[ScheduledTrack]  # The tracks in play order, each with the level it plays at
     endsAt: str  # Instant the last track must finish
 
 

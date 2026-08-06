@@ -29,11 +29,11 @@ function track(id: string, extra: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('Deck songs come from the manifest', () => {
-  test('every selectable entry becomes a song, in manifest order', () => {
+  test('every userSelectable entry becomes a song, in manifest order', () => {
     const lib = library([
-      track('third', { selectable: true }),
-      track('first', { selectable: true }),
-      track('second', { selectable: true }),
+      track('third', { userSelectable: true }),
+      track('first', { userSelectable: true }),
+      track('second', { userSelectable: true }),
     ]);
 
     assert.deepStrictEqual(lib.deckSongs(), [
@@ -45,15 +45,15 @@ describe('Deck songs come from the manifest', () => {
   });
 
   test('a single song is a complete manifest', () => {
-    const lib = library([track('only', { volume: 60, selectable: true })]);
+    const lib = library([track('only', { volume: 60, userSelectable: true })]);
 
     assert.strictEqual(lib.deckSongs().length, 1);
     assert.deepStrictEqual(lib.songVolumes(), { only: 60 });
   });
 
-  test('an unselectable track is schedulable, and still has a level of its own', () => {
+  test('a track nobody can select is schedulable, and still has a level of its own', () => {
     const lib = library([
-      track('song', { selectable: true }),
+      track('song', { userSelectable: true }),
       { id: 'special', title: '특별 찬양', file: OTHER_AUDIO, durationSec: 200, volume: 55 },
     ]);
 
@@ -64,12 +64,12 @@ describe('Deck songs come from the manifest', () => {
     assert.deepStrictEqual(Object.keys(lib.songFiles()), ['song'], 'the deck loads only its own');
   });
 
-  test('a manifest with nothing selectable does not boot', () => {
-    assert.throws(() => library([track('schedule-only')]), /no selectable track/);
+  test('a manifest nobody can select from does not boot', () => {
+    assert.throws(() => library([track('schedule-only')]), /no userSelectable track/);
   });
 
   test('every track needs a usable volume, selectable or not', () => {
     assert.throws(() => library([{ id: 'x', title: 'x', file: AUDIO, durationSec: 100 }]), /volume/);
-    assert.throws(() => library([track('loud', { volume: 140, selectable: true })]), /volume/);
+    assert.throws(() => library([track('loud', { volume: 140, userSelectable: true })]), /volume/);
   });
 });

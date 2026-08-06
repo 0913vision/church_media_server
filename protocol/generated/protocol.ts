@@ -10,7 +10,7 @@
  * literal registers, because these are named slots, not addressed words.
  */
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Whether the audio deck is sounding */
 export const PlaybackState = {
@@ -129,6 +129,25 @@ export interface Track {
   title: string;
   /** Length in seconds, measured from the file */
   durationSec: number;
+  /**
+   * The level this track sounds at when nobody says otherwise, 0-100. Sent so an
+   * editor can offer it as the starting value when someone adds this track to a flow;
+   * the flow itself then carries a level for every track it plays.
+   */
+  volume: number;
+}
+
+/**
+ * One track in a flow's music sequence, with the level it plays at. The level is
+ * always given: an editor starts it at the track's own volume and the person can lower
+ * or raise it there, so what a flow will sound like is decided when it is written
+ * rather than inherited from whatever the panel was left at.
+ */
+export interface ScheduledTrack {
+  /** Track id from ready.tracks */
+  id: string;
+  /** Level for this track in this flow, 0-100 */
+  volume: number;
 }
 
 /** Which track of a flow is sounding right now */
@@ -159,7 +178,7 @@ export type FlowPart =
    * server joins the timeline part-way through. The whole span must fall inside the
    * flow's lock window.
    */
-  | { kind: 'music'; tracks: string[]; endsAt: string }
+  | { kind: 'music'; tracks: ScheduledTrack[]; endsAt: string }
   ;
 export const FlowPartKind = {
   MUSIC: 'music',

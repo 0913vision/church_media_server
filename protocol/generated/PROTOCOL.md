@@ -1,4 +1,4 @@
-# 미디어 서버 프로토콜 v1
+# 미디어 서버 프로토콜 v2
 
 > Generated from protocol/protocol.json — do not edit by hand.
 
@@ -164,6 +164,16 @@ A playable library entry. File paths never leave the server.
 | `id` | `string` | Stable identifier used by startFlow |
 | `title` | `string` | Human-readable name |
 | `durationSec` | `number` | Length in seconds, measured from the file |
+| `volume` | `number` | The level this track sounds at when nobody says otherwise, 0-100. Sent so an editor can offer it as the starting value when someone adds this track to a flow; the flow itself then carries a level for every track it plays. |
+
+### ScheduledTrack
+
+One track in a flow's music sequence, with the level it plays at. The level is always given: an editor starts it at the track's own volume and the person can lower or raise it there, so what a flow will sound like is decided when it is written rather than inherited from whatever the panel was left at.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Track id from ready.tracks |
+| `volume` | `number` | Level for this track in this flow, 0-100 |
 
 ### FlowTrack
 

@@ -31,7 +31,7 @@ describe('Track Library Tests', () => {
       const { ready } = await sock.open();
 
       for (const track of ready.tracks) {
-        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title']);
+        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title', 'volume']);
       }
     } finally {
       sock.disconnect();
