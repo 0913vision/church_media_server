@@ -1,6 +1,5 @@
 import { PlaybackState, MuteState } from '../protocol.ts';
-import type { SongType } from '../constants/songs.ts';
-import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
+import type { SongId } from '../constants/songs.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
 import type { PersistedState } from '../state/StateStore.ts';
@@ -19,12 +18,14 @@ class Player {
    * @param device - Audio output (injected by the composition root)
    * @param initialConfig - Starting state (defaults, or restored preferences
    *   with state forced to PAUSED by the composition root)
+   * @param songVolumes - The volume each song returns to, from the manifest
    * @param persist - Called with the preferences snapshot whenever they change,
    *   so they survive a restart / reboot
    */
   constructor(
     private readonly device: AudioOutput,
     initialConfig: PlayerConfig,
+    private readonly songVolumes: Record<SongId, number>,
     private readonly persist: (state: PersistedState) => void
   ) {
     this.state = { ...initialConfig };
@@ -120,7 +121,7 @@ class Player {
   /**
    * Gets the currently selected song
    */
-  getCurrentSong(): SongType {
+  getCurrentSong(): SongId {
     return this.state.currentSong;
   }
 
@@ -131,7 +132,7 @@ class Player {
    * song's default.
    * @param newSong - Song to switch to
    */
-  async changeSong(newSong: SongType): Promise<void> {
+  async changeSong(newSong: SongId): Promise<void> {
     const currentSong = this.state.currentSong;
     const wasPlaying = this.isPlaying();
 
@@ -157,7 +158,7 @@ class Player {
       throw error;
     }
 
-    const newVolume = DEFAULT_SONG_VOLUMES[newSong];
+    const newVolume = this.songVolumes[newSong]!;
 
     try {
       this.device.setVolume(this.isMuted() ? 0 : newVolume);

@@ -3,12 +3,14 @@
     "id": "calm",
     "title": "잔잔한 음악",
     "file": "./audio/music_slow.mp3",
-    "durationSec": 3684.6
+    "durationSec": 3684.6,
+    "deck": { "volume": 50 }
   },
   {
     "id": "fervent",
     "title": "통성기도 음악",
     "file": "./audio/music_fast.mp3",
-    "durationSec": 10404.5
+    "durationSec": 10404.5,
+    "deck": { "volume": 35 }
   }
 ]

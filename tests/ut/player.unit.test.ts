@@ -1,7 +1,6 @@
 import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { MuteState, PlaybackState } from '../../server/protocol.ts';
-import { SongType } from '../../server/constants/songs.ts';
 import { INITIAL_PLAYER_CONFIG } from '../../server/constants/playerConfig.ts';
 import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
@@ -41,11 +40,18 @@ before(async () => {
   Player = (await import('../../server/player/Player.ts')).default;
 });
 
+// Note(yoochan.kim): the songs and their volumes come from the manifest at
+// boot, so a unit test declares its own two rather than importing a constant.
+const CALM = 'calm';
+const FERVENT = 'fervent';
+const SONG_VOLUMES = { [CALM]: 50, [FERVENT]: 35 };
+const BASE_CONFIG: PlayerConfig = { ...INITIAL_PLAYER_CONFIG, currentSong: CALM };
+
 /** Builds a Player with a fresh fake device and a recording persist spy. */
-function makePlayer(initial: PlayerConfig = INITIAL_PLAYER_CONFIG) {
+function makePlayer(initial: PlayerConfig = BASE_CONFIG) {
   const device = new FakeAudioOutput();
   const saved: PersistedState[] = [];
-  const player = new Player(device, { ...initial }, (s) => saved.push(s));
+  const player = new Player(device, { ...initial }, SONG_VOLUMES, (s: PersistedState) => saved.push(s));
   return { device, saved, player };
 }
 
@@ -69,9 +75,9 @@ describe('Player muted behavior (unit)', () => {
     const { device, player } = makePlayer();
     player.setMute(MuteState.MUTED);
 
-    await player.changeSong(SongType.FERVENT);
+    await player.changeSong(FERVENT);
 
-    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
+    assert.strictEqual(player.getCurrentSong(), FERVENT);
     assert.strictEqual(device.lastVolume, 0, 'device stays silent through the song change');
     assert.strictEqual(player.getVolume(), 35, 'remembered volume becomes the new song default');
   });
@@ -79,9 +85,9 @@ describe('Player muted behavior (unit)', () => {
   test('song change while unmuted applies the new song default volume', async () => {
     const { device, player } = makePlayer();
 
-    await player.changeSong(SongType.FERVENT);
+    await player.changeSong(FERVENT);
 
-    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
+    assert.strictEqual(player.getCurrentSong(), FERVENT);
     assert.strictEqual(device.lastVolume, 35);
   });
 });
@@ -91,26 +97,26 @@ describe('Player persistence (unit)', () => {
     const { saved, player } = makePlayer();
 
     player.setVolume(42);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.UNMUTED, currentSong: SongType.CALM });
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.UNMUTED, currentSong: CALM });
 
     player.setMute(MuteState.MUTED);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.MUTED, currentSong: SongType.CALM });
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 42, muted: MuteState.MUTED, currentSong: CALM });
 
-    await player.changeSong(SongType.FERVENT);
-    assert.deepStrictEqual(saved.at(-1), { serverVolume: 35, muted: MuteState.MUTED, currentSong: SongType.FERVENT });
+    await player.changeSong(FERVENT);
+    assert.deepStrictEqual(saved.at(-1), { serverVolume: 35, muted: MuteState.MUTED, currentSong: FERVENT });
   });
 
   test('restores persisted preferences but boots silent when muted', () => {
     const restored: PlayerConfig = {
       serverVolume: 70,
       muted: MuteState.MUTED,
-      currentSong: SongType.FERVENT,
+      currentSong: FERVENT,
       state: PlaybackState.PAUSED
     };
     const { device, player } = makePlayer(restored);
 
     assert.strictEqual(player.getVolume(), 70);
-    assert.strictEqual(player.getCurrentSong(), SongType.FERVENT);
+    assert.strictEqual(player.getCurrentSong(), FERVENT);
     assert.strictEqual(player.isMuted(), true);
     assert.strictEqual(device.lastVolume, 0, 'a muted restore must boot the device silent');
   });

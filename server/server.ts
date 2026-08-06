@@ -64,11 +64,16 @@ class MediaServer {
 
     // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
+    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();
+    // Note(yoochan.kim): a song dropped from the manifest since the last run no
+    // longer exists to load, so the deck falls back to the first one that does
+    const restoredSong = trackLibrary.isDeckSong(restored?.currentSong) ? restored!.currentSong : undefined;
     const initialConfig: PlayerConfig = {
       ...INITIAL_PLAYER_CONFIG,
       ...(restored ?? {}),
+      currentSong: restoredSong ?? trackLibrary.defaultSong(),
       state: PlaybackState.PAUSED
     };
 
@@ -83,10 +88,10 @@ class MediaServer {
     const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset() });
     clock.onChange(persist);
 
-    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
     const player = new Player(
       new AudioDevice(new MpvClient(), initialConfig.currentSong, trackLibrary.songFiles()),
       initialConfig,
+      trackLibrary.songVolumes(),
       (snapshot) => {
         preferences = snapshot;
         persist();

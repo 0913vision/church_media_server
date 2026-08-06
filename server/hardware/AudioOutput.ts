@@ -1,4 +1,4 @@
-import type { SongType } from '../constants/songs.ts';
+import type { SongId } from '../constants/songs.ts';
 
 /**
  * The audio output surface the Player depends on.
@@ -12,9 +12,9 @@ export interface AudioOutput {
   resume(): Promise<void>;
   pause(): Promise<void>;
   /** Saves the song's live playback position into its time memory */
-  captureSongTime(song: SongType): void;
+  captureSongTime(song: SongId): void;
   /** Loads a song file onto the looping two-song deck (no position save) */
-  loadSong(song: SongType): void;
-  loadLastSongTime(song: SongType): Promise<void>;
+  loadSong(song: SongId): void;
+  loadLastSongTime(song: SongId): Promise<void>;
   playFileAt(filePath: string, offsetSec: number): Promise<void>;
 }

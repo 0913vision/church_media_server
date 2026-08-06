@@ -353,7 +353,7 @@ class ReadyPayload(TypedDict):
     accepted: bool
     attributes: list[str]  # Attributes this server implements. Hide controls for anything absent.
     commands: list[str]  # Commands this server implements. Hide controls for anything absent.
-    songs: list[Song]  # Songs a user may select, with the names to show. Fixed at boot.
+    songs: list[Song]  # Songs a user may select, with the names to show, in the order to show them. How many there are is the server's to say, so a client draws one control per entry rather than assuming a count — adding a song is then a server change alone. Fixed at boot.
     tracks: list[Track]  # Track library for flows, fixed at boot
     contact: Contact  # Who a client should tell the user to call when something is broken. Fixed at boot.
 

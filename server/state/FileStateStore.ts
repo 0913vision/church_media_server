@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isMuteState } from '../protocol.ts';
-import { isSongType } from '../constants/songs.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { StateStore, PersistedState, PersistedAll } from './StateStore.ts';
@@ -64,7 +63,10 @@ class FileStateStore implements StateStore {
       && Number.isFinite(v.serverVolume)
       && v.serverVolume >= 0 && v.serverVolume <= 100
       && isMuteState(v.muted)
-      && isSongType(v.currentSong);
+      // Note(yoochan.kim): whether this id is still a song is the manifest's
+      // answer, checked by the composition root — a rewritten manifest must not
+      // make the whole file unreadable
+      && typeof v.currentSong === 'string';
   }
 }
 

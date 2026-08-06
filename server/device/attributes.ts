@@ -1,7 +1,5 @@
 import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState } from '../protocol.ts';
-import { isSongType } from '../constants/songs.ts';
 import type { AttributeName, State, StatePatch } from '../protocol.ts';
-import { DEFAULT_SONG_VOLUMES } from '../constants/playerConfig.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 
@@ -129,13 +127,15 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getCurrentSong(),
     write: writable(
       true,
-      (value) => (isSongType(value) ? accept(value) : BAD_VALUE),
+      // Note(yoochan.kim): the manifest decides which ids are songs, so only it
+      // can say whether this one is
+      (value, deps) => (deps.trackLibrary.isDeckSong(value) ? accept(value) : BAD_VALUE),
       async (song, deps) => {
         if (song === deps.player.getCurrentSong()) return {};
         // Note(yoochan.kim): Switching songs also pauses the deck and moves the volume to that
         // song's default, so all three are reported together.
         await deps.player.changeSong(song);
-        return { song, playback: PlaybackState.PAUSED, volume: DEFAULT_SONG_VOLUMES[song] };
+        return { song, playback: PlaybackState.PAUSED, volume: deps.trackLibrary.songVolumes()[song]! };
       },
     ),
   },

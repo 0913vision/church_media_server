@@ -50,7 +50,7 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
         commands: [...IMPLEMENTED_COMMANDS],
         // Note(yoochan.kim): The catalogues clients render from: the server names what a song is
         // called, so a rename never means a client release.
-        songs: deps.trackLibrary.songCatalogue(),
+        songs: deps.trackLibrary.deckSongs(),
         tracks: deps.trackLibrary.list(),
         // Note(yoochan.kim): Printed on a client's error screens, so whoever is on duty can
         // change without anyone shipping a new app.

@@ -439,7 +439,12 @@ export interface S2CPayloads {
     attributes: string[];
     /** Commands this server implements. Hide controls for anything absent. */
     commands: string[];
-    /** Songs a user may select, with the names to show. Fixed at boot. */
+    /**
+     * Songs a user may select, with the names to show, in the order to show them. How
+     * many there are is the server's to say, so a client draws one control per entry
+     * rather than assuming a count — adding a song is then a server change alone.
+     * Fixed at boot.
+     */
     songs: Song[];
     /** Track library for flows, fixed at boot */
     tracks: Track[];

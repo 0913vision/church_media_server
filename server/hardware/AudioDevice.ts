@@ -1,6 +1,6 @@
 import MpvClient from './MpvClient.ts';
 import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
-import { SongType } from '../constants/songs.ts';
+import type { SongId } from '../constants/songs.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { AudioOutput } from './AudioOutput.ts';
@@ -9,8 +9,8 @@ import type { AudioOutput } from './AudioOutput.ts';
  * High-level device controller that manages audio playback operations
  */
 class AudioDevice implements AudioOutput {
-  private readonly playlist: Record<SongType, string>;
-  private readonly currentSongTimes: Record<SongType, number>;
+  private readonly playlist: Record<SongId, string>;
+  private readonly currentSongTimes: Record<SongId, number>;
 
   /**
    * @param mpv - Low-level MPV client (injected by the composition root)
@@ -21,12 +21,22 @@ class AudioDevice implements AudioOutput {
    */
   constructor(
     private readonly mpv: MpvClient,
-    private readonly initialSong: SongType,
-    playlist: Record<SongType, string>,
+    private readonly initialSong: SongId,
+    playlist: Record<SongId, string>,
   ) {
     this.playlist = { ...playlist };
-    this.currentSongTimes = { ...DEVICE_CONFIG.INITIAL_SONG_TIMES };
+    // Note(yoochan.kim): every song starts at its beginning; which songs there
+    // are is the manifest's answer, arriving here as the playlist
+    this.currentSongTimes = Object.fromEntries(Object.keys(playlist).map((song) => [song, 0]));
     this.initialize();
+  }
+
+  // Note(yoochan.kim): song ids come from the manifest, so the lookup is only
+  // as total as the caller's; an unknown one is a bug, not a silent no-op
+  private fileOf(song: SongId): string {
+    const file = this.playlist[song];
+    if (file === undefined) throw new Error(`No audio file for song '${song}'`);
+    return file;
   }
 
   /**
@@ -40,7 +50,7 @@ class AudioDevice implements AudioOutput {
     }
 
     try {
-      this.mpv.executeCommand(["loadfile", this.playlist[this.initialSong], null]);
+      this.mpv.executeCommand(["loadfile", this.fileOf(this.initialSong), null]);
     } catch (error) {
       log.error('audioDevice', null, 'Failed to load initial file', { file: this.playlist[this.initialSong], error: errorMessage(error) });
     }
@@ -119,7 +129,7 @@ class AudioDevice implements AudioOutput {
    * Saves a song's live playback position into its time memory — keeps the
    * existing saved value if the position can't be read.
    */
-  captureSongTime(song: SongType): void {
+  captureSongTime(song: SongId): void {
     const currentTime = this.getCurrentSongTime();
     if (currentTime !== null) {
       this.currentSongTimes[song] = currentTime;
@@ -131,11 +141,11 @@ class AudioDevice implements AudioOutput {
    * track may have switched looping off, so it is restored here). Position
    * saving is the caller's decision via captureSongTime().
    */
-  loadSong(song: SongType): void {
+  loadSong(song: SongId): void {
     this.mpv.setProperty("loop", "inf");
 
     try {
-      this.mpv.executeCommand(["loadfile", this.playlist[song], null]);
+      this.mpv.executeCommand(["loadfile", this.fileOf(song), null]);
     } catch (error) {
       log.error('audioDevice', null, 'Failed to load song', {
         song,
@@ -172,8 +182,8 @@ class AudioDevice implements AudioOutput {
   /**
    * Loads the saved playback time for a song
    */
-  async loadLastSongTime(song: SongType): Promise<void> {
-    const targetTime = this.currentSongTimes[song];
+  async loadLastSongTime(song: SongId): Promise<void> {
+    const targetTime = this.currentSongTimes[song] ?? 0;
     try {
       await this.setPlaybackTime(targetTime);
     } catch (error) {

@@ -1,4 +1,3 @@
-import { SongType } from './songs.ts';
 import { requireEnv, requireEnvOneOf } from '../utils/env.ts';
 
 /** Which mixing-console backend to drive */
@@ -9,12 +8,6 @@ export const DEVICE_CONFIG = {
   // Note(yoochan.kim): libmpv shared-library path — platform-specific, so it comes from required
   // env (validated, fail-fast) rather than guessing from process.platform
   MPV_LIBRARY_PATH: requireEnv('MPV_LIBRARY_PATH'),
-
-  // Note(yoochan.kim): Initial song times
-  INITIAL_SONG_TIMES: {
-    [SongType.CALM]: 0.0,
-    [SongType.FERVENT]: 0.0
-  } satisfies Record<SongType, number>,
 
   // Note(yoochan.kim): Console configuration (required env, validated against ConsoleMode)
   CONSOLE_MODE: requireEnvOneOf('CONSOLE_MODE', CONSOLE_MODES),
