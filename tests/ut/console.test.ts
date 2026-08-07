@@ -1,30 +1,64 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
+import { RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
 
 describe('Console readback', () => {
+  // Note(yoochan.kim): the inputs are the desk's configuration, so a client
+  // takes both the list and the names from here rather than holding its own.
+  test('the console reports its inputs, named, in order', async () => {
+    const sock = new SocketTestHelper();
+    try {
+      const { ready } = await sock.open('console-probe');
+      assert.ok(ready.attributes.includes('console'));
+
+      const inputs = (await sock.read()).console!;
+      assert.ok(inputs.length > 0, 'at least one input');
+      for (const input of inputs) {
+        assert.strictEqual(typeof input.id, 'string');
+        assert.ok(input.label.length > 0, 'every input is named for the screen');
+        assert.ok(input.state.kind === 'read' || input.state.kind === 'unknown');
+      }
+    } finally {
+      sock.disconnect();
+    }
+  });
+
   test('enabling an input is heard back as a console patch', async () => {
     const admin = new SocketTestHelper();
     try {
-      const { ready } = await admin.open('console-probe');
-      assert.ok(ready.attributes.includes('console'));
+      await admin.open('console-probe');
 
       const authed = admin.waitForState((patch) => patch.isAdmin !== undefined);
       admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
       await authed;
 
-      const heard = admin.waitForState(
-        (patch) => patch.console !== undefined && patch.console.aux.kind === 'read' && patch.console.aux.on,
+      const target = (await admin.read()).console![0]!.id;
+      const heard = admin.waitForState((patch) =>
+        patch.console?.some((input) => input.id === target && input.state.kind === 'read' && input.state.on) === true,
       );
-      admin.invoke('enableConsoleInput', { input: 'aux' });
+      admin.invoke('enableConsoleInput', { input: target });
 
-      const patch = await heard;
-      assert.strictEqual(patch.console!.aux.kind, 'read');
+      await heard;
     } finally {
       admin.disconnect();
+    }
+  });
+
+  test('an input the desk does not have is refused', async () => {
+    const sock = new SocketTestHelper();
+    try {
+      await sock.open('console-probe');
+
+      const rejected = sock.waitForRejected('enableConsoleInput');
+      sock.invoke('enableConsoleInput', { input: 'no-such-input' });
+
+      assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
+    } finally {
+      sock.disconnect();
     }
   });
 });

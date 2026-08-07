@@ -32,16 +32,6 @@ export function isMuteState(value: unknown): value is MuteState {
   return typeof value === 'string' && (Object.values(MuteState) as string[]).includes(value);
 }
 
-/** Mixing console input. Inputs are independent, not alternatives. */
-export const ConsoleInput = {
-  MIC: 'mic',
-  AUX: 'aux',
-} as const;
-export type ConsoleInput = (typeof ConsoleInput)[keyof typeof ConsoleInput];
-export function isConsoleInput(value: unknown): value is ConsoleInput {
-  return typeof value === 'string' && (Object.values(ConsoleInput) as string[]).includes(value);
-}
-
 /** How an attribute may be used */
 export const Access = {
   READ_ONLY: 'ro',
@@ -159,12 +149,18 @@ export interface FlowTrack {
 }
 
 /**
- * Both inputs this server drives. Enabling mic drives the pastor's channel pair, but
- * its reading follows the pair's first channel alone.
+ * One input this server drives, as the desk last answered for it. A client draws one
+ * control per entry using the label it is given — how many inputs there are and what
+ * they are called belongs to the building, not to any app, so rewiring or renaming one
+ * is a server change alone. An input may cover several console channels: switching it
+ * on drives all of them, while the reading follows the first.
  */
-export interface ConsoleState {
-  mic: ConsoleRead;
-  aux: ConsoleRead;
+export interface ConsoleInput {
+  /** Value to pass to enableConsoleInput */
+  id: string;
+  /** What to call it on screen, e.g. '목사님 마이크' */
+  label: string;
+  state: ConsoleRead;
 }
 
 /**
@@ -273,10 +269,10 @@ export const ATTRIBUTES = {
    */
   clockOffsetSec: { access: 'rw', permission: 'admin', range: { min: -3600, max: 3600 } },
   /**
-   * What the mixing desk itself reports for the inputs this server drives. Read-only:
-   * enableConsoleInput changes the desk, and the desk's next answer changes this. It
-   * starts unknown and falls back to unknown when the desk stops answering, so a dead
-   * console never wears a live face.
+   * The inputs this server drives, in the order to show them, each with what the
+   * mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk,
+   * and the desk's next answer changes this. Each starts unknown and falls back to
+   * unknown when the desk stops answering, so a dead console never wears a live face.
    */
   console: { access: 'ro' },
 } as const;
@@ -368,12 +364,12 @@ export interface State {
    */
   clockOffsetSec: number;
   /**
-   * What the mixing desk itself reports for the inputs this server drives. Read-only:
-   * enableConsoleInput changes the desk, and the desk's next answer changes this. It
-   * starts unknown and falls back to unknown when the desk stops answering, so a dead
-   * console never wears a live face.
+   * The inputs this server drives, in the order to show them, each with what the
+   * mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk,
+   * and the desk's next answer changes this. Each starts unknown and falls back to
+   * unknown when the desk stops answering, so a dead console never wears a live face.
    */
-  console: ConsoleState;
+  console: ConsoleInput[];
 }
 export type StatePatch = Partial<State>;
 
@@ -390,7 +386,7 @@ export type WriteRequest =
 /** One invoke runs one command, so command and args stay in step. */
 export type InvokeRequest =
   | { command: 'authenticate'; args: { password: string } }
-  | { command: 'enableConsoleInput'; args: { input: ConsoleInput } }
+  | { command: 'enableConsoleInput'; args: { input: string } }
   | { command: 'startFlow'; args: { name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
   ;

@@ -1,4 +1,4 @@
-import { ConsoleInput, RejectReason, isConsoleInput } from '../protocol.ts';
+import { RejectReason } from '../protocol.ts';
 import type { CommandName } from '../protocol.ts';
 import { ADMIN_CONFIG } from '../constants/authConfig.ts';
 import { verifyPassword } from '../auth/password.ts';
@@ -62,17 +62,15 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   enableConsoleInput: {
     async run(args, deps, socket) {
       const input = argsObject(args).input;
-      if (!isConsoleInput(input)) return refuse(RejectReason.INVALID_VALUE);
+      // Note(yoochan.kim): which inputs exist is the desk's configuration, so
+      // only it can say whether this is one
+      if (!deps.mixerConsole.has(input)) return refuse(RejectReason.INVALID_VALUE);
 
       // Note(yoochan.kim): The console holds no protected state and its OSC bursts are
       // instantaneous, so this takes no audio lock — only the admin gate.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
-        if (input === ConsoleInput.MIC) {
-          await deps.mixerConsole.enablePastorMic();
-        } else {
-          await deps.mixerConsole.enableAux();
-        }
+        await deps.mixerConsole.enable(input);
       });
 
       if (!allowed) {

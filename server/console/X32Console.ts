@@ -1,7 +1,8 @@
 import osc from 'osc';
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
+import type { ConsoleInputConfig } from '../constants/consoleConfig.ts';
 import { log } from '../utils/logger.ts';
-import type { ConsoleRead, ConsoleState } from '../protocol.ts';
+import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 
 const { UDPPort } = osc;
@@ -14,19 +15,13 @@ const POLL_MS = 2000;
 const STALE_MS = 7000;
 const XREMOTE_RENEW_MS = 5000;
 
-// Note(yoochan.kim): enabling drives the pastor's channel pair, but the
-// reading follows CH1 alone.
-const MIC1 = CONSOLE_CONFIG.PASTOR_MIC.CHANNELS.CH1;
-const AUX = CONSOLE_CONFIG.AUX_INPUT;
-const POLLED: readonly string[] = [
-  MIC1.MUTE_ADDRESS, MIC1.FADER_LEVEL_ADDRESS,
-  AUX.MUTE_ADDRESS, AUX.FADER_LEVEL_ADDRESS,
-];
-
-interface Input {
-  MUTE_ADDRESS: string;
-  FADER_LEVEL_ADDRESS: string;
-}
+const INPUTS = CONSOLE_CONFIG.INPUTS;
+// Note(yoochan.kim): the reading follows each input's first channel; the rest
+// are driven together but do not answer for it.
+const POLLED: readonly string[] = INPUTS.flatMap((input) => [
+  input.CHANNELS[0]!.ON_ADDRESS,
+  input.CHANNELS[0]!.FADER_ADDRESS,
+]);
 
 /** X32 console over OSC. */
 class X32Console implements ConsoleDevice {
@@ -80,8 +75,12 @@ class X32Console implements ConsoleDevice {
     this.announceIfChanged();
   }
 
-  read(): ConsoleState {
-    return { mic: this.readSingle(MIC1), aux: this.readSingle(AUX) };
+  read(): ConsoleInput[] {
+    return INPUTS.map((input) => ({
+      id: input.ID,
+      label: input.LABEL,
+      state: this.readInput(input),
+    }));
   }
 
   onChange(listener: () => void): void {
@@ -93,9 +92,10 @@ class X32Console implements ConsoleDevice {
     return heard && Date.now() - heard.at <= STALE_MS ? heard.value : undefined;
   }
 
-  private readSingle(input: Input): ConsoleRead {
-    const on = this.freshValue(input.MUTE_ADDRESS);
-    const fader = this.freshValue(input.FADER_LEVEL_ADDRESS);
+  private readInput(input: ConsoleInputConfig): ConsoleRead {
+    const first = input.CHANNELS[0]!;
+    const on = this.freshValue(first.ON_ADDRESS);
+    const fader = this.freshValue(first.FADER_ADDRESS);
     if (on === undefined || fader === undefined) return { kind: 'unknown' };
     // Note(yoochan.kim): rounded so float noise is not a state change
     return { kind: 'read', on: on === CONSOLE_CONFIG.OSC_VALUES.UNMUTE, fader: Math.round(fader * 1000) / 1000 };
@@ -119,22 +119,13 @@ class X32Console implements ConsoleDevice {
     });
   }
 
-  async enablePastorMic(): Promise<void> {
-    const { CH1, CH2 } = CONSOLE_CONFIG.PASTOR_MIC.CHANNELS;
+  async enable(inputId: string): Promise<void> {
+    const input = INPUTS.find((candidate) => candidate.ID === inputId);
+    if (!input) throw new Error(`No console input '${inputId}'`);
+
     const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
-
-    await this.sendOscCommand(CH1.MUTE_ADDRESS, UNMUTE);
-    await this.sendOscCommand(CH2.MUTE_ADDRESS, UNMUTE);
-    await this.sendOscCommand(CH1.FADER_LEVEL_ADDRESS, CH1.FADER_LEVEL);
-    await this.sendOscCommand(CH2.FADER_LEVEL_ADDRESS, CH2.FADER_LEVEL);
-  }
-
-  async enableAux(): Promise<void> {
-    const { MUTE_ADDRESS, FADER_LEVEL_ADDRESS, FADER_LEVEL } = CONSOLE_CONFIG.AUX_INPUT;
-    const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
-
-    await this.sendOscCommand(MUTE_ADDRESS, UNMUTE);
-    await this.sendOscCommand(FADER_LEVEL_ADDRESS, FADER_LEVEL);
+    for (const channel of input.CHANNELS) await this.sendOscCommand(channel.ON_ADDRESS, UNMUTE);
+    for (const channel of input.CHANNELS) await this.sendOscCommand(channel.FADER_ADDRESS, channel.FADER_LEVEL);
   }
 }
 

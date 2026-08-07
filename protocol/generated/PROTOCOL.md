@@ -44,7 +44,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
 | `flow` | `FlowStatus` | 읽기 전용 | — | What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it. |
 | `clockOffsetSec` | `number` (-3600–3600) | 읽기/쓰기 | admin | How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts. |
-| `console` | `ConsoleState` | 읽기 전용 | — | What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face. |
+| `console` | `ConsoleInput[]` | 읽기 전용 | — | The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face. |
 
 ## 명령 (인자를 받는 동작)
 
@@ -66,7 +66,7 @@ Switch a mixing console input on. Not subject to the audio lock, and open to any
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `input` | `ConsoleInput` |  |
+| `input` | `string` | An id from the console attribute |
 
 ### `startFlow`
 
@@ -101,12 +101,6 @@ Whether the audio deck is sounding
 Whether output is muted
 
 `"unmuted"` · `"muted"`
-
-### ConsoleInput
-
-Mixing console input. Inputs are independent, not alternatives.
-
-`"mic"` · `"aux"`
 
 ### Access
 
@@ -185,14 +179,15 @@ Which track of a flow is sounding right now
 | `index` | `number` | 1-based position in the sequence |
 | `total` | `number` |  |
 
-### ConsoleState
+### ConsoleInput
 
-Both inputs this server drives. Enabling mic drives the pastor's channel pair, but its reading follows the pair's first channel alone.
+One input this server drives, as the desk last answered for it. A client draws one control per entry using the label it is given — how many inputs there are and what they are called belongs to the building, not to any app, so rewiring or renaming one is a server change alone. An input may cover several console channels: switching it on drives all of them, while the reading follows the first.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `mic` | `ConsoleRead` |  |
-| `aux` | `ConsoleRead` |  |
+| `id` | `string` | Value to pass to enableConsoleInput |
+| `label` | `string` | What to call it on screen, e.g. '목사님 마이크' |
+| `state` | `ConsoleRead` |  |
 
 ## 클라이언트 → 서버
 

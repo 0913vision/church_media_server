@@ -1,31 +1,27 @@
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
-import type { ConsoleState } from '../protocol.ts';
+import type { ConsoleInput } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 
 /** High-level console controller; the backend (X32 or Mock) is the composition root's pick. */
 class MixerConsole {
   constructor(private readonly console: ConsoleDevice) {}
 
-  async enablePastorMic(): Promise<void> {
+  async enable(inputId: string): Promise<void> {
     try {
-      await this.console.enablePastorMic();
+      await this.console.enable(inputId);
     } catch (error) {
-      log.error('mixerConsole', null, 'Error enabling pastor microphone', { error: errorMessage(error) });
+      log.error('mixerConsole', null, 'Error enabling console input', { input: inputId, error: errorMessage(error) });
       throw error;
     }
   }
 
-  async enableAux(): Promise<void> {
-    try {
-      await this.console.enableAux();
-    } catch (error) {
-      log.error('mixerConsole', null, 'Error enabling auxiliary input', { error: errorMessage(error) });
-      throw error;
-    }
+  /** Whether this id is one of the inputs the desk offers */
+  has(inputId: unknown): inputId is string {
+    return typeof inputId === 'string' && this.read().some((input) => input.id === inputId);
   }
 
-  read(): ConsoleState {
+  read(): ConsoleInput[] {
     return this.console.read();
   }
 

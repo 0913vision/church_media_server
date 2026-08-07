@@ -31,12 +31,6 @@ class MuteState(str, Enum):
     MUTED = "muted"
 
 
-class ConsoleInput(str, Enum):
-    """Mixing console input. Inputs are independent, not alternatives."""
-    MIC = "mic"
-    AUX = "aux"
-
-
 class Access(str, Enum):
     """How an attribute may be used"""
     READ_ONLY = "ro"
@@ -126,13 +120,18 @@ class FlowTrack(TypedDict):
     total: float
 
 
-class ConsoleState(TypedDict):
+class ConsoleInput(TypedDict):
     """
-    Both inputs this server drives. Enabling mic drives the pastor's channel
-    pair, but its reading follows the pair's first channel alone.
+    One input this server drives, as the desk last answered for it. A client
+    draws one control per entry using the label it is given — how many inputs
+    there are and what they are called belongs to the building, not to any
+    app, so rewiring or renaming one is a server change alone. An input may
+    cover several console channels: switching it on drives all of them, while
+    the reading follows the first.
     """
-    mic: ConsoleRead
-    aux: ConsoleRead
+    id: str  # Value to pass to enableConsoleInput
+    label: str  # What to call it on screen, e.g. '목사님 마이크'
+    state: ConsoleRead
 
 
 class FlowPartMusic(TypedDict):
@@ -222,7 +221,7 @@ class State(TypedDict):
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
-    console: ConsoleState  # What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
+    console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
 
 
 class StatePatch(TypedDict, total=False):
@@ -236,7 +235,7 @@ class StatePatch(TypedDict, total=False):
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
-    console: ConsoleState  # What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
+    console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
 
 
 class WriteRequest(TypedDict):
@@ -260,7 +259,7 @@ class EnableConsoleInputArgs(TypedDict):
     protected state. It reports nothing back, so there is no attribute to
     read.
     """
-    input: ConsoleInput
+    input: str  # An id from the console attribute
 
 
 class StartFlowArgs(TypedDict):

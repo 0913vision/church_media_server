@@ -27,10 +27,6 @@
       "description": "Whether output is muted",
       "values": { "UNMUTED": "unmuted", "MUTED": "muted" }
     },
-    "ConsoleInput": {
-      "description": "Mixing console input. Inputs are independent, not alternatives.",
-      "values": { "MIC": "mic", "AUX": "aux" }
-    },
     "Access": {
       "description": "How an attribute may be used",
       "values": { "READ_ONLY": "ro", "READ_WRITE": "rw" }
@@ -104,11 +100,12 @@
         "total": { "type": "number" }
       }
     },
-    "ConsoleState": {
-      "description": "Both inputs this server drives. Enabling mic drives the pastor's channel pair, but its reading follows the pair's first channel alone.",
+    "ConsoleInput": {
+      "description": "One input this server drives, as the desk last answered for it. A client draws one control per entry using the label it is given — how many inputs there are and what they are called belongs to the building, not to any app, so rewiring or renaming one is a server change alone. An input may cover several console channels: switching it on drives all of them, while the reading follows the first.",
       "fields": {
-        "mic": { "type": "ConsoleRead" },
-        "aux": { "type": "ConsoleRead" }
+        "id": { "type": "string", "description": "Value to pass to enableConsoleInput" },
+        "label": { "type": "string", "description": "What to call it on screen, e.g. '목사님 마이크'" },
+        "state": { "type": "ConsoleRead" }
       }
     }
   },
@@ -231,8 +228,8 @@
       "range": { "min": -3600, "max": 3600 }
     },
     "console": {
-      "description": "What the mixing desk itself reports for the inputs this server drives. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. It starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.",
-      "type": "ConsoleState",
+      "description": "The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.",
+      "type": "ConsoleInput[]",
       "access": "ro"
     }
   },
@@ -243,7 +240,7 @@
     },
     "enableConsoleInput": {
       "description": "Switch a mixing console input on. Not subject to the audio lock, and open to anyone the admin lock is not holding back — the console keeps no protected state. It reports nothing back, so there is no attribute to read.",
-      "args": { "input": { "type": "ConsoleInput" } }
+      "args": { "input": { "type": "string", "description": "An id from the console attribute" } }
     },
     "startFlow": {
       "description": "Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.",
