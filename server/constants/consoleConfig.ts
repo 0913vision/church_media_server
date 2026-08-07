@@ -40,18 +40,18 @@ export const CONSOLE_CONFIG = {
   // out to clients — renaming one, or adding a third, needs no client release.
   INPUTS: [
     {
+      ID: 'aux',
+      LABEL: '노래',
+      CHANNELS: [
+        { ON_ADDRESS: "/auxin/05/mix/on", FADER_ADDRESS: "/auxin/05/mix/fader", FADER_LEVEL: 0.75 }
+      ]
+    },
+    {
       ID: 'mic',
       LABEL: '목사님 마이크',
       CHANNELS: [
         { ON_ADDRESS: "/ch/01/mix/on", FADER_ADDRESS: "/ch/01/mix/fader", FADER_LEVEL: 0.687 },
         { ON_ADDRESS: "/ch/02/mix/on", FADER_ADDRESS: "/ch/02/mix/fader", FADER_LEVEL: 0.837 }
-      ]
-    },
-    {
-      ID: 'aux',
-      LABEL: '노래',
-      CHANNELS: [
-        { ON_ADDRESS: "/auxin/05/mix/on", FADER_ADDRESS: "/auxin/05/mix/fader", FADER_LEVEL: 0.75 }
       ]
     }
   ] as const satisfies readonly ConsoleInputConfig[]
