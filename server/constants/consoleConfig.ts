@@ -41,7 +41,7 @@ export const CONSOLE_CONFIG = {
   INPUTS: [
     {
       ID: 'aux',
-      LABEL: '노래',
+      LABEL: '음악 재생기',
       CHANNELS: [
         { ON_ADDRESS: "/auxin/05/mix/on", FADER_ADDRESS: "/auxin/05/mix/fader", FADER_LEVEL: 0.75 }
       ]

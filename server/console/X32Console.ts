@@ -14,6 +14,8 @@ const { UDPPort } = osc;
 const POLL_MS = 2000;
 const STALE_MS = 7000;
 const XREMOTE_RENEW_MS = 5000;
+// Note(yoochan.kim): when this server is the one changing something
+const ECHO_POLL_MS = [120, 400];
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
 // Note(yoochan.kim): the reading follows each input's first channel; the rest
@@ -126,6 +128,13 @@ class X32Console implements ConsoleDevice {
     const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
     for (const channel of input.CHANNELS) await this.sendOscCommand(channel.ON_ADDRESS, UNMUTE);
     for (const channel of input.CHANNELS) await this.sendOscCommand(channel.FADER_ADDRESS, channel.FADER_LEVEL);
+
+    // Note(yoochan.kim): the desk pushes a change to everyone except whoever
+    // made it, so our own switch-on would otherwise go unnoticed until the next
+    // poll — the panel would sit there looking as if the press had missed. Ask
+    // twice: once now, once after the desk has had a moment to apply it.
+    this.poll();
+    for (const delayMs of ECHO_POLL_MS) setTimeout(() => this.poll(), delayMs);
   }
 }
 
