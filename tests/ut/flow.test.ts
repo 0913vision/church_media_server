@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
 import { RejectReason } from '../../server/protocol.ts';
 import type { StatePatch } from '../../server/protocol.ts';
+import { INSTANT_PATTERN, formatInstant } from '../../server/utils/instant.ts';
 
 // Note(yoochan.kim): no flow here ever reaches playback. A music part would
 // start audible sound on the host, so the music timeline is covered by the
@@ -42,7 +43,7 @@ after(async () => {
 
 /** An absolute instant this many minutes from now, as the protocol wants it */
 function clock(offsetMinutes: number): string {
-  return new Date(Date.now() + offsetMinutes * 60_000).toISOString();
+  return formatInstant(new Date(Date.now() + offsetMinutes * 60_000));
 }
 
 /** A lock-only flow that engages now and would release in an hour */
@@ -98,6 +99,8 @@ describe('Flow Tests', () => {
       // Note(yoochan.kim): The status describes itself: name and release time, no separate lookup.
       assert.deepStrictEqual(holding.flow?.phase, 'holding');
       assert.strictEqual(holding.flow?.phase === 'holding' ? holding.flow.name : '', '수요 예배');
+      // Note(yoochan.kim): the app parses this one shape and nothing else
+      assert.match(holding.flow?.phase === 'holding' ? holding.flow.unlockAt : '', INSTANT_PATTERN);
       await lockedForEveryone;
 
       const released = observer.waitForState((patch) => patch.adminLock === false);
@@ -247,6 +250,29 @@ describe('Flow Validation Tests', () => {
       // Note(yoochan.kim): Distinguished from a malformed request, so the client can say which
       // track went missing rather than blaming the whole plan.
       assert.strictEqual(await rejected, RejectReason.UNKNOWN_TRACK);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  // Note(yoochan.kim): one spelling only. Every other shape a date parser would
+  // take is a shape a client could come to depend on, and the panel app cannot
+  // be updated in a hurry.
+  test('an instant written any other way is refused', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      const now = new Date(Date.now() + 10 * 60_000);
+      const wrong = [
+        now.toISOString(),
+        formatInstant(now).slice(0, 19),
+        `${formatInstant(now)}+09:00`,
+        formatInstant(now).slice(0, 10),
+      ];
+      for (const at of wrong) {
+        const rejected = admin.waitForRejected('startFlow');
+        admin.invoke('startFlow', { name: '형식 시험', lock: { at, until: clock(60) }, parts: [] });
+        assert.strictEqual(await rejected, RejectReason.INVALID_VALUE, `should refuse ${at}`);
+      }
     } finally {
       admin.disconnect();
     }

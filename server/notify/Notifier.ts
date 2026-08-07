@@ -1,5 +1,6 @@
 import type { Server } from 'socket.io';
 import { S2C } from '../protocol.ts';
+import { formatInstant } from '../utils/instant.ts';
 import type {
   ClientToServerEventsUnsafe,
   RejectReason,
@@ -56,7 +57,7 @@ class Notifier {
    * disagree with the one the building follows.
    */
   ping(at: Date): void {
-    this.io.emit(S2C.PING, { at: at.toISOString() });
+    this.io.emit(S2C.PING, { at: formatInstant(at) });
   }
 }
 

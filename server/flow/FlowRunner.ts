@@ -7,6 +7,7 @@ import type LockCoordinator from '../lock/LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Clock from '../clock/Clock.ts';
 import { log } from '../utils/logger.ts';
+import { formatInstant, isWireInstant } from '../utils/instant.ts';
 import { errorMessage } from '../utils/errors.ts';
 
 /** Result of checking part of a request */
@@ -60,14 +61,12 @@ interface ActiveRun {
  * calendar lives on the client that submitted the run.
  */
 function instantOf(value: unknown): Checked<Date> {
-  if (typeof value !== 'string') return { ok: false, reason: RejectReason.INVALID_VALUE };
+  // Note(yoochan.kim): one spelling only — see server/utils/instant.ts. Date
+  // would happily take "2026-08-05" and a dozen other forms, and every one it
+  // accepts is a form some client could come to depend on.
+  if (!isWireInstant(value)) return { ok: false, reason: RejectReason.INVALID_VALUE };
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return { ok: false, reason: RejectReason.INVALID_VALUE };
-  // Note(yoochan.kim): Date.parse takes "2026-08-05" and other partial forms; a run needs the
-  // time of day and the offset spelled out.
-  if (!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
-    return { ok: false, reason: RejectReason.INVALID_VALUE };
-  }
   return { ok: true, value: at };
 }
 
@@ -115,12 +114,12 @@ class FlowRunner {
     if (!run) return { phase: 'idle' };
 
     if (run.playing) {
-      return { phase: 'playing', name: run.plan.name, track: run.playing.track, endsAt: run.playing.endsAt.toISOString() };
+      return { phase: 'playing', name: run.plan.name, track: run.playing.track, endsAt: formatInstant(run.playing.endsAt) };
     }
     if (run.lockEngaged) {
-      return { phase: 'holding', name: run.plan.name, unlockAt: run.plan.lock.until.toISOString() };
+      return { phase: 'holding', name: run.plan.name, unlockAt: formatInstant(run.plan.lock.until) };
     }
-    return { phase: 'waiting', name: run.plan.name, startsAt: run.startsAt.toISOString() };
+    return { phase: 'waiting', name: run.plan.name, startsAt: formatInstant(run.startsAt) };
   }
 
   /** Whether a running flow is the one holding the admin lock */
@@ -150,7 +149,7 @@ class FlowRunner {
 
     log.info('flow', null, 'Flow accepted', {
       name: plan.name,
-      lock: `${plan.lock.at.toISOString()} → ${plan.lock.until.toISOString()}`,
+      lock: `${formatInstant(plan.lock.at)} → ${formatInstant(plan.lock.until)}`,
       parts: plan.parts.map((part) => part.kind).join(',') || 'none',
     });
     return { ok: true };

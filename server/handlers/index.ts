@@ -40,7 +40,9 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
           serverVersion: PROTOCOL_VERSION,
         });
       } else {
-        log.info('hello', socket, 'Client identified', { client });
+        // Note(yoochan.kim): the address rides along, so a name in the log can
+        // be matched to a device on the network without a second search
+        log.info('hello', socket, 'Client identified', { client, ip: socket.handshake.address });
       }
 
       deps.notifier.ready(socket, {

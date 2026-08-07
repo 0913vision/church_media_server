@@ -2,6 +2,7 @@ import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
 import { RejectReason } from '../../server/protocol.ts';
+import { formatInstant } from '../../server/utils/instant.ts';
 
 before(() => ensureServer());
 
@@ -66,8 +67,8 @@ describe('Church clock', () => {
     const soon = {
       name: '시계 시험',
       lock: {
-        at: new Date(Date.now() + 10 * 60_000).toISOString(),
-        until: new Date(Date.now() + 40 * 60_000).toISOString(),
+        at: formatInstant(new Date(Date.now() + 10 * 60_000)),
+        until: formatInstant(new Date(Date.now() + 40 * 60_000)),
       },
       parts: [],
     };
