@@ -19,6 +19,22 @@ function permissionOf(name: AttributeName): string {
 }
 
 /**
+ * The protocol versions this server answers, newest first.
+ *
+ * PROTOCOL_VERSION is what it speaks and what it reports; this is who it is
+ * willing to speak to. The two are usually the same list of one.
+ *
+ * Note(yoochan.kim): v2 is here TEMPORARILY. A panel is mounted where it cannot
+ * be updated today, and refusing it would leave a dark screen on the wall for
+ * the sake of a number. It is only safe because v3 added a command and changed
+ * no shape, so a v2 client receives exactly what v2 described and simply never
+ * asks for the new one. Drop it the moment every panel is on v3 — the next
+ * change may not be additive, and then keeping it would be a lie told to an old
+ * client rather than a kindness.
+ */
+const ACCEPTED_VERSIONS: readonly number[] = [PROTOCOL_VERSION, 2];
+
+/**
  * hello: identify the client and negotiate the protocol version, then answer
  * with what this server implements followed by the full state, so a client is
  * one round trip from a complete render.
@@ -28,7 +44,9 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
     try {
       const parsed = asObject(payload);
       const client = typeof parsed?.client === 'string' ? parsed.client : 'unknown';
-      const accepted = parsed?.protocolVersion === PROTOCOL_VERSION;
+      const version = parsed?.protocolVersion;
+      const current = version === PROTOCOL_VERSION;
+      const accepted = typeof version === 'number' && ACCEPTED_VERSIONS.includes(version);
 
       socket.data.client = client;
       socket.data.accepted = accepted;
@@ -36,7 +54,16 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
       if (!accepted) {
         log.warn('hello', socket, 'Client speaks a different protocol version', {
           client,
-          clientVersion: parsed?.protocolVersion,
+          clientVersion: version,
+          serverVersion: PROTOCOL_VERSION,
+        });
+      } else if (!current) {
+        // Note(yoochan.kim): said out loud every time, so the older entry in
+        // ACCEPTED_VERSIONS is not forgotten once the wall has been quiet.
+        log.warn('hello', socket, 'Client identified on an older protocol', {
+          client,
+          ip: socket.handshake.address,
+          clientVersion: version,
           serverVersion: PROTOCOL_VERSION,
         });
       } else {
