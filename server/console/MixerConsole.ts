@@ -16,6 +16,15 @@ class MixerConsole {
     }
   }
 
+  async initialize(): Promise<void> {
+    try {
+      await this.console.initialize();
+    } catch (error) {
+      log.error('mixerConsole', null, 'Error initializing console', { error: errorMessage(error) });
+      throw error;
+    }
+  }
+
   /** Whether this id is one of the inputs the desk offers */
   has(inputId: unknown): inputId is string {
     return typeof inputId === 'string' && this.read().some((input) => input.id === inputId);

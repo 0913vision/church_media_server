@@ -1,4 +1,5 @@
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
+import { faderFromDb } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
@@ -26,9 +27,19 @@ class MockConsole implements ConsoleDevice {
 
     log.info('mockConsole', null, 'Enabling console input', { input: input.ID });
     await this.delay(50);
-    this.states.set(input.ID, { kind: 'read', on: true, fader: input.CHANNELS[0]!.FADER_LEVEL });
+    this.states.set(input.ID, { kind: 'read', on: true, fader: faderFromDb(input.CHANNELS[0]!.FADER_DB) });
     this.announce();
     log.info('mockConsole', null, 'Console input enabled', { input: input.ID });
+  }
+
+  async initialize(): Promise<void> {
+    // Note(yoochan.kim): the masters and the mute group have no reading here —
+    // nothing asks the mock what its matrix is at — so what is worth mimicking
+    // is the part that shows: every input ends up on, and it takes a moment.
+    log.info('mockConsole', null, 'Initializing console');
+    for (const input of INPUTS) await this.enable(input.ID);
+    await this.delay(CONSOLE_CONFIG.INITIALIZE.MAIN.DELAY_MS);
+    log.info('mockConsole', null, 'Console initialized');
   }
 
   read(): ConsoleInput[] {

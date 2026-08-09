@@ -48,6 +48,33 @@ describe('Console readback', () => {
     }
   });
 
+  // Note(yoochan.kim): the mute group and the masters have no reading to assert
+  // against — the desk is never asked what its matrix is at — so what this pins
+  // is the part a client can see: every input ends up on, from one call.
+  test('initializing the console leaves every input on', async () => {
+    const admin = new SocketTestHelper();
+    try {
+      await admin.open('console-probe');
+
+      const authed = admin.waitForState((patch) => patch.isAdmin !== undefined);
+      admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
+      await authed;
+
+      const ids = (await admin.read()).console!.map((input) => input.id);
+      const allOn = admin.waitForState((patch) =>
+        ids.every((id) => {
+          const input = patch.console?.find((candidate) => candidate.id === id);
+          return input?.state.kind === 'read' && input.state.on;
+        }),
+      );
+      admin.invoke('initializeConsole', {});
+
+      await allOn;
+    } finally {
+      admin.disconnect();
+    }
+  });
+
   test('an input the desk does not have is refused', async () => {
     const sock = new SocketTestHelper();
     try {

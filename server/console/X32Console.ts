@@ -1,6 +1,7 @@
 import osc from 'osc';
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
 import type { ConsoleInputConfig } from '../constants/consoleConfig.ts';
+import { faderFromDb } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
@@ -41,10 +42,10 @@ class X32Console implements ConsoleDevice {
       remotePort: CONSOLE_CONFIG.NETWORK.REMOTE_PORT
     });
 
-    this.initialize();
+    this.openPort();
   }
 
-  private initialize(): void {
+  private openPort(): void {
     this.client.open();
     this.client.on("ready", () => {
       log.info('x32Console', null, 'X32 console client is ready');
@@ -127,12 +128,36 @@ class X32Console implements ConsoleDevice {
 
     const { UNMUTE } = CONSOLE_CONFIG.OSC_VALUES;
     for (const channel of input.CHANNELS) await this.sendOscCommand(channel.ON_ADDRESS, UNMUTE);
-    for (const channel of input.CHANNELS) await this.sendOscCommand(channel.FADER_ADDRESS, channel.FADER_LEVEL);
+    for (const channel of input.CHANNELS) await this.sendOscCommand(channel.FADER_ADDRESS, faderFromDb(channel.FADER_DB));
 
-    // Note(yoochan.kim): the desk pushes a change to everyone except whoever
-    // made it, so our own switch-on would otherwise go unnoticed until the next
-    // poll — the panel would sit there looking as if the press had missed. Ask
-    // twice: once now, once after the desk has had a moment to apply it.
+    this.echoPoll();
+  }
+
+  async initialize(): Promise<void> {
+    const { MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
+
+    for (const input of INPUTS) await this.enable(input.ID);
+    await this.sendOscCommand(MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED);
+    await this.sendOscCommand(MATRIX.ADDRESS, faderFromDb(MATRIX.DB));
+
+    // Note(yoochan.kim): the main comes last and late, on purpose — see
+    // CONSOLE_CONFIG.INITIALIZE. Raising it before the matrix has come down
+    // would let the room hear everything at once.
+    await new Promise((resolve) => setTimeout(resolve, MAIN.DELAY_MS));
+    await this.sendOscCommand(MAIN.ADDRESS, faderFromDb(MAIN.DB));
+
+    log.info('x32Console', null, 'Console initialized', {
+      matrixDb: MATRIX.DB,
+      mainDb: MAIN.DB,
+    });
+    this.echoPoll();
+  }
+
+  // Note(yoochan.kim): the desk pushes a change to everyone except whoever made
+  // it, so our own writes would otherwise go unnoticed until the next poll — the
+  // panel would sit there looking as if the press had missed. Ask twice: once
+  // now, once after the desk has had a moment to apply it.
+  private echoPoll(): void {
     this.poll();
     for (const delayMs of ECHO_POLL_MS) setTimeout(() => this.poll(), delayMs);
   }

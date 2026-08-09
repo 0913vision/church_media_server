@@ -1,4 +1,4 @@
-# 미디어 서버 프로토콜 v2
+# 미디어 서버 프로토콜 v3
 
 > Generated from protocol/protocol.json — do not edit by hand.
 
@@ -67,6 +67,14 @@ Switch a mixing console input on. Not subject to the audio lock, and open to any
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `input` | `string` | An id from the console attribute |
+
+### `initializeConsole`
+
+권한: any
+
+Put the mixing desk into the state a service starts from: every input on, the mute group released, and the masters at their levels. The steps are ordered and paced by the server, because raising the main before the matrix has come down would let the room hear everything at once. Like enableConsoleInput it takes no audio lock and reports nothing back — the desk's own answers arrive through the console attribute. Takes a few hundred milliseconds to finish, so a client should not expect the reading to have changed by the time the call returns.
+
+_필드 없음._
 
 ### `startFlow`
 

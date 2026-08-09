@@ -10,7 +10,7 @@
  * literal registers, because these are named slots, not addressed words.
  */
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Whether the audio deck is sounding */
 export const PlaybackState = {
@@ -292,6 +292,16 @@ export const COMMANDS = {
    */
   enableConsoleInput: { permission: 'any' },
   /**
+   * Put the mixing desk into the state a service starts from: every input on, the mute
+   * group released, and the masters at their levels. The steps are ordered and paced
+   * by the server, because raising the main before the matrix has come down would let
+   * the room hear everything at once. Like enableConsoleInput it takes no audio lock
+   * and reports nothing back — the desk's own answers arrive through the console
+   * attribute. Takes a few hundred milliseconds to finish, so a client should not
+   * expect the reading to have changed by the time the call returns.
+   */
+  initializeConsole: { permission: 'any' },
+  /**
    * Hand the server one flow to run, and it owns that run to the end: it keeps to the
    * wall clock, restores the user's song afterwards, and cleans up however it
    * finishes. The schedule this came from stays with the caller — the server holds no
@@ -387,6 +397,7 @@ export type WriteRequest =
 export type InvokeRequest =
   | { command: 'authenticate'; args: { password: string } }
   | { command: 'enableConsoleInput'; args: { input: string } }
+  | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
   ;

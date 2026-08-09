@@ -81,6 +81,24 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
+  initializeConsole: {
+    async run(_args, deps, socket) {
+      // Note(yoochan.kim): gated exactly like enableConsoleInput — the desk keeps
+      // no protected state, so the admin gate is the only thing in the way. The
+      // pacing between steps belongs to the console, not here.
+      const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
+      const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
+        await deps.mixerConsole.initialize();
+      });
+
+      if (!allowed) {
+        log.warn('command', socket, 'Console initialize blocked (admin lock)');
+        return refuse(RejectReason.ADMIN_LOCKED);
+      }
+      return DONE;
+    },
+  },
+
   startFlow: {
     // Note(yoochan.kim): The whole plan arrives here; the server keeps none of it once the run
     // is over. Validation and scheduling belong to the runner.

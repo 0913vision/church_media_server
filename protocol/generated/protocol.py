@@ -16,7 +16,7 @@ everything the same way — but the vocabulary is the device-model one
 named slots, not addressed words.
 """
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 class PlaybackState(str, Enum):
@@ -262,6 +262,20 @@ class EnableConsoleInputArgs(TypedDict):
     input: str  # An id from the console attribute
 
 
+class InitializeConsoleArgs(TypedDict):
+    """
+    Put the mixing desk into the state a service starts from: every input on,
+    the mute group released, and the masters at their levels. The steps are
+    ordered and paced by the server, because raising the main before the
+    matrix has come down would let the room hear everything at once. Like
+    enableConsoleInput it takes no audio lock and reports nothing back — the
+    desk's own answers arrive through the console attribute. Takes a few
+    hundred milliseconds to finish, so a client should not expect the reading
+    to have changed by the time the call returns.
+    """
+    pass
+
+
 class StartFlowArgs(TypedDict):
     """
     Hand the server one flow to run, and it owns that run to the end: it keeps
@@ -314,6 +328,7 @@ ATTRIBUTES: dict[str, dict] = {
 COMMANDS: dict[str, dict] = {
     "authenticate": {"permission": "any"},
     "enableConsoleInput": {"permission": "any"},
+    "initializeConsole": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
 }
