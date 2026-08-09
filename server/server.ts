@@ -22,6 +22,7 @@ import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
 import type { PersistedState } from './state/StateStore.ts';
 import Clock from './clock/Clock.ts';
+import { createMockView } from './console/mockView.ts';
 import { serveApk } from './update/apkProxy.ts';
 import { registerHandlers } from './handlers/index.ts';
 import type { ServerDeps } from './deps.ts';
@@ -44,9 +45,20 @@ class MediaServer {
   start(): void {
     log.info('server', null, 'Socket is initializing');
 
-    // Note(yoochan.kim): the one plain-HTTP door this server has: an outdated
-    // app downloads its update here, everything else speaks the socket protocol.
-    const httpServer = createServer((req, res) => { void serveApk(req, res); });
+    // Note(yoochan.kim): the console is built first because the HTTP door has to
+    // know whether there is a mock behind it. A real desk has no face to serve,
+    // and a page that can move the masters must not exist when they are real.
+    const mockConsole = DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : null;
+    const consoleDevice: ConsoleDevice = mockConsole ?? new X32Console();
+    const serveMockDesk = mockConsole ? createMockView(mockConsole) : null;
+
+    // Note(yoochan.kim): the plain-HTTP doors this server has: an outdated app
+    // downloads its update here, and in mock mode the fake desk shows its face.
+    // Everything else speaks the socket protocol.
+    const httpServer = createServer((req, res) => {
+      if (serveMockDesk?.(req, res)) return;
+      void serveApk(req, res);
+    });
     const io: TypedServer = new Server<
       ClientToServerEventsUnsafe,
       ServerToClientEvents,
@@ -100,8 +112,6 @@ class MediaServer {
 
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
-    const consoleDevice: ConsoleDevice =
-      DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : new X32Console();
     const mixerConsole = new MixerConsole(consoleDevice);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
