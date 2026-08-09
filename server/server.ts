@@ -123,7 +123,17 @@ class MediaServer {
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
     io.on('connection', (socket) => {
-      log.info('server', socket, 'Socket connected', { ip: socket.handshake.address });
+      // Note(yoochan.kim): the transport is worth saying out loud. Socket.IO
+      // opens on HTTP long-polling and upgrades to a websocket; a client that
+      // never upgrades keeps working but feels slow, and nothing else in the
+      // log would tell you which one you are looking at.
+      log.info('server', socket, 'Socket connected', {
+        ip: socket.handshake.address,
+        transport: socket.conn.transport.name,
+      });
+      socket.conn.on('upgrade', (transport) => {
+        log.info('server', socket, 'Transport upgraded', { transport: transport.name });
+      });
 
       registerHandlers(socket, deps);
 
