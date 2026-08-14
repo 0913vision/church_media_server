@@ -14,5 +14,40 @@
     "durationSec": 10404.5,
     "volume": 35,
     "userSelectable": true
+  },
+  {
+    "id": "only-by-your-blood",
+    "title": "예수 피를 힘입어",
+    "file": "./audio/only-by-your-blood.mp3",
+    "durationSec": 307.6,
+    "volume": 50
+  },
+  {
+    "id": "love-is-calling-me",
+    "title": "사랑이 나를 부르네",
+    "file": "./audio/love-is-calling-me.mp3",
+    "durationSec": 361.6,
+    "volume": 50
+  },
+  {
+    "id": "toward-the-goal",
+    "title": "푯대를 향하여",
+    "file": "./audio/toward-the-goal.mp3",
+    "durationSec": 372.6,
+    "volume": 50
+  },
+  {
+    "id": "magnificent",
+    "title": "주 광대하시네",
+    "file": "./audio/magnificent.mp3",
+    "durationSec": 435,
+    "volume": 50
+  },
+  {
+    "id": "reflection-of-christ",
+    "title": "예수가 보이네",
+    "file": "./audio/reflection-of-christ.mp3",
+    "durationSec": 540,
+    "volume": 50
   }
 ]
