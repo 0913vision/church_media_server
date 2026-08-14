@@ -195,6 +195,7 @@ One input this server drives, as the desk last answered for it. A client draws o
 | --- | --- | --- |
 | `id` | `string` | Value to pass to enableConsoleInput |
 | `label` | `string` | What to call it on screen, e.g. '목사님 마이크' |
+| `nominalDb` | `number` | Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand. |
 | `state` | `ConsoleRead` |  |
 
 ## 클라이언트 → 서버

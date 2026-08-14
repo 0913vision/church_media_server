@@ -1,7 +1,7 @@
 import osc from 'osc';
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
 import type { ConsoleInputConfig } from '../constants/consoleConfig.ts';
-import { faderFromDb } from './faderLevel.ts';
+import { faderFromDb, dbFromFader } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
@@ -82,6 +82,7 @@ class X32Console implements ConsoleDevice {
     return INPUTS.map((input) => ({
       id: input.ID,
       label: input.LABEL,
+      nominalDb: input.CHANNELS[0]!.FADER_DB,
       state: this.readInput(input),
     }));
   }
@@ -101,7 +102,8 @@ class X32Console implements ConsoleDevice {
     const fader = this.freshValue(first.FADER_ADDRESS);
     if (on === undefined || fader === undefined) return { kind: 'unknown' };
     // Note(yoochan.kim): rounded so float noise is not a state change
-    return { kind: 'read', on: on === CONSOLE_CONFIG.OSC_VALUES.UNMUTE, fader: Math.round(fader * 1000) / 1000 };
+    const level = Math.round(fader * 1000) / 1000;
+    return { kind: 'read', on: on === CONSOLE_CONFIG.OSC_VALUES.UNMUTE, db: dbFromFader(level) };
   }
 
   private announceIfChanged(): void {

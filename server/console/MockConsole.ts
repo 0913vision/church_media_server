@@ -201,13 +201,14 @@ class MockConsole implements ConsoleDevice {
   read(): ConsoleInput[] {
     return INPUTS.map((input) => {
       const first = input.CHANNELS[0]!;
+      // Note(yoochan.kim): rounded the way X32Console rounds what it hears
+      const level = Math.round((this.wire.get(first.FADER_ADDRESS) ?? 0) * 1000) / 1000;
       const state: ConsoleRead = {
         kind: 'read',
         on: this.wire.get(first.ON_ADDRESS) === UNMUTE,
-        // Note(yoochan.kim): rounded the way X32Console rounds what it hears
-        fader: Math.round((this.wire.get(first.FADER_ADDRESS) ?? 0) * 1000) / 1000,
+        db: dbFromFader(level),
       };
-      return { id: input.ID, label: input.LABEL, state };
+      return { id: input.ID, label: input.LABEL, nominalDb: first.FADER_DB, state };
     });
   }
 

@@ -131,6 +131,7 @@ class ConsoleInput(TypedDict):
     """
     id: str  # Value to pass to enableConsoleInput
     label: str  # What to call it on screen, e.g. '목사님 마이크'
+    nominalDb: float  # Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand.
     state: ConsoleRead
 
 
@@ -163,7 +164,7 @@ class ConsoleReadRead(TypedDict):
     """The desk's own answer"""
     kind: Literal["read"]
     on: bool
-    fader: float  # Fader position 0..1, as the console speaks it
+    db: float  # The input's level in decibels, which is what the desk itself shows. The console speaks a 0..1 fader position instead; the curve between the two — four straight segments, steeper at the bottom — is applied here so it lives in one place rather than in every client that wants to show a level.
 
 
 """

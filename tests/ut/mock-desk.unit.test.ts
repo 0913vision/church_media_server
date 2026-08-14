@@ -58,13 +58,13 @@ describe('Mock desk', () => {
     assert.equal(announced, 1);
     const after = desk.read().find((input) => input.id === CONSOLE_CONFIG.INPUTS[1]!.ID)!;
     assert.equal(after.state.kind, 'read');
-    assert.equal(after.state.kind === 'read' && after.state.fader, 0.31);
-    assert.notEqual(before.state.kind === 'read' && before.state.fader, 0.31);
+    assert.equal(after.state.kind === 'read' && after.state.db, -25.2);
+    assert.notEqual(before.state.kind === 'read' && before.state.db, -25.2);
 
     // The panel's held press is what puts it back — the point of the whole gesture.
     await desk.enable(CONSOLE_CONFIG.INPUTS[1]!.ID);
     const restored = desk.read().find((input) => input.id === CONSOLE_CONFIG.INPUTS[1]!.ID)!;
-    assert.equal(restored.state.kind === 'read' && restored.state.fader, 0.688);
+    assert.equal(restored.state.kind === 'read' && restored.state.db, after.nominalDb);
   });
 
   test('one continuous move is one line, and the run it interrupts keeps all of its own', async () => {

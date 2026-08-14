@@ -160,6 +160,12 @@ export interface ConsoleInput {
   id: string;
   /** What to call it on screen, e.g. '목사님 마이크' */
   label: string;
+  /**
+   * Where this input is meant to sit, in decibels — the level enableConsoleInput puts
+   * it back to. Marked on a meter, it shows at a glance that a fader has been moved by
+   * hand.
+   */
+  nominalDb: number;
   state: ConsoleRead;
 }
 
@@ -189,7 +195,7 @@ export type ConsoleRead =
   /** No answer from the console yet, or the last one has gone stale */
   | { kind: 'unknown' }
   /** The desk's own answer */
-  | { kind: 'read'; on: boolean; fader: number }
+  | { kind: 'read'; on: boolean; db: number }
   ;
 export const ConsoleReadKind = {
   UNKNOWN: 'unknown',
