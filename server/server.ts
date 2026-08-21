@@ -129,7 +129,7 @@ class MediaServer {
     };
 
     this.pingInterval = setInterval(() => {
-      notifier.ping(clock.now());
+      notifier.ping(clock.now(), clock.offset());
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
     io.on('connection', (socket) => {

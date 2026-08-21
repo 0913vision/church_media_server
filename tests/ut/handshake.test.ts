@@ -113,10 +113,9 @@ describe('Handshake and Read Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): temporary, and the test says so. A panel that cannot be
-  // updated today still speaks v2; the server answers it because v3 only added
-  // a command. Delete this along with ALSO_ANSWERED once every panel is on v3.
-  test('a panel one version behind is still answered, and may still write', async () => {
+  // Note(yoochan.kim): every panel is on the current version now, so an older one
+  // is refused again. ACCEPTED_VERSIONS is where a temporary exception would go.
+  test('a panel one version behind is refused', async () => {
     const helper = new SocketTestHelper();
 
     try {
@@ -125,13 +124,8 @@ describe('Handshake and Read Tests', () => {
       helper.socket!.emit(C2S.HELLO, { client: 'one-behind', protocolVersion: PROTOCOL_VERSION - 1 });
 
       const ready = await readyP;
-      assert.strictEqual(ready.accepted, true);
+      assert.strictEqual(ready.accepted, false);
       assert.strictEqual(ready.protocolVersion, PROTOCOL_VERSION);
-
-      const current = (await helper.read()).volume;
-      const observed = helper.waitForState((patch) => patch.volume !== undefined);
-      helper.write('volume', current === 42 ? 43 : 42);
-      assert.notStrictEqual((await observed).volume, undefined);
     } finally {
       helper.disconnect();
     }

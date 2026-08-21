@@ -52,12 +52,13 @@ class Notifier {
   }
 
   /**
-   * Heartbeat carrying church time. Clients draw "now" from this instead of
-   * their own clock — the whole point of the offset is that local clocks
-   * disagree with the one the building follows.
+   * Heartbeat carrying church time, and the correction it was built from.
+   * Clients draw "now" from this instead of their own clock — the whole point of
+   * the offset is that local clocks disagree with the one the building follows.
+   * The offset rides along so the two are read from the same instant.
    */
-  ping(at: Date): void {
-    this.io.emit(S2C.PING, { at: formatInstant(at) });
+  ping(at: Date, offsetSec: number): void {
+    this.io.emit(S2C.PING, { at: formatInstant(at), offsetSec });
   }
 }
 

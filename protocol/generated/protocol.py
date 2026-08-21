@@ -403,3 +403,4 @@ class PingPayload(TypedDict):
     wrong one would be wrong in exactly the situation this exists for.
     """
     at: str  # Church time at the moment this was sent
+    offsetSec: float  # The correction in force at that same moment, so standard time is recoverable exactly. A client holds the offset as an attribute too, but that one can have moved since this beat was sent — taking a stale one back out of `at` is how a clock ends up wrong by the size of the last correction.

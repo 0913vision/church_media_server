@@ -22,17 +22,11 @@ function permissionOf(name: AttributeName): string {
  * The protocol versions this server answers, newest first.
  *
  * PROTOCOL_VERSION is what it speaks and what it reports; this is who it is
- * willing to speak to. The two are usually the same list of one.
- *
- * Note(yoochan.kim): v2 is here TEMPORARILY. A panel is mounted where it cannot
- * be updated today, and refusing it would leave a dark screen on the wall for
- * the sake of a number. It is only safe because v3 added a command and changed
- * no shape, so a v2 client receives exactly what v2 described and simply never
- * asks for the new one. Drop it the moment every panel is on v3 — the next
- * change may not be additive, and then keeping it would be a lie told to an old
- * client rather than a kindness.
+ * willing to speak to. The two are usually the same list of one — an older
+ * version belongs here only while a panel that cannot be updated yet is still
+ * on it, and only while the difference is additive.
  */
-const ACCEPTED_VERSIONS: readonly number[] = [PROTOCOL_VERSION, 2];
+const ACCEPTED_VERSIONS: readonly number[] = [PROTOCOL_VERSION];
 
 /**
  * hello: identify the client and negotiate the protocol version, then answer

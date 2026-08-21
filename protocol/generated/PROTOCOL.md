@@ -271,3 +271,4 @@ Application-level heartbeat, carrying the server's own church time. A client dra
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `at` | `string` | Church time at the moment this was sent |
+| `offsetSec` | `number` | The correction in force at that same moment, so standard time is recoverable exactly. A client holds the offset as an attribute too, but that one can have moved since this beat was sent — taking a stale one back out of `at` is how a clock ends up wrong by the size of the last correction. |
