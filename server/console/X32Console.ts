@@ -138,15 +138,20 @@ class X32Console implements ConsoleDevice {
   async initialize(): Promise<void> {
     const { MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
 
+    const { UNMUTE: OPEN } = CONSOLE_CONFIG.OSC_VALUES;
     for (const input of INPUTS) await this.enable(input.ID);
     await this.sendOscCommand(MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED);
+    // Note(yoochan.kim): level first, then open. A master unmuted while it still
+    // holds an old level is a room hearing that level.
     await this.sendOscCommand(MATRIX.ADDRESS, faderFromDb(MATRIX.DB));
+    await this.sendOscCommand(MATRIX.ON_ADDRESS, OPEN);
 
     // Note(yoochan.kim): the main comes last and late, on purpose — see
     // CONSOLE_CONFIG.INITIALIZE. Raising it before the matrix has come down
     // would let the room hear everything at once.
     await new Promise((resolve) => setTimeout(resolve, MAIN.DELAY_MS));
     await this.sendOscCommand(MAIN.ADDRESS, faderFromDb(MAIN.DB));
+    await this.sendOscCommand(MAIN.ON_ADDRESS, OPEN);
 
     log.info('x32Console', null, 'Console initialized', {
       matrixDb: MATRIX.DB,

@@ -139,7 +139,9 @@ class MockConsole implements ConsoleDevice {
     }
     this.write(MUTE_GROUP_ADDRESS, MUTE_GROUP_ENGAGED, 'desk');
     this.write(MATRIX.ADDRESS, faderFromDb(BOOT.MATRIX_DB), 'desk');
+    this.write(MATRIX.ON_ADDRESS, MUTE, 'desk');
     this.write(MAIN.ADDRESS, faderFromDb(BOOT.MAIN_DB), 'desk');
+    this.write(MAIN.ON_ADDRESS, MUTE, 'desk');
     // Note(yoochan.kim): the log starts empty. Nothing was sent here — these
     // values are where the desk was found, not traffic anyone would recognise.
     this.journal = [];
@@ -185,7 +187,9 @@ class MockConsole implements ConsoleDevice {
     for (const input of INPUTS) await this.enable(input.ID);
 
     this.write(MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED, 'server');
+    // Note(yoochan.kim): level first, then open — the same order X32Console sends in.
     this.write(MATRIX.ADDRESS, faderFromDb(MATRIX.DB), 'server');
+    this.write(MATRIX.ON_ADDRESS, UNMUTE, 'server');
     this.announce();
 
     // Note(yoochan.kim): the wait is copied from X32Console rather than skipped,
@@ -193,6 +197,7 @@ class MockConsole implements ConsoleDevice {
     // sequence most worth watching — see CONSOLE_CONFIG.INITIALIZE.
     await this.delay(MAIN.DELAY_MS);
     this.write(MAIN.ADDRESS, faderFromDb(MAIN.DB), 'server');
+    this.write(MAIN.ON_ADDRESS, UNMUTE, 'server');
     this.announce();
 
     log.info('mockConsole', null, 'Console initialized', { matrixDb: MATRIX.DB, mainDb: MAIN.DB });

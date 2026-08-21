@@ -64,7 +64,9 @@ export const CONSOLE_CONFIG = {
 
   /**
    * The desk as a service starts from: every input up, mute group 1 released,
-   * and the two masters at the levels the room is mixed for.
+   * and the two masters unmuted at the levels the room is mixed for. Each master
+   * has its level set before it is unmuted, so the moment it opens it is already
+   * where it belongs.
    *
    * The main fader waits, and the wait is the point. The matrix normally sits
    * near +10 dB and the main near -20 dB; bringing the main up while the matrix
@@ -79,7 +81,7 @@ export const CONSOLE_CONFIG = {
   INITIALIZE: {
     MUTE_GROUP_ADDRESS: "/config/mute/1",
     MUTE_GROUP_RELEASED: 0,
-    MATRIX: { ADDRESS: "/mtx/01/mix/fader", DB: -9.0 },
-    MAIN: { ADDRESS: "/main/st/mix/fader", DB: 0.7, DELAY_MS: 500 }
+    MATRIX: { ADDRESS: "/mtx/01/mix/fader", ON_ADDRESS: "/mtx/01/mix/on", DB: -9.0 },
+    MAIN: { ADDRESS: "/main/st/mix/fader", ON_ADDRESS: "/main/st/mix/on", DB: 0.7, DELAY_MS: 500 }
   }
 } as const;

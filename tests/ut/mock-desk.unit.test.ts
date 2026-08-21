@@ -33,10 +33,13 @@ describe('Mock desk', () => {
       }
     }
     assert.ok(addresses.indexOf(MUTE_GROUP_ADDRESS) < addresses.indexOf(MATRIX.ADDRESS));
-    assert.equal(addresses[addresses.length - 1], MAIN.ADDRESS);
+    // A master is levelled before it is opened, and the main is opened last of all.
+    assert.ok(addresses.indexOf(MATRIX.ADDRESS) < addresses.indexOf(MATRIX.ON_ADDRESS));
+    assert.ok(addresses.indexOf(MAIN.ADDRESS) < addresses.indexOf(MAIN.ON_ADDRESS));
+    assert.equal(addresses[addresses.length - 1], MAIN.ON_ADDRESS);
 
     const matrix = journal.find((message) => message.address === MATRIX.ADDRESS)!;
-    const main = journal[journal.length - 1]!;
+    const main = journal.find((message) => message.address === MAIN.ADDRESS)!;
     assert.ok(
       main.at - matrix.at >= MAIN.DELAY_MS,
       `the main followed the matrix after ${main.at - matrix.at}ms, sooner than the ${MAIN.DELAY_MS}ms it must wait`,
@@ -78,7 +81,8 @@ describe('Mock desk', () => {
     await desk.initialize();
     const sent = desk.snapshot().journal.length - beforeRun;
     const channels = CONSOLE_CONFIG.INPUTS.reduce((count, input) => count + input.CHANNELS.length, 0);
-    assert.equal(sent, channels * 2 + 3, 'every step of a run is its own line');
+    // every channel on and levelled, the mute group, then each master levelled and opened
+    assert.equal(sent, channels * 2 + 5, 'every step of a run is its own line');
   });
 
   test('an address this desk does not have is refused rather than invented', () => {
