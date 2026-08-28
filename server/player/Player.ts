@@ -234,12 +234,14 @@ class Player {
    * if sounding, reloads the current song at its remembered position, paused.
    * No-op when no track has taken the deck.
    */
-  async restoreSong(): Promise<void> {
+  async restoreSong(fade = true): Promise<void> {
     if (!this.trackMode) return;
 
     try {
       if (this.isPlaying()) {
-        await this.device.pause();
+        // Note(yoochan.kim): a fade covers a cut. Music that has just reached its
+        // own end has nothing to cover, and fading it costs seconds of silence.
+        await this.device.pause(fade);
       }
       // Note(yoochan.kim): the flow played at its own level; the user's comes
       // back with their song

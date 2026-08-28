@@ -221,7 +221,9 @@ class FlowRunner {
     }
 
     await this.sleepUntil(part.endsAt);
-    await this.restoreDeck();
+    // Note(yoochan.kim): the music reached its own end here, so there is nothing to
+    // fade. A run cut short goes out through cleanup instead, which does fade.
+    await this.restoreDeck(false);
     if (this.active) this.active.playing = undefined;
     this.publish();
   }
@@ -281,8 +283,8 @@ class FlowRunner {
   }
 
   /** Returns the deck to the two-song system; a no-op when no track took it. */
-  private async restoreDeck(): Promise<void> {
-    const ran = await this.withAudio(() => this.player.restoreSong());
+  private async restoreDeck(fade = true): Promise<void> {
+    const ran = await this.withAudio(() => this.player.restoreSong(fade));
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device to restore the deck');
       return;

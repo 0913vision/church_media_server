@@ -9,8 +9,13 @@ import type { SongId } from '../constants/songs.ts';
  */
 export interface AudioOutput {
   setVolume(volume: number): void;
-  resume(): Promise<void>;
-  pause(): Promise<void>;
+  /**
+   * Start and stop. Both fade by default; pass false where there is no cut to
+   * cover — a song beginning at its beginning, or one that has just reached its
+   * own end. A fade there is only a delay.
+   */
+  resume(fade?: boolean): Promise<void>;
+  pause(fade?: boolean): Promise<void>;
   /** Saves the song's live playback position into its time memory */
   captureSongTime(song: SongId): void;
   /** Loads a song file onto the looping two-song deck (no position save) */

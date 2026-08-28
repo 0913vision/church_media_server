@@ -86,10 +86,15 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
-   * Pauses playback with fade out effect
+   * Pauses playback, fading out unless told otherwise. See `resume` for when a
+   * fade is wanted and when it is only a delay.
    */
-  async pause(): Promise<void> {
+  async pause(fade = true): Promise<void> {
     const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
+    if (!fade) {
+      this.mpv.setProperty("pause", "yes");
+      return;
+    }
     const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
     for (let i = 0; i <= FADE_STEPS; ++i) {
       const t = i / FADE_STEPS;
@@ -102,10 +107,18 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
-   * Resumes playback with fade in effect
+   * Resumes playback, fading in unless told otherwise.
+   *
+   * A fade covers a cut: sound appearing part-way through a piece, or leaving
+   * before it is over. A song that begins at its own beginning has nothing to
+   * cover, and fading it in only mutes the opening the arranger wrote.
    */
-  async resume(): Promise<void> {
+  async resume(fade = true): Promise<void> {
     const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
+    if (!fade) {
+      this.mpv.setProperty("pause", "no");
+      return;
+    }
     this.mpv.setProperty("volume", "0");
     this.mpv.setProperty("pause", "no");
     const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
@@ -197,9 +210,11 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
-   * Plays an arbitrary library file from an offset (scheduled flows): loads
-   * it paused, seeks, then fades in. Looping is disabled so the track ends
-   * naturally; changeSong() restores it for the two-song system.
+   * Plays an arbitrary library file from an offset (scheduled flows): loads it
+   * paused, seeks, and starts. It fades in only when the offset put it past the
+   * opening — a song beginning at its beginning has no cut to cover. Looping is
+   * disabled so the track ends naturally; changeSong() restores it for the
+   * two-song system.
    */
   async playFileAt(filePath: string, offsetSec: number): Promise<void> {
     this.mpv.setProperty("pause", "yes");
@@ -221,7 +236,9 @@ class AudioDevice implements AudioOutput {
       }
     }
 
-    await this.resume();
+    // Note(yoochan.kim): a seek means the run joined this song part-way through, so
+    // the fade covers a cut. From the top there is no cut to cover.
+    await this.resume(offsetSec > 0);
   }
 }
 
