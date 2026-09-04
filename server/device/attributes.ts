@@ -65,6 +65,16 @@ function checkVolume(value: unknown): Checked<number> {
 }
 
 /**
+ * Note(yoochan.kim): while a flow holds the gate the deck is the flow's, not the
+ * panel's — the run was handed the deck and puts it back itself. The admin gate
+ * alone does not say this: an admin passes it, so the one client that can reach
+ * the deck mid-service is the one driving the service.
+ */
+function deckIsFlows(deps: ServerDeps): boolean {
+  return deps.flowRunner.ownsAdminLock();
+}
+
+/**
  * The device's attribute table: one entry per attribute in the protocol, so an
  * attribute cannot be declared without being implemented. Each entry owns its
  * validation and its side effects; the permission, access and range rules come
@@ -76,7 +86,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getState(),
     write: writable(
       true,
-      (value) => (isPlaybackState(value) ? accept(value) : BAD_VALUE),
+      (value, deps) => {
+        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        return isPlaybackState(value) ? accept(value) : BAD_VALUE;
+      },
       async (playback, deps) => {
         if (playback === deps.player.getState()) return {};
         if (playback === PlaybackState.PLAYING) {
@@ -97,6 +110,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
+        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
         if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
         return checkVolume(value);
       },
@@ -112,6 +126,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
+        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
         if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
         return isMuteState(value) ? accept(value) : BAD_VALUE;
       },
@@ -129,7 +144,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       true,
       // Note(yoochan.kim): the manifest decides which ids are songs, so only it
       // can say whether this one is
-      (value, deps) => (deps.trackLibrary.isDeckSong(value) ? accept(value) : BAD_VALUE),
+      (value, deps) => {
+        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        return deps.trackLibrary.isDeckSong(value) ? accept(value) : BAD_VALUE;
+      },
       async (song, deps) => {
         if (song === deps.player.getCurrentSong()) return {};
         // Note(yoochan.kim): Switching songs also pauses the deck and moves the volume to that

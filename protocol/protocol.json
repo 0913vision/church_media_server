@@ -179,26 +179,26 @@
   },
   "attributes": {
     "playback": {
-      "description": "Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade.",
+      "description": "Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade. Refused with flowActive while a flow holds the gate: the run was handed the deck and puts it back itself, so the deck is not the panel's until it finishes.",
       "type": "PlaybackState",
       "access": "rw",
       "permission": "any"
     },
     "volume": {
-      "description": "Output volume. Applies immediately, so it is safe to write continuously while dragging a fader.",
+      "description": "Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow holds the gate: the run was handed the deck and puts it back itself, so the deck is not the panel's until it finishes.",
       "type": "number",
       "access": "rw",
       "permission": "any",
       "range": { "min": 0, "max": 100 }
     },
     "mute": {
-      "description": "Whether output is muted",
+      "description": "Whether output is muted. Refused with flowActive while a flow holds the gate: the run was handed the deck and puts it back itself, so the deck is not the panel's until it finishes.",
       "type": "MuteState",
       "access": "rw",
       "permission": "any"
     },
     "song": {
-      "description": "Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say.",
+      "description": "Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow holds the gate: the run was handed the deck and puts it back itself, so the deck is not the panel's until it finishes.",
       "type": "string",
       "access": "rw",
       "permission": "any"
