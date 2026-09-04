@@ -229,31 +229,32 @@ export const FlowStatusKind = {
 export const ATTRIBUTES = {
   /**
    * Whether the deck is playing. Writing it fades in or out and holds the audio lock
-   * for the length of the fade. Refused with flowActive while a flow holds the gate:
-   * the run was handed the deck and puts it back itself, so the deck is not the
-   * panel's until it finishes.
+   * for the length of the fade. Refused with flowActive while a flow's music is
+   * sounding: the run was handed the deck and puts it back itself. A flow that only
+   * holds the gate is keeping the panel out, not using the deck, so this stays
+   * writable then.
    */
   playback: { access: 'rw', permission: 'any' },
   /**
    * Output volume. Applies immediately, so it is safe to write continuously while
-   * dragging a fader. Refused with flowActive while a flow holds the gate: the run was
-   * handed the deck and puts it back itself, so the deck is not the panel's until it
-   * finishes.
+   * dragging a fader. Refused with flowActive while a flow's music is sounding: the
+   * run was handed the deck and puts it back itself. A flow that only holds the gate
+   * is keeping the panel out, not using the deck, so this stays writable then.
    */
   volume: { access: 'rw', permission: 'any', range: { min: 0, max: 100 } },
   /**
-   * Whether output is muted. Refused with flowActive while a flow holds the gate: the
-   * run was handed the deck and puts it back itself, so the deck is not the panel's
-   * until it finishes.
+   * Whether output is muted. Refused with flowActive while a flow's music is sounding:
+   * the run was handed the deck and puts it back itself. A flow that only holds the
+   * gate is keeping the panel out, not using the deck, so this stays writable then.
    */
   mute: { access: 'rw', permission: 'any' },
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
    * rather than a fixed set because which songs exist, and what they are called, is
-   * the server's to say. Refused with flowActive while a flow holds the gate: the run
-   * was handed the deck and puts it back itself, so the deck is not the panel's until
-   * it finishes.
+   * the server's to say. Refused with flowActive while a flow's music is sounding: the
+   * run was handed the deck and puts it back itself. A flow that only holds the gate
+   * is keeping the panel out, not using the deck, so this stays writable then.
    */
   song: { access: 'rw', permission: 'any' },
   /**
@@ -344,31 +345,32 @@ export type CommandName = keyof typeof COMMANDS;
 export interface State {
   /**
    * Whether the deck is playing. Writing it fades in or out and holds the audio lock
-   * for the length of the fade. Refused with flowActive while a flow holds the gate:
-   * the run was handed the deck and puts it back itself, so the deck is not the
-   * panel's until it finishes.
+   * for the length of the fade. Refused with flowActive while a flow's music is
+   * sounding: the run was handed the deck and puts it back itself. A flow that only
+   * holds the gate is keeping the panel out, not using the deck, so this stays
+   * writable then.
    */
   playback: PlaybackState;
   /**
    * Output volume. Applies immediately, so it is safe to write continuously while
-   * dragging a fader. Refused with flowActive while a flow holds the gate: the run was
-   * handed the deck and puts it back itself, so the deck is not the panel's until it
-   * finishes.
+   * dragging a fader. Refused with flowActive while a flow's music is sounding: the
+   * run was handed the deck and puts it back itself. A flow that only holds the gate
+   * is keeping the panel out, not using the deck, so this stays writable then.
    */
   volume: number;
   /**
-   * Whether output is muted. Refused with flowActive while a flow holds the gate: the
-   * run was handed the deck and puts it back itself, so the deck is not the panel's
-   * until it finishes.
+   * Whether output is muted. Refused with flowActive while a flow's music is sounding:
+   * the run was handed the deck and puts it back itself. A flow that only holds the
+   * gate is keeping the panel out, not using the deck, so this stays writable then.
    */
   mute: MuteState;
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
    * rather than a fixed set because which songs exist, and what they are called, is
-   * the server's to say. Refused with flowActive while a flow holds the gate: the run
-   * was handed the deck and puts it back itself, so the deck is not the panel's until
-   * it finishes.
+   * the server's to say. Refused with flowActive while a flow's music is sounding: the
+   * run was handed the deck and puts it back itself. A flow that only holds the gate
+   * is keeping the panel out, not using the deck, so this stays writable then.
    */
   song: string;
   /**

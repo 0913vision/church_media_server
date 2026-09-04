@@ -130,6 +130,16 @@ class FlowRunner {
     return this.active?.lockEngaged ?? false;
   }
 
+  /**
+   * Whether a run has the deck right now.
+   *
+   * Note(yoochan.kim): sounding music, not merely holding the gate. A flow that only
+   * holds the gate is keeping the panel out; the deck is still free.
+   */
+  ownsDeck(): boolean {
+    return this.active?.playing !== undefined;
+  }
+
   /** Accepts a flow and starts running it. */
   async start(args: unknown): Promise<{ ok: true } | { ok: false; reason: RejectReason }> {
     if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };

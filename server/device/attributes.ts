@@ -65,13 +65,13 @@ function checkVolume(value: unknown): Checked<number> {
 }
 
 /**
- * Note(yoochan.kim): while a flow holds the gate the deck is the flow's, not the
- * panel's — the run was handed the deck and puts it back itself. The admin gate
- * alone does not say this: an admin passes it, so the one client that can reach
- * the deck mid-service is the one driving the service.
+ * Note(yoochan.kim): while a run is sounding music the deck is its own — it was handed
+ * the deck and puts it back itself. Not merely while the gate is held: a flow
+ * holding the gate without music is keeping the panel out, and the deck is free.
+ * The gate alone cannot say this anyway, since an admin passes it.
  */
 function deckIsFlows(deps: ServerDeps): boolean {
-  return deps.flowRunner.ownsAdminLock();
+  return deps.flowRunner.ownsDeck();
 }
 
 /**

@@ -1,7 +1,7 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
-import { MuteState, PlaybackState, RejectReason } from '../../server/protocol.ts';
+import { RejectReason } from '../../server/protocol.ts';
 import type { StatePatch } from '../../server/protocol.ts';
 import { INSTANT_PATTERN, formatInstant } from '../../server/utils/instant.ts';
 
@@ -133,30 +133,20 @@ describe('Flow Tests', () => {
     }
   });
 
-  test('the deck belongs to the flow that holds the gate, even for an admin', async () => {
+  test('a flow holding only the gate leaves the deck free', async () => {
     const admin = await connectAuthedAdmin();
 
     try {
       const before = await admin.read();
       await startHoldingFlow(admin);
 
-      // Note(yoochan.kim): an admin passes the gate, so without this the one client that
-      // can reach the deck mid-service is the one driving the service.
-      for (const [field, value] of [
-        ['playback', PlaybackState.PLAYING],
-        ['volume', before.volume === 42 ? 43 : 42],
-        ['mute', MuteState.MUTED],
-        ['song', before.song],
-      ] as const) {
-        const rejected = admin.waitForRejected(field);
-        admin.write(field, value);
-        assert.strictEqual(await rejected, RejectReason.FLOW_ACTIVE, `${field} was not refused`);
-      }
-
-      const after = await admin.read();
-      assert.strictEqual(after.playback, before.playback, 'the deck did not move');
-      assert.strictEqual(after.volume, before.volume);
-      assert.strictEqual(after.mute, before.mute);
+      // Note(yoochan.kim): the gate keeps the panel out; it does not mean the run is
+      // using the deck. Playback is left out of this on purpose — asserting it
+      // would put sound in the room the tests run in.
+      const next = before.volume === 42 ? 43 : 42;
+      const observed = admin.waitForState((patch) => patch.volume !== undefined);
+      admin.write('volume', next);
+      assert.strictEqual((await observed).volume, next, 'the deck took the write');
     } finally {
       await stopFlow(admin).catch(() => {});
       admin.disconnect();
