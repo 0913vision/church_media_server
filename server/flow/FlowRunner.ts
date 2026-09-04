@@ -33,6 +33,8 @@ interface LockPlan {
 }
 
 interface Plan {
+  /** The caller's own identifier, handed straight back on every status. */
+  id: string;
   name: string;
   lock: LockPlan;
   parts: PartPlan[];
@@ -113,13 +115,14 @@ class FlowRunner {
     const run = this.active;
     if (!run) return { phase: 'idle' };
 
+    const { id, name } = run.plan;
     if (run.playing) {
-      return { phase: 'playing', name: run.plan.name, track: run.playing.track, endsAt: formatInstant(run.playing.endsAt) };
+      return { phase: 'playing', id, name, track: run.playing.track, endsAt: formatInstant(run.playing.endsAt) };
     }
     if (run.lockEngaged) {
-      return { phase: 'holding', name: run.plan.name, unlockAt: formatInstant(run.plan.lock.until) };
+      return { phase: 'holding', id, name, unlockAt: formatInstant(run.plan.lock.until) };
     }
-    return { phase: 'waiting', name: run.plan.name, startsAt: formatInstant(run.startsAt) };
+    return { phase: 'waiting', id, name, startsAt: formatInstant(run.startsAt) };
   }
 
   /** Whether a running flow is the one holding the admin lock */
@@ -340,6 +343,8 @@ class FlowRunner {
 
   private planOf(args: unknown): Checked<Plan> {
     const parsed = asObject(args);
+    const id = parsed.id;
+    if (typeof id !== 'string' || id.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
     const name = parsed.name;
     if (typeof name !== 'string' || name.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
@@ -371,7 +376,7 @@ class FlowRunner {
       parts.push(planned.value);
     }
 
-    return { ok: true, value: { name, lock, parts } };
+    return { ok: true, value: { id, name, lock, parts } };
   }
 
   private lockOf(lock: Record<string, unknown>): Checked<LockPlan> {

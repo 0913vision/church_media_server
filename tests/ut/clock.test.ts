@@ -65,6 +65,7 @@ describe('Church clock', () => {
   test('a flow is scheduled against church time, not standard time', async () => {
     const admin = await connectAuthedAdmin();
     const soon = {
+      id: 'flow-clock',
       name: '시계 시험',
       lock: {
         at: formatInstant(new Date(Date.now() + 10 * 60_000)),

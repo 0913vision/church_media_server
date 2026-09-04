@@ -48,7 +48,7 @@ function clock(offsetMinutes: number): string {
 
 /** A lock-only flow that engages now and would release in an hour */
 function lockFlow(name = '테스트 순서'): Record<string, unknown> {
-  return { name, lock: { at: clock(0), until: clock(60) }, parts: [] };
+  return { id: `flow-${name}`, name, lock: { at: clock(0), until: clock(60) }, parts: [] };
 }
 
 async function connectAuthedAdmin(): Promise<SocketTestHelper> {
@@ -181,7 +181,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      admin.invoke('startFlow', { name: '락 없는 순서', parts: [] });
+      admin.invoke('startFlow', { id: 'flow-test', name: '락 없는 순서', parts: [] });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
     } finally {
@@ -194,6 +194,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '중복',
         lock: { at: clock(0), until: clock(60) },
         parts: [
@@ -213,6 +214,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '미래 기능',
         lock: { at: clock(0), until: clock(60) },
         parts: [{ kind: 'lights', on: true }],
@@ -229,7 +231,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       // Note(yoochan.kim): A bare clock time is not an instant: the server will not guess a date.
-      admin.invoke('startFlow', { name: '나쁜 시각', lock: { at: '19:30', until: '21:30' }, parts: [] });
+      admin.invoke('startFlow', { id: 'flow-test', name: '나쁜 시각', lock: { at: '19:30', until: '21:30' }, parts: [] });
 
       assert.strictEqual(await rejected, RejectReason.INVALID_VALUE);
     } finally {
@@ -242,6 +244,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '없는 곡',
         lock: { at: clock(0), until: clock(60) },
         parts: [{ kind: 'music', tracks: [cue('no-such-track')], endsAt: clock(30) }],
@@ -270,7 +273,7 @@ describe('Flow Validation Tests', () => {
       ];
       for (const at of wrong) {
         const rejected = admin.waitForRejected('startFlow');
-        admin.invoke('startFlow', { name: '형식 시험', lock: { at, until: clock(60) }, parts: [] });
+        admin.invoke('startFlow', { id: 'flow-test', name: '형식 시험', lock: { at, until: clock(60) }, parts: [] });
         assert.strictEqual(await rejected, RejectReason.INVALID_VALUE, `should refuse ${at}`);
       }
     } finally {
@@ -286,6 +289,7 @@ describe('Flow Validation Tests', () => {
       for (const bad of [{ id: firstTrackId }, { id: firstTrackId, volume: 140 }, { id: firstTrackId, volume: '40' }]) {
         const rejected = admin.waitForRejected('startFlow');
         admin.invoke('startFlow', {
+          id: 'flow-test',
           name: '볼륨 없는 곡',
           lock: { at: clock(0), until: clock(60) },
           parts: [{ kind: 'music', tracks: [bad], endsAt: clock(30) }],
@@ -305,6 +309,7 @@ describe('Flow Validation Tests', () => {
       // Note(yoochan.kim): Accepting this would engage and release in the same millisecond, which
       // looks to the operator like the button did nothing.
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '지난 순서',
         lock: { at: clock(-120), until: clock(-60) },
         parts: [],
@@ -321,6 +326,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '빈 음악',
         lock: { at: clock(0), until: clock(60) },
         parts: [{ kind: 'music', tracks: [], endsAt: clock(30) }],
@@ -340,6 +346,7 @@ describe('Flow Validation Tests', () => {
     try {
       const rejected = admin.waitForRejected('startFlow');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '락보다 늦게 끝나는 음악',
         lock: { at: clock(0), until: clock(60) },
         parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(90) }],
@@ -359,6 +366,7 @@ describe('Flow Validation Tests', () => {
       // nothing of it could ever sound, so accepting it would look like the
       // button doing nothing.
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '락 전에 끝나는 음악',
         lock: { at: clock(30), until: clock(60) },
         parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(20) }],
@@ -380,6 +388,7 @@ describe('Flow Validation Tests', () => {
       // lock and the finish, so the derived start lands before the gate.
       const waiting = admin.waitForState((patch) => patch.flow?.phase === 'waiting');
       admin.invoke('startFlow', {
+        id: 'flow-test',
         name: '앞이 잘리는 음악',
         lock: { at: clock(30), until: clock(60) },
         parts: [{ kind: 'music', tracks: [cue(firstTrackId)], endsAt: clock(31) }],

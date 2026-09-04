@@ -212,11 +212,11 @@ export type FlowStatus =
   /** No flow is running */
   | { phase: 'idle' }
   /** A flow is accepted but none of its parts has started yet */
-  | { phase: 'waiting'; name: string; startsAt: string }
+  | { phase: 'waiting'; id: string; name: string; startsAt: string }
   /** The flow's music is sounding */
-  | { phase: 'playing'; name: string; track: FlowTrack; endsAt: string }
+  | { phase: 'playing'; id: string; name: string; track: FlowTrack; endsAt: string }
   /** Nothing is sounding, but the flow still holds the admin lock */
-  | { phase: 'holding'; name: string; unlockAt: string }
+  | { phase: 'holding'; id: string; name: string; unlockAt: string }
   ;
 export const FlowStatusKind = {
   IDLE: 'idle',
@@ -404,7 +404,7 @@ export type InvokeRequest =
   | { command: 'authenticate'; args: { password: string } }
   | { command: 'enableConsoleInput'; args: { input: string } }
   | { command: 'initializeConsole'; args: Record<string, never> }
-  | { command: 'startFlow'; args: { name: string; lock: FlowLock; parts: FlowPart[] } }
+  | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
   ;
 

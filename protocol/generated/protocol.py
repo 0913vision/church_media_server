@@ -183,6 +183,7 @@ class FlowStatusIdle(TypedDict):
 class FlowStatusWaiting(TypedDict):
     """A flow is accepted but none of its parts has started yet"""
     phase: Literal["waiting"]
+    id: str  # The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one.
     name: str
     startsAt: str  # Instant its first part begins
 
@@ -190,6 +191,7 @@ class FlowStatusWaiting(TypedDict):
 class FlowStatusPlaying(TypedDict):
     """The flow's music is sounding"""
     phase: Literal["playing"]
+    id: str  # The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one.
     name: str
     track: FlowTrack
     endsAt: str  # Instant the music finishes
@@ -198,6 +200,7 @@ class FlowStatusPlaying(TypedDict):
 class FlowStatusHolding(TypedDict):
     """Nothing is sounding, but the flow still holds the admin lock"""
     phase: Literal["holding"]
+    id: str  # The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one.
     name: str
     unlockAt: str  # Instant the lock releases
 
@@ -294,6 +297,7 @@ class StartFlowArgs(TypedDict):
     than accepted and completed instantly, so pressing start never looks like
     nothing happened.
     """
+    id: str  # The caller's own id for this flow, uninterpreted and handed back on every status.
     name: str  # Display name, e.g. '수요 예배'
     lock: FlowLock  # The window this run holds the admin gate for
     parts: list[FlowPart]  # What this run does besides holding the gate. Empty for a lock-only flow; at most one of each kind.

@@ -152,6 +152,7 @@
         "waiting": {
           "description": "A flow is accepted but none of its parts has started yet",
           "fields": {
+            "id": { "type": "string", "description": "The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one." },
             "name": { "type": "string" },
             "startsAt": { "type": "string", "description": "Instant its first part begins" }
           }
@@ -159,6 +160,7 @@
         "playing": {
           "description": "The flow's music is sounding",
           "fields": {
+            "id": { "type": "string", "description": "The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one." },
             "name": { "type": "string" },
             "track": { "type": "FlowTrack" },
             "endsAt": { "type": "string", "description": "Instant the music finishes" }
@@ -167,6 +169,7 @@
         "holding": {
           "description": "Nothing is sounding, but the flow still holds the admin lock",
           "fields": {
+            "id": { "type": "string", "description": "The id the caller gave this flow, handed back so it can tell which of its flows is running. A name cannot: two may share one." },
             "name": { "type": "string" },
             "unlockAt": { "type": "string", "description": "Instant the lock releases" }
           }
@@ -251,6 +254,7 @@
       "description": "Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.",
       "permission": "admin",
       "args": {
+        "id": { "type": "string", "description": "The caller's own id for this flow, uninterpreted and handed back on every status." },
         "name": { "type": "string", "description": "Display name, e.g. '수요 예배'" },
         "lock": { "type": "FlowLock", "description": "The window this run holds the admin gate for" },
         "parts": { "type": "FlowPart[]", "description": "What this run does besides holding the gate. Empty for a lock-only flow; at most one of each kind." }

@@ -84,6 +84,7 @@ Hand the server one flow to run, and it owns that run to the end: it keeps to th
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
+| `id` | `string` | The caller's own id for this flow, uninterpreted and handed back on every status. |
 | `name` | `string` | Display name, e.g. '수요 예배' |
 | `lock` | `FlowLock` | The window this run holds the admin gate for |
 | `parts` | `FlowPart[]` | What this run does besides holding the gate. Empty for a lock-only flow; at most one of each kind. |
