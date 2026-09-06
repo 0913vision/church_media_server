@@ -113,6 +113,21 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
+  setTrackVolume: {
+    async run(args, deps) {
+      const { id, volume } = argsObject(args);
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      if (typeof volume !== 'number' || !Number.isInteger(volume) || volume < 0 || volume > 100) {
+        return refuse(RejectReason.INVALID_VALUE);
+      }
+      if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
+
+      deps.trackLibrary.setVolume(id, volume);
+      deps.notifier.state({ trackVolumes: deps.trackLibrary.volumes() });
+      return DONE;
+    },
+  },
+
   selectTrack: {
     async run(args, deps) {
       const id = argsObject(args).id;

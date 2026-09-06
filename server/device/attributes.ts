@@ -158,7 +158,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return {
           song,
           playback: PlaybackState.PAUSED,
-          volume: deps.trackLibrary.songVolumes()[song]!,
+          volume: deps.trackLibrary.volumeOf(song),
           deck: deps.player.getDeck(),
           loop: deps.player.getLoop(),
         };
@@ -184,6 +184,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return { loop };
       },
     ),
+  },
+
+  trackVolumes: {
+    read: (deps) => deps.trackLibrary.volumes(),
   },
 
   deck: {

@@ -105,7 +105,7 @@ class MediaServer {
     const player = new Player(
       new AudioDevice(new MpvClient(), initialConfig.currentSong, trackLibrary.songFiles()),
       initialConfig,
-      trackLibrary.songVolumes(),
+      (song) => trackLibrary.volumeOf(song),
       (snapshot) => {
         preferences = snapshot;
         persist();

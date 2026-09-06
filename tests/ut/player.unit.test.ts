@@ -49,14 +49,14 @@ before(async () => {
 // boot, so a unit test declares its own two rather than importing a constant.
 const CALM = 'calm';
 const FERVENT = 'fervent';
-const SONG_VOLUMES = { [CALM]: 50, [FERVENT]: 35 };
+const SONG_VOLUMES: Record<string, number> = { [CALM]: 50, [FERVENT]: 35 };
 const BASE_CONFIG: PlayerConfig = { ...INITIAL_PLAYER_CONFIG, currentSong: CALM };
 
 /** Builds a Player with a fresh fake device and a recording persist spy. */
 function makePlayer(initial: PlayerConfig = BASE_CONFIG) {
   const device = new FakeAudioOutput();
   const saved: PersistedState[] = [];
-  const player = new Player(device, { ...initial }, SONG_VOLUMES, (s: PersistedState) => saved.push(s));
+  const player = new Player(device, { ...initial }, (song) => SONG_VOLUMES[song] ?? 50, (s: PersistedState) => saved.push(s));
   return { device, saved, player };
 }
 

@@ -180,9 +180,11 @@ describe('Flow Tests', () => {
       admin.write('loop', false);
       assert.strictEqual((await chosen).loop, false, 'the gate lets the choice through');
 
-      const opened = admin.waitForState((patch) => patch.adminLock === false);
+      // Note(yoochan.kim): opening the gate sends two patches — the lock's own, then what
+      // it put back. Reading between them would catch the second instead of the reply.
+      const restored = admin.waitForState((patch) => patch.loop === true);
       admin.write('adminLock', false);
-      await opened;
+      await restored;
 
       const after = await admin.read();
       assert.strictEqual(after.loop, true, 'looping comes back with the panel');

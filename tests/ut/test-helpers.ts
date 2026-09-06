@@ -27,8 +27,11 @@ const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
 const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
 // Note(yoochan.kim): Isolate persisted state to a temp file so tests never read/write the real one.
 const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
-// Note(yoochan.kim): Track library manifest (repo asset; tests only list tracks, never play them).
-const TEST_TRACKS_MANIFEST_PATH = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
+// Note(yoochan.kim): the manifest is the server's own file and gets rewritten when a level
+// changes, so tests run against a copy. Pointed at the real one, a test that
+// sets a level would edit the library this building plays from.
+const TEST_TRACKS_SOURCE = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
+const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
 // Note(yoochan.kim): Who clients are told to call. Required like everything else, so it has to be
 // declared here too — the bootstrap lists the environment rather than reading
 // .env, which is what keeps a developer's own config out of the test run.
@@ -40,6 +43,17 @@ const TEST_FILESERVER_URL = process.env.FILESERVER_URL ?? 'http://localhost:1';
 const TEST_FILESERVER_PASSWORD = process.env.FILESERVER_PASSWORD ?? 'test';
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
+
+/**
+ * Copies the manifest somewhere the run may write to. File paths are resolved
+ * on the way, since the copy no longer sits beside the audio it names.
+ */
+function copyManifest(): void {
+  const dir = path.dirname(TEST_TRACKS_SOURCE);
+  const entries = JSON.parse(fs.readFileSync(TEST_TRACKS_SOURCE, 'utf8')) as Record<string, unknown>[];
+  const resolved = entries.map((entry) => ({ ...entry, file: path.resolve(dir, String(entry.file)) }));
+  fs.writeFileSync(TEST_TRACKS_MANIFEST_PATH, JSON.stringify(resolved), 'utf8');
+}
 
 /** The slice of MediaServer the test bootstrap needs */
 interface StoppableServer {
@@ -86,6 +100,7 @@ export async function ensureServer(): Promise<void> {
   process.env.FILESERVER_PASSWORD = TEST_FILESERVER_PASSWORD;
   // Note(yoochan.kim): Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
+  copyManifest();
 
   const { default: MediaServer } = await import('../../server/server.ts');
   const server: StoppableServer = new MediaServer();
@@ -104,6 +119,7 @@ export async function stopServer(): Promise<void> {
   if (startedServer) {
     startedServer.stop();
     startedServer = null;
+    fs.rmSync(TEST_TRACKS_MANIFEST_PATH, { force: true });
   }
 }
 

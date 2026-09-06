@@ -6,3 +6,7 @@ node_modules/
 dist/
 data/
 __pycache__/
+
+# The track manifest is the server's own file: it rewrites it when a level
+# changes. assets/tracks.example.json is the copy to start from.
+assets/tracks.json

@@ -112,6 +112,14 @@ export interface FlowLock {
   until: string;
 }
 
+/** One track's level */
+export interface TrackVolume {
+  /** Track id from ready.tracks */
+  id: string;
+  /** 0-100 */
+  volume: number;
+}
+
 /** A playable library entry. File paths never leave the server. */
 export interface Track {
   /** Stable identifier used by startFlow */
@@ -120,12 +128,6 @@ export interface Track {
   title: string;
   /** Length in seconds, measured from the file */
   durationSec: number;
-  /**
-   * The level this track sounds at when nobody says otherwise, 0-100. Sent so an
-   * editor can offer it as the starting value when someone adds this track to a flow;
-   * the flow itself then carries a level for every track it plays.
-   */
-  volume: number;
 }
 
 /**
@@ -274,6 +276,15 @@ export const ATTRIBUTES = {
    */
   loop: { access: 'rw', permission: 'admin' },
   /**
+   * The level each track sounds at, keyed by track id, 0-100. One setting serving
+   * three uses: what a song returns to when it is chosen, what a library track is put
+   * on at, and what a flow editor offers when this track joins a service. State rather
+   * than part of ready.tracks, because somebody adjusts it while clients are
+   * connected. Read-only — setTrackVolume moves it. A flow carries its own level for
+   * every track it plays, so changing this never rewrites a service already written.
+   */
+  trackVolumes: { access: 'ro' },
+  /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.
    */
@@ -376,6 +387,12 @@ export const COMMANDS = {
    */
   stopFlow: { permission: 'admin' },
   /**
+   * Set the level a track sounds at, kept across restarts. Applies from the next time
+   * the track is chosen — it does not move a level that is already playing, which is
+   * what the volume attribute is for.
+   */
+  setTrackVolume: { permission: 'admin' },
+  /**
    * Put a library track on the deck, paused at its start, at its own level — the same
    * act as writing the song attribute, for the tracks that are not among ready.songs.
    * Playing it is a separate write to playback. Refused with adminUnlocked unless the
@@ -418,6 +435,15 @@ export interface State {
    * to the user's state.
    */
   loop: boolean;
+  /**
+   * The level each track sounds at, keyed by track id, 0-100. One setting serving
+   * three uses: what a song returns to when it is chosen, what a library track is put
+   * on at, and what a flow editor offers when this track joins a service. State rather
+   * than part of ready.tracks, because somebody adjusts it while clients are
+   * connected. Read-only — setTrackVolume moves it. A flow carries its own level for
+   * every track it plays, so changing this never rewrites a service already written.
+   */
+  trackVolumes: TrackVolume[];
   /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.
@@ -496,6 +522,7 @@ export type InvokeRequest =
   | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
+  | { command: 'setTrackVolume'; args: { id: string; volume: number } }
   | { command: 'selectTrack'; args: { id: string } }
   ;
 

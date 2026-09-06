@@ -1,13 +1,23 @@
 import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { SocketTestHelper, ensureServer, stopServer } from './test-helpers.ts';
+import { SocketTestHelper, ensureServer, stopServer, TEST_ADMIN_PASSWORD } from './test-helpers.ts';
 import { MuteState, PlaybackState, RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): mirrors the test manifest's deck volumes
-const DEFAULT_SONG_VOLUMES: Record<string, number> = { calm: 50, fervent: 35 };
+// Note(yoochan.kim): a level is state now, not a manifest constant, so the test sets the
+// one it is about to assert rather than mirroring a file.
+const TEST_LEVEL = 37;
+
+async function connectAuthedAdmin(): Promise<SocketTestHelper> {
+  const admin = new SocketTestHelper();
+  await admin.open('write-admin');
+  const authed = admin.waitForState((patch) => patch.isAdmin !== undefined);
+  admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
+  await authed;
+  return admin;
+}
 
 // Note(yoochan.kim): Safety net: pins the write -> state contract, and the refusal reasons a
 // client relies on to explain why nothing happened.
@@ -62,6 +72,12 @@ describe('Write Tests', () => {
       const current = (await actor.read()).song;
       const target = current === 'calm' ? 'fervent' : 'calm';
 
+      const admin = await connectAuthedAdmin();
+      const levelled = admin.waitForState((patch) => patch.trackVolumes !== undefined);
+      admin.invoke('setTrackVolume', { id: target, volume: TEST_LEVEL });
+      await levelled;
+      admin.disconnect();
+
       const observed = actor.waitForState((patch) => patch.song !== undefined);
       actor.write('song', target);
 
@@ -69,7 +85,7 @@ describe('Write Tests', () => {
       // all of them is what keeps a client from rendering a half-applied state.
       const patch = await observed;
       assert.strictEqual(patch.song, target);
-      assert.strictEqual(patch.volume, DEFAULT_SONG_VOLUMES[target]);
+      assert.strictEqual(patch.volume, TEST_LEVEL, 'the level it was set to is the level it returns to');
       assert.strictEqual(patch.playback, PlaybackState.PAUSED);
     } finally {
       actor.disconnect();

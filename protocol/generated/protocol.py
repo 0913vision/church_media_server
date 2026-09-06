@@ -94,12 +94,17 @@ class FlowLock(TypedDict):
     until: str  # Instant to release it. Must be after at, and must cover every part.
 
 
+class TrackVolume(TypedDict):
+    """One track's level"""
+    id: str  # Track id from ready.tracks
+    volume: float  # 0-100
+
+
 class Track(TypedDict):
     """A playable library entry. File paths never leave the server."""
     id: str  # Stable identifier used by startFlow
     title: str  # Human-readable name
     durationSec: float  # Length in seconds, measured from the file
-    volume: float  # The level this track sounds at when nobody says otherwise, 0-100. Sent so an editor can offer it as the starting value when someone adds this track to a flow; the flow itself then carries a level for every track it plays.
 
 
 class ScheduledTrack(TypedDict):
@@ -240,6 +245,7 @@ class State(TypedDict):
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and reset to true when it opens — like everything else the gate changes, it goes back to the user's state.
+    trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether reaching the end of what is playing releases the gate by itself, restoring the user's song on the way out. For putting one piece on and walking away. Means nothing while loop is on, since a repeating track never ends. Writable only while the gate is held, and false again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
@@ -257,6 +263,7 @@ class StatePatch(TypedDict, total=False):
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and reset to true when it opens — like everything else the gate changes, it goes back to the user's state.
+    trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether reaching the end of what is playing releases the gate by itself, restoring the user's song on the way out. For putting one piece on and walking away. Means nothing while loop is on, since a repeating track never ends. Writable only while the gate is held, and false again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
@@ -337,6 +344,16 @@ class StopFlowArgs(TypedDict):
     pass
 
 
+class SetTrackVolumeArgs(TypedDict):
+    """
+    Set the level a track sounds at, kept across restarts. Applies from the
+    next time the track is chosen — it does not move a level that is already
+    playing, which is what the volume attribute is for.
+    """
+    id: str  # Track id from ready.tracks
+    volume: float  # 0-100
+
+
 class SelectTrackArgs(TypedDict):
     """
     Put a library track on the deck, paused at its start, at its own level —
@@ -361,6 +378,7 @@ ATTRIBUTES: dict[str, dict] = {
     "volume": {"access": "rw", "permission": "any", "range": (0, 100)},
     "mute": {"access": "rw", "permission": "any"},
     "loop": {"access": "rw", "permission": "admin"},
+    "trackVolumes": {"access": "ro"},
     "deck": {"access": "ro"},
     "unlockWhenDone": {"access": "rw", "permission": "admin"},
     "song": {"access": "rw", "permission": "any"},
@@ -378,6 +396,7 @@ COMMANDS: dict[str, dict] = {
     "initializeConsole": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
+    "setTrackVolume": {"permission": "admin"},
     "selectTrack": {"permission": "admin"},
 }
 

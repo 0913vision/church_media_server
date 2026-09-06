@@ -25,14 +25,15 @@ class Player {
    * @param device - Audio output (injected by the composition root)
    * @param initialConfig - Starting state (defaults, or restored preferences
    *   with state forced to PAUSED by the composition root)
-   * @param songVolumes - The volume each song returns to, from the manifest
+   * @param songVolumeOf - The level a song returns to. Asked each time rather than
+   *   held, so a level someone adjusts takes effect on the next selection.
    * @param persist - Called with the preferences snapshot whenever they change,
    *   so they survive a restart / reboot
    */
   constructor(
     private readonly device: AudioOutput,
     initialConfig: PlayerConfig,
-    private readonly songVolumes: Record<SongId, number>,
+    private readonly songVolumeOf: (song: SongId) => number,
     private readonly persist: (state: PersistedState) => void
   ) {
     this.state = { ...initialConfig };
@@ -165,7 +166,7 @@ class Player {
       throw error;
     }
 
-    const newVolume = this.songVolumes[newSong]!;
+    const newVolume = this.songVolumeOf(newSong);
 
     try {
       this.device.setVolume(this.isMuted() ? 0 : newVolume);

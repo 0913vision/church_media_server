@@ -31,7 +31,8 @@ describe('Track Library Tests', () => {
       const { ready } = await sock.open();
 
       for (const track of ready.tracks) {
-        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title', 'volume']);
+        // Note(yoochan.kim): no level here — that is state, and rides the trackVolumes attribute.
+        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title']);
       }
     } finally {
       sock.disconnect();

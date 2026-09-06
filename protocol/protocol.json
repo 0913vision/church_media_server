@@ -77,13 +77,19 @@
         "until": { "type": "string", "description": "Instant to release it. Must be after at, and must cover every part." }
       }
     },
+    "TrackVolume": {
+      "description": "One track's level",
+      "fields": {
+        "id": { "type": "string", "description": "Track id from ready.tracks" },
+        "volume": { "type": "number", "description": "0-100" }
+      }
+    },
     "Track": {
       "description": "A playable library entry. File paths never leave the server.",
       "fields": {
         "id": { "type": "string", "description": "Stable identifier used by startFlow" },
         "title": { "type": "string", "description": "Human-readable name" },
-        "durationSec": { "type": "number", "description": "Length in seconds, measured from the file" },
-        "volume": { "type": "number", "description": "The level this track sounds at when nobody says otherwise, 0-100. Sent so an editor can offer it as the starting value when someone adds this track to a flow; the flow itself then carries a level for every track it plays." }
+        "durationSec": { "type": "number", "description": "Length in seconds, measured from the file" }
       }
     },
     "ScheduledTrack": {
@@ -220,6 +226,11 @@
       "access": "rw",
       "permission": "admin"
     },
+    "trackVolumes": {
+      "description": "The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.",
+      "type": "TrackVolume[]",
+      "access": "ro"
+    },
     "deck": {
       "description": "What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.",
       "type": "DeckSource",
@@ -298,6 +309,14 @@
       "description": "End the running flow now: stop playback, restore the user's song, release the admin lock.",
       "permission": "admin",
       "args": {}
+    },
+    "setTrackVolume": {
+      "description": "Set the level a track sounds at, kept across restarts. Applies from the next time the track is chosen — it does not move a level that is already playing, which is what the volume attribute is for.",
+      "permission": "admin",
+      "args": {
+        "id": { "type": "string", "description": "Track id from ready.tracks" },
+        "volume": { "type": "number", "description": "0-100" }
+      }
     },
     "selectTrack": {
       "description": "Put a library track on the deck, paused at its start, at its own level — the same act as writing the song attribute, for the tracks that are not among ready.songs. Playing it is a separate write to playback. Refused with adminUnlocked unless the gate is held: while the panel is open it shows the song it thinks is playing, and a track it never chose would make that a lie. Releasing the gate takes the track off and puts the user's song back.",
