@@ -66,6 +66,7 @@ export const RejectReason = {
   ADMIN_UNLOCKED: 'adminUnlocked',
   DEVICE_BUSY: 'deviceBusy',
   UNKNOWN_TRACK: 'unknownTrack',
+  UNKNOWN_FLOW: 'unknownFlow',
   FLOW_ACTIVE: 'flowActive',
   NO_FLOW: 'noFlow',
   WINDOW_PASSED: 'windowPassed',
@@ -143,6 +144,39 @@ export interface ScheduledTrack {
   volume: number;
 }
 
+/** The window a scheduled flow holds the gate for, as a weekly entry states it. */
+export interface ScheduleLock {
+  /** HH:MM or HH:MM:SS, church time */
+  at: string;
+  /** When it opens again */
+  until: ScheduleUntil;
+}
+
+/**
+ * One flow on the weekly calendar. A definition, not a run: editing it never touches a
+ * run already in flight, because the runner was handed a copy when it started.
+ */
+export interface ScheduleEntry {
+  /** Stable identifier, chosen by whoever wrote the entry */
+  id: string;
+  /** Display name, e.g. '수요 예배' */
+  name: string;
+  /** Which days it may run: mon, tue, wed, thu, fri, sat, sun. At least one. */
+  weekdays: string[];
+  /**
+   * Whether it starts without anybody approving it. Dangerous on purpose: an
+   * unattended service still needs its music.
+   */
+  autoStart: boolean;
+  /** The gate window. Every flow has one. */
+  lock: ScheduleLock;
+  /**
+   * What it does besides holding the gate. Empty for a lock-only flow; at most one of
+   * each kind.
+   */
+  parts: SchedulePart[];
+}
+
 /** Which track of a flow is sounding right now */
 export interface FlowTrack {
   title: string;
@@ -171,6 +205,37 @@ export interface ConsoleInput {
   nominalDb: number;
   state: ConsoleRead;
 }
+
+/**
+ * When a scheduled flow's gate opens again. Written as an intent rather than a copied
+ * time, so moving the music moves the gate with it.
+ */
+export type ScheduleUntil =
+  /** With the music. The usual case, and only valid on an entry that has a music part. */
+  | { kind: 'music' }
+  /**
+   * At a time of its own — for an entry that holds the gate over something other than
+   * music.
+   */
+  | { kind: 'clock'; at: string }
+  ;
+export const ScheduleUntilKind = {
+  MUSIC: 'music',
+  CLOCK: 'clock',
+} as const;
+
+/**
+ * One thing a scheduled flow does, in the calendar's own vocabulary. The same kinds as
+ * FlowPart, but the times are wall-clock rather than instants: a weekly entry says
+ * 19:30, and which 19:30 is decided when it starts.
+ */
+export type SchedulePart =
+  /** Play these tracks in order so the last one finishes at endsAt. */
+  | { kind: 'music'; tracks: ScheduledTrack[]; endsAt: string }
+  ;
+export const SchedulePartKind = {
+  MUSIC: 'music',
+} as const;
 
 /**
  * One thing a flow does on top of holding the gate. The lock is not among these: every
@@ -326,6 +391,14 @@ export const ATTRIBUTES = {
    */
   flow: { access: 'ro' },
   /**
+   * The weekly calendar this server keeps: every flow that may be run, in the order
+   * they were written. State rather than a one-shot list, because it is edited while
+   * clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here
+   * because it is persistent, and because whether a track may be deleted depends on
+   * whether a flow still names it, which only whoever holds both can answer.
+   */
+  schedule: { access: 'ro' },
+  /**
    * How far ahead of standard time the church clock runs, in seconds. Negative means
    * behind. Every instant on this wire is read against it, so writing it moves the
    * whole schedule. Refused with adminLocked while the gate is held: a flow holds the
@@ -367,18 +440,19 @@ export const COMMANDS = {
    */
   initializeConsole: { permission: 'any' },
   /**
-   * Hand the server one flow to run, and it owns that run to the end: it keeps to the
-   * wall clock, restores the user's song afterwards, and cleans up however it
-   * finishes. The schedule this came from stays with the caller — the server holds no
-   * flow definitions and no calendar, it only executes what it is given. Every flow
-   * holds the admin gate for a window it names, and music must finish inside that
-   * window: running past the unlock is refused with musicOutsideLock rather than
-   * played on an open panel, as is music that would end before the gate even engages,
-   * since it could never sound. A timeline that begins before the window is accepted —
-   * the sound starts with the lock and joins the timeline where it already is, the
-   * opening cut exactly like a late start. Only one flow runs at a time. A flow whose
-   * window has already closed is refused with windowPassed rather than accepted and
-   * completed instantly, so pressing start never looks like nothing happened.
+   * Hand the server one run, spelled out in instants, and it owns that run to the end:
+   * it keeps to the wall clock, restores the user's song afterwards, and cleans up
+   * however it finishes. This is the primitive underneath startScheduledFlow, which is
+   * how a calendar entry is normally run — reach for this one only to run something
+   * that is not on the calendar. Every flow holds the admin gate for a window it
+   * names, and music must finish inside that window: running past the unlock is
+   * refused with musicOutsideLock rather than played on an open panel, as is music
+   * that would end before the gate even engages, since it could never sound. A
+   * timeline that begins before the window is accepted — the sound starts with the
+   * lock and joins the timeline where it already is, the opening cut exactly like a
+   * late start. Only one flow runs at a time. A flow whose window has already closed
+   * is refused with windowPassed rather than accepted and completed instantly, so
+   * pressing start never looks like nothing happened.
    */
   startFlow: { permission: 'admin' },
   /**
@@ -386,6 +460,30 @@ export const COMMANDS = {
    * admin lock.
    */
   stopFlow: { permission: 'admin' },
+  /**
+   * Create or replace one calendar entry, and write the calendar to disk. Validated
+   * the way the file is at boot, so an entry saved here cannot be one the next boot
+   * refuses. Refused with musicOutsideLock if the music could not finish inside the
+   * gate window, and with unknownTrack if it names a track this server does not have —
+   * both caught while somebody is still editing rather than at 19:30 on a Wednesday.
+   */
+  saveFlow: { permission: 'admin' },
+  /**
+   * Remove one calendar entry. A run already in flight is untouched — it stopped being
+   * this entry the moment it started.
+   */
+  deleteFlow: { permission: 'admin' },
+  /**
+   * Run a calendar entry now. The server turns its wall-clock times into instants
+   * against church time and the day it is being started on, then runs it exactly as
+   * startFlow would. Refused with windowPassed if today is not one of its weekdays.
+   */
+  startScheduledFlow: { permission: 'admin' },
+  /**
+   * Pass over today's occurrence of an auto-start entry. Next week stands. Forgotten
+   * at the end of the day and on restart — a skip is about one service, not a setting.
+   */
+  skipFlow: { permission: 'admin' },
   /**
    * Set the level a track sounds at, kept across restarts. Applies from the next time
    * the track is chosen — it does not move a level that is already playing, which is
@@ -486,6 +584,14 @@ export interface State {
    */
   flow: FlowStatus;
   /**
+   * The weekly calendar this server keeps: every flow that may be run, in the order
+   * they were written. State rather than a one-shot list, because it is edited while
+   * clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here
+   * because it is persistent, and because whether a track may be deleted depends on
+   * whether a flow still names it, which only whoever holds both can answer.
+   */
+  schedule: ScheduleEntry[];
+  /**
    * How far ahead of standard time the church clock runs, in seconds. Negative means
    * behind. Every instant on this wire is read against it, so writing it moves the
    * whole schedule. Refused with adminLocked while the gate is held: a flow holds the
@@ -522,6 +628,10 @@ export type InvokeRequest =
   | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
+  | { command: 'saveFlow'; args: { flow: ScheduleEntry } }
+  | { command: 'deleteFlow'; args: { id: string } }
+  | { command: 'startScheduledFlow'; args: { id: string } }
+  | { command: 'skipFlow'; args: { id: string } }
   | { command: 'setTrackVolume'; args: { id: string; volume: number } }
   | { command: 'selectTrack'; args: { id: string } }
   ;

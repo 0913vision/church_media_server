@@ -32,6 +32,9 @@ const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(
 // sets a level would edit the library this building plays from.
 const TEST_TRACKS_SOURCE = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
+// Note(yoochan.kim): the calendar starts empty for the same reason — a test that saves a
+// flow must not write the one this building runs on.
+const TEST_SCHEDULE_FILE_PATH = path.join(os.tmpdir(), `cms-test-schedule-${process.pid}.json`);
 // Note(yoochan.kim): Who clients are told to call. Required like everything else, so it has to be
 // declared here too — the bootstrap lists the environment rather than reading
 // .env, which is what keeps a developer's own config out of the test run.
@@ -94,6 +97,7 @@ export async function ensureServer(): Promise<void> {
   process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
   process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
+  process.env.SCHEDULE_FILE_PATH = TEST_SCHEDULE_FILE_PATH;
   process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
   process.env.FILESERVER_URL = TEST_FILESERVER_URL;
@@ -101,6 +105,7 @@ export async function ensureServer(): Promise<void> {
   // Note(yoochan.kim): Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
   copyManifest();
+  fs.writeFileSync(TEST_SCHEDULE_FILE_PATH, '[]', 'utf8');
 
   const { default: MediaServer } = await import('../../server/server.ts');
   const server: StoppableServer = new MediaServer();
@@ -120,6 +125,7 @@ export async function stopServer(): Promise<void> {
     startedServer.stop();
     startedServer = null;
     fs.rmSync(TEST_TRACKS_MANIFEST_PATH, { force: true });
+    fs.rmSync(TEST_SCHEDULE_FILE_PATH, { force: true });
   }
 }
 

@@ -47,6 +47,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `audioLock` | `boolean` | 읽기 전용 | — | True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions. |
 | `isAdmin` | `boolean` | 읽기 전용 | — | Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes. |
 | `flow` | `FlowStatus` | 읽기 전용 | — | What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it. |
+| `schedule` | `ScheduleEntry[]` | 읽기 전용 | — | The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer. |
 | `clockOffsetSec` | `number` (-3600–3600) | 읽기/쓰기 | admin | How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts. |
 | `console` | `ConsoleInput[]` | 읽기 전용 | — | The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face. |
 
@@ -84,7 +85,7 @@ _필드 없음._
 
 권한: admin
 
-Hand the server one flow to run, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. The schedule this came from stays with the caller — the server holds no flow definitions and no calendar, it only executes what it is given. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
+Hand the server one run, spelled out in instants, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. This is the primitive underneath startScheduledFlow, which is how a calendar entry is normally run — reach for this one only to run something that is not on the calendar. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -100,6 +101,46 @@ Hand the server one flow to run, and it owns that run to the end: it keeps to th
 End the running flow now: stop playback, restore the user's song, release the admin lock.
 
 _필드 없음._
+
+### `saveFlow`
+
+권한: admin
+
+Create or replace one calendar entry, and write the calendar to disk. Validated the way the file is at boot, so an entry saved here cannot be one the next boot refuses. Refused with musicOutsideLock if the music could not finish inside the gate window, and with unknownTrack if it names a track this server does not have — both caught while somebody is still editing rather than at 19:30 on a Wednesday.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `flow` | `ScheduleEntry` | The entry to write. A known id replaces in place; a new one is appended. |
+
+### `deleteFlow`
+
+권한: admin
+
+Remove one calendar entry. A run already in flight is untouched — it stopped being this entry the moment it started.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Entry id from the schedule attribute |
+
+### `startScheduledFlow`
+
+권한: admin
+
+Run a calendar entry now. The server turns its wall-clock times into instants against church time and the day it is being started on, then runs it exactly as startFlow would. Refused with windowPassed if today is not one of its weekdays.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Entry id from the schedule attribute |
+
+### `skipFlow`
+
+권한: admin
+
+Pass over today's occurrence of an auto-start entry. Next week stands. Forgotten at the end of the day and on restart — a skip is about one service, not a setting.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Entry id from the schedule attribute |
 
 ### `setTrackVolume`
 
@@ -152,7 +193,7 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"protocolMismatch"`
 
 ## 객체
 
@@ -210,6 +251,28 @@ One track in a flow's music sequence, with the level it plays at. The level is a
 | --- | --- | --- |
 | `id` | `string` | Track id from ready.tracks |
 | `volume` | `number` | Level for this track in this flow, 0-100 |
+
+### ScheduleLock
+
+The window a scheduled flow holds the gate for, as a weekly entry states it.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `at` | `string` | HH:MM or HH:MM:SS, church time |
+| `until` | `ScheduleUntil` | When it opens again |
+
+### ScheduleEntry
+
+One flow on the weekly calendar. A definition, not a run: editing it never touches a run already in flight, because the runner was handed a copy when it started.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Stable identifier, chosen by whoever wrote the entry |
+| `name` | `string` | Display name, e.g. '수요 예배' |
+| `weekdays` | `string[]` | Which days it may run: mon, tue, wed, thu, fri, sat, sun. At least one. |
+| `autoStart` | `boolean` | Whether it starts without anybody approving it. Dangerous on purpose: an unattended service still needs its music. |
+| `lock` | `ScheduleLock` | The gate window. Every flow has one. |
+| `parts` | `SchedulePart[]` | What it does besides holding the gate. Empty for a lock-only flow; at most one of each kind. |
 
 ### FlowTrack
 

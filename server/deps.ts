@@ -5,6 +5,8 @@ import type AdminSessionManager from './auth/AdminSessionManager.ts';
 import type MixerConsole from './console/MixerConsole.ts';
 import type TrackLibrary from './tracks/TrackLibrary.ts';
 import type FlowRunner from './flow/FlowRunner.ts';
+import type Schedule from './schedule/Schedule.ts';
+import type AutoStarter from './schedule/AutoStarter.ts';
 import type TrackWatch from './player/TrackWatch.ts';
 import type Clock from './clock/Clock.ts';
 
@@ -26,6 +28,10 @@ export interface ServerDeps {
   trackLibrary: TrackLibrary;
   /** Runs the one flow this server may have in flight */
   flowRunner: FlowRunner;
+  /** The weekly calendar: which flows exist and when they may run */
+  schedule: Schedule;
+  /** Starts the calendar's auto-start entries when their window opens */
+  autoStarter: AutoStarter;
   /** Releases the gate when an admin's track reaches its end */
   trackWatch: TrackWatch;
   /** Church time — every instant on the wire is read against it */

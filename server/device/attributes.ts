@@ -190,6 +190,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.trackLibrary.volumes(),
   },
 
+  schedule: {
+    read: (deps) => deps.schedule.list(),
+  },
+
   deck: {
     read: (deps) => deps.player.getDeck(),
   },

@@ -57,6 +57,7 @@ class RejectReason(str, Enum):
     ADMIN_UNLOCKED = "adminUnlocked"
     DEVICE_BUSY = "deviceBusy"
     UNKNOWN_TRACK = "unknownTrack"
+    UNKNOWN_FLOW = "unknownFlow"
     FLOW_ACTIVE = "flowActive"
     NO_FLOW = "noFlow"
     WINDOW_PASSED = "windowPassed"
@@ -119,6 +120,29 @@ class ScheduledTrack(TypedDict):
     volume: float  # Level for this track in this flow, 0-100
 
 
+class ScheduleLock(TypedDict):
+    """
+    The window a scheduled flow holds the gate for, as a weekly entry states
+    it.
+    """
+    at: str  # HH:MM or HH:MM:SS, church time
+    until: ScheduleUntil  # When it opens again
+
+
+class ScheduleEntry(TypedDict):
+    """
+    One flow on the weekly calendar. A definition, not a run: editing it never
+    touches a run already in flight, because the runner was handed a copy when
+    it started.
+    """
+    id: str  # Stable identifier, chosen by whoever wrote the entry
+    name: str  # Display name, e.g. '수요 예배'
+    weekdays: list[str]  # Which days it may run: mon, tue, wed, thu, fri, sat, sun. At least one.
+    autoStart: bool  # Whether it starts without anybody approving it. Dangerous on purpose: an unattended service still needs its music.
+    lock: ScheduleLock  # The gate window. Every flow has one.
+    parts: list[SchedulePart]  # What it does besides holding the gate. Empty for a lock-only flow; at most one of each kind.
+
+
 class FlowTrack(TypedDict):
     """Which track of a flow is sounding right now"""
     title: str
@@ -139,6 +163,45 @@ class ConsoleInput(TypedDict):
     label: str  # What to call it on screen, e.g. '목사님 마이크'
     nominalDb: float  # Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand.
     state: ConsoleRead
+
+
+class ScheduleUntilMusic(TypedDict):
+    """
+    With the music. The usual case, and only valid on an entry that has a
+    music part.
+    """
+    kind: Literal["music"]
+
+
+class ScheduleUntilClock(TypedDict):
+    """
+    At a time of its own — for an entry that holds the gate over something
+    other than music.
+    """
+    kind: Literal["clock"]
+    at: str  # HH:MM or HH:MM:SS, church time
+
+
+"""
+When a scheduled flow's gate opens again. Written as an intent rather than a
+copied time, so moving the music moves the gate with it.
+"""
+ScheduleUntil = ScheduleUntilMusic | ScheduleUntilClock
+
+
+class SchedulePartMusic(TypedDict):
+    """Play these tracks in order so the last one finishes at endsAt."""
+    kind: Literal["music"]
+    tracks: list[ScheduledTrack]  # The tracks in play order, each with the level it plays at
+    endsAt: str  # HH:MM or HH:MM:SS, church time. Seconds are allowed because track lengths are not whole minutes.
+
+
+"""
+One thing a scheduled flow does, in the calendar's own vocabulary. The same
+kinds as FlowPart, but the times are wall-clock rather than instants: a weekly
+entry says 19:30, and which 19:30 is decided when it starts.
+"""
+SchedulePart = SchedulePartMusic
 
 
 class FlowPartMusic(TypedDict):
@@ -253,6 +316,7 @@ class State(TypedDict):
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
+    schedule: list[ScheduleEntry]  # The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
     console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
 
@@ -271,6 +335,7 @@ class StatePatch(TypedDict, total=False):
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
+    schedule: list[ScheduleEntry]  # The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
     console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
 
@@ -315,20 +380,20 @@ class InitializeConsoleArgs(TypedDict):
 
 class StartFlowArgs(TypedDict):
     """
-    Hand the server one flow to run, and it owns that run to the end: it keeps
-    to the wall clock, restores the user's song afterwards, and cleans up
-    however it finishes. The schedule this came from stays with the caller —
-    the server holds no flow definitions and no calendar, it only executes
-    what it is given. Every flow holds the admin gate for a window it names,
-    and music must finish inside that window: running past the unlock is
-    refused with musicOutsideLock rather than played on an open panel, as is
-    music that would end before the gate even engages, since it could never
-    sound. A timeline that begins before the window is accepted — the sound
-    starts with the lock and joins the timeline where it already is, the
-    opening cut exactly like a late start. Only one flow runs at a time. A
-    flow whose window has already closed is refused with windowPassed rather
-    than accepted and completed instantly, so pressing start never looks like
-    nothing happened.
+    Hand the server one run, spelled out in instants, and it owns that run to
+    the end: it keeps to the wall clock, restores the user's song afterwards,
+    and cleans up however it finishes. This is the primitive underneath
+    startScheduledFlow, which is how a calendar entry is normally run — reach
+    for this one only to run something that is not on the calendar. Every flow
+    holds the admin gate for a window it names, and music must finish inside
+    that window: running past the unlock is refused with musicOutsideLock
+    rather than played on an open panel, as is music that would end before the
+    gate even engages, since it could never sound. A timeline that begins
+    before the window is accepted — the sound starts with the lock and joins
+    the timeline where it already is, the opening cut exactly like a late
+    start. Only one flow runs at a time. A flow whose window has already
+    closed is refused with windowPassed rather than accepted and completed
+    instantly, so pressing start never looks like nothing happened.
     """
     id: str  # The caller's own id for this flow, uninterpreted and handed back on every status.
     name: str  # Display name, e.g. '수요 예배'
@@ -342,6 +407,45 @@ class StopFlowArgs(TypedDict):
     the admin lock.
     """
     pass
+
+
+class SaveFlowArgs(TypedDict):
+    """
+    Create or replace one calendar entry, and write the calendar to disk.
+    Validated the way the file is at boot, so an entry saved here cannot be
+    one the next boot refuses. Refused with musicOutsideLock if the music
+    could not finish inside the gate window, and with unknownTrack if it names
+    a track this server does not have — both caught while somebody is still
+    editing rather than at 19:30 on a Wednesday.
+    """
+    flow: ScheduleEntry  # The entry to write. A known id replaces in place; a new one is appended.
+
+
+class DeleteFlowArgs(TypedDict):
+    """
+    Remove one calendar entry. A run already in flight is untouched — it
+    stopped being this entry the moment it started.
+    """
+    id: str  # Entry id from the schedule attribute
+
+
+class StartScheduledFlowArgs(TypedDict):
+    """
+    Run a calendar entry now. The server turns its wall-clock times into
+    instants against church time and the day it is being started on, then runs
+    it exactly as startFlow would. Refused with windowPassed if today is not
+    one of its weekdays.
+    """
+    id: str  # Entry id from the schedule attribute
+
+
+class SkipFlowArgs(TypedDict):
+    """
+    Pass over today's occurrence of an auto-start entry. Next week stands.
+    Forgotten at the end of the day and on restart — a skip is about one
+    service, not a setting.
+    """
+    id: str  # Entry id from the schedule attribute
 
 
 class SetTrackVolumeArgs(TypedDict):
@@ -386,6 +490,7 @@ ATTRIBUTES: dict[str, dict] = {
     "audioLock": {"access": "ro"},
     "isAdmin": {"access": "ro"},
     "flow": {"access": "ro"},
+    "schedule": {"access": "ro"},
     "clockOffsetSec": {"access": "rw", "permission": "admin", "range": (-3600, 3600)},
     "console": {"access": "ro"},
 }
@@ -396,6 +501,10 @@ COMMANDS: dict[str, dict] = {
     "initializeConsole": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
+    "saveFlow": {"permission": "admin"},
+    "deleteFlow": {"permission": "admin"},
+    "startScheduledFlow": {"permission": "admin"},
+    "skipFlow": {"permission": "admin"},
     "setTrackVolume": {"permission": "admin"},
     "selectTrack": {"permission": "admin"},
 }

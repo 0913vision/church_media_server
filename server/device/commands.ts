@@ -4,6 +4,7 @@ import { ADMIN_CONFIG } from '../constants/authConfig.ts';
 import { verifyPassword } from '../auth/password.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
+import { runsOn } from '../schedule/Schedule.ts';
 import { log } from '../utils/logger.ts';
 
 /**
@@ -33,6 +34,24 @@ export interface CommandSpec {
 /** Untrusted args as a plain object; an empty one when the payload is not */
 function argsObject(args: unknown): Record<string, unknown> {
   return typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+/**
+ * Track ids an unchecked calendar entry appears to name.
+ *
+ * Note(yoochan.kim): read off the raw payload, before the calendar has validated it, so
+ * a nonexistent track is answered with unknownTrack rather than swallowed into
+ * a generic invalidValue. Anything malformed simply names nothing here and the
+ * calendar refuses it a moment later.
+ */
+function tracksNamedBy(entry: unknown): string[] {
+  const parts = argsObject(entry).parts;
+  if (!Array.isArray(parts)) return [];
+  return parts.flatMap((part) => {
+    const tracks = argsObject(part).tracks;
+    if (!Array.isArray(tracks)) return [];
+    return tracks.map((track) => argsObject(track).id).filter((id): id is string => typeof id === 'string');
+  });
 }
 
 /**
@@ -110,6 +129,66 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   stopFlow: {
     async run(_args, deps) {
       return deps.flowRunner.stop();
+    },
+  },
+
+  saveFlow: {
+    async run(args, deps) {
+      const entry = argsObject(args).flow;
+      // Note(yoochan.kim): the calendar checks its own shape and its own arithmetic; only
+      // "is this a track we have" needs the library, so only that is asked here.
+      const named = tracksNamedBy(entry);
+      for (const id of named) {
+        if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
+      }
+
+      const saved = deps.schedule.save(entry);
+      if (!saved.ok) {
+        log.warn('command', null, 'Refused a calendar entry', { reason: saved.reason });
+        return refuse(RejectReason.INVALID_VALUE);
+      }
+
+      deps.notifier.state({ schedule: deps.schedule.list() });
+      return DONE;
+    },
+  },
+
+  deleteFlow: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      if (!deps.schedule.remove(id)) return refuse(RejectReason.UNKNOWN_FLOW);
+
+      deps.notifier.state({ schedule: deps.schedule.list() });
+      return DONE;
+    },
+  },
+
+  startScheduledFlow: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+
+      const entry = deps.schedule.get(id);
+      if (!entry) return refuse(RejectReason.UNKNOWN_FLOW);
+
+      // Note(yoochan.kim): which day a bare "19:30" belongs to is the calendar's decision,
+      // and it is made against the day somebody pressed start.
+      const now = deps.clock.now();
+      if (!runsOn(entry, now)) return refuse(RejectReason.WINDOW_PASSED);
+
+      return deps.flowRunner.start(deps.schedule.toRunArgs(entry, now));
+    },
+  },
+
+  skipFlow: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      if (!deps.schedule.get(id)) return refuse(RejectReason.UNKNOWN_FLOW);
+
+      deps.autoStarter.skip(id);
+      return DONE;
     },
   },
 

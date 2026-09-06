@@ -17,6 +17,8 @@ import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
 import FlowRunner from './flow/FlowRunner.ts';
+import Schedule from './schedule/Schedule.ts';
+import AutoStarter from './schedule/AutoStarter.ts';
 import TrackWatch from './player/TrackWatch.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
@@ -42,6 +44,7 @@ class MediaServer {
   private io: TypedServer | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private flowRunner: FlowRunner | null = null;
+  private autoStarter: AutoStarter | null = null;
   private trackWatch: TrackWatch | null = null;
 
   start(): void {
@@ -79,6 +82,7 @@ class MediaServer {
     // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
+    const schedule = new Schedule(requireEnv('SCHEDULE_FILE_PATH'));
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();
     // Note(yoochan.kim): a song dropped from the manifest since the last run no
@@ -120,6 +124,9 @@ class MediaServer {
     this.flowRunner = flowRunner;
     const trackWatch = new TrackWatch(player, lockCoordinator, notifier);
     this.trackWatch = trackWatch;
+    const autoStarter = new AutoStarter(schedule, clock, flowRunner);
+    this.autoStarter = autoStarter;
+    autoStarter.start();
 
     const deps: ServerDeps = {
       notifier,
@@ -129,6 +136,8 @@ class MediaServer {
       mixerConsole,
       trackLibrary,
       flowRunner,
+      schedule,
+      autoStarter,
       trackWatch,
       clock,
     };
@@ -171,6 +180,10 @@ class MediaServer {
     if (this.flowRunner) {
       this.flowRunner.dispose();
       this.flowRunner = null;
+    }
+    if (this.autoStarter) {
+      this.autoStarter.dispose();
+      this.autoStarter = null;
     }
     if (this.trackWatch) {
       this.trackWatch.dispose();
