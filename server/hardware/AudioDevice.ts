@@ -42,15 +42,16 @@ class AudioDevice implements AudioOutput {
   /**
    * Whether the file on the deck has run out.
    *
-   * Note(yoochan.kim): asked of mpv rather than worked out from a duration and a clock.
-   * A track can be paused part-way, and a timer started when it began would go
-   * off while it sat there stopped.
+   * Note(yoochan.kim): asked of mpv rather than worked out from a duration and a clock,
+   * since a track can sit paused part-way. `idle-active` rather than the
+   * `eof-reached` you would reach for first: at the end of a file mpv unloads it,
+   * and a property of a file that is gone reads as null, never as yes.
    */
   hasEnded(): boolean {
     try {
-      return this.mpv.getProperty("eof-reached") === "yes";
+      return this.mpv.getProperty("idle-active") === "yes";
     } catch (error) {
-      log.error('audioDevice', null, 'Failed to read eof-reached', { error: errorMessage(error) });
+      log.error('audioDevice', null, 'Failed to read idle-active', { error: errorMessage(error) });
       return false;
     }
   }
