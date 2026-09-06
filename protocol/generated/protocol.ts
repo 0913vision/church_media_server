@@ -63,6 +63,7 @@ export const RejectReason = {
   INVALID_PASSWORD: 'invalidPassword',
   NOT_ADMIN: 'notAdmin',
   ADMIN_LOCKED: 'adminLocked',
+  ADMIN_UNLOCKED: 'adminUnlocked',
   DEVICE_BUSY: 'deviceBusy',
   UNKNOWN_TRACK: 'unknownTrack',
   FLOW_ACTIVE: 'flowActive',
@@ -187,6 +188,22 @@ export const FlowPartKind = {
 } as const;
 
 /**
+ * What has the deck. The panel's own two-song deck is the ordinary case; a library
+ * track is something an admin put on while the gate was held, and it comes off again
+ * when the gate opens.
+ */
+export type DeckSource =
+  /** The panel's deck. Which song is in the song attribute. */
+  | { source: 'song' }
+  /** A library track, which only an admin holding the gate can put on */
+  | { source: 'track'; id: string }
+  ;
+export const DeckSourceKind = {
+  SONG: 'song',
+  TRACK: 'track',
+} as const;
+
+/**
  * One console input as last heard from the desk. The console answers over UDP with no
  * session, so silence is a real state: unknown says nobody has heard, not that the
  * input is off.
@@ -248,6 +265,26 @@ export const ATTRIBUTES = {
    * gate is keeping the panel out, not using the deck, so this stays writable then.
    */
   mute: { access: 'rw', permission: 'any' },
+  /**
+   * Whether what is on the deck repeats. Always true unless the gate is held: the
+   * panel's two songs are meant to run under a service without ending, and nobody at
+   * the panel should be able to stop that. Writable only while the gate is held, and
+   * reset to true when it opens — like everything else the gate changes, it goes back
+   * to the user's state.
+   */
+  loop: { access: 'rw', permission: 'admin' },
+  /**
+   * What is on the deck: the panel's own song, or a library track an admin put on.
+   * Read-only — song and playTrack are what move it.
+   */
+  deck: { access: 'ro' },
+  /**
+   * Whether reaching the end of what is playing releases the gate by itself, restoring
+   * the user's song on the way out. For putting one piece on and walking away. Means
+   * nothing while loop is on, since a repeating track never ends. Writable only while
+   * the gate is held, and false again once it opens.
+   */
+  unlockWhenDone: { access: 'rw', permission: 'admin' },
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
@@ -338,6 +375,14 @@ export const COMMANDS = {
    * admin lock.
    */
   stopFlow: { permission: 'admin' },
+  /**
+   * Put a library track on the deck, from its start, at its own level. Any track in
+   * ready.tracks, not only the ones a person may pick at the panel. Refused with
+   * adminUnlocked unless the gate is held: while the panel is open it shows the song
+   * it thinks is playing, and a track it never chose would make that a lie. Releasing
+   * the gate takes the track off and puts the user's song back.
+   */
+  playTrack: { permission: 'admin' },
 } as const;
 export type CommandName = keyof typeof COMMANDS;
 
@@ -364,6 +409,26 @@ export interface State {
    * gate is keeping the panel out, not using the deck, so this stays writable then.
    */
   mute: MuteState;
+  /**
+   * Whether what is on the deck repeats. Always true unless the gate is held: the
+   * panel's two songs are meant to run under a service without ending, and nobody at
+   * the panel should be able to stop that. Writable only while the gate is held, and
+   * reset to true when it opens — like everything else the gate changes, it goes back
+   * to the user's state.
+   */
+  loop: boolean;
+  /**
+   * What is on the deck: the panel's own song, or a library track an admin put on.
+   * Read-only — song and playTrack are what move it.
+   */
+  deck: DeckSource;
+  /**
+   * Whether reaching the end of what is playing releases the gate by itself, restoring
+   * the user's song on the way out. For putting one piece on and walking away. Means
+   * nothing while loop is on, since a repeating track never ends. Writable only while
+   * the gate is held, and false again once it opens.
+   */
+  unlockWhenDone: boolean;
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
@@ -416,6 +481,8 @@ export type WriteRequest =
   | { field: 'playback'; value: PlaybackState }
   | { field: 'volume'; value: number }
   | { field: 'mute'; value: MuteState }
+  | { field: 'loop'; value: boolean }
+  | { field: 'unlockWhenDone'; value: boolean }
   | { field: 'song'; value: string }
   | { field: 'adminLock'; value: boolean }
   | { field: 'clockOffsetSec'; value: number }
@@ -428,6 +495,7 @@ export type InvokeRequest =
   | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
+  | { command: 'playTrack'; args: { id: string } }
   ;
 
 /** C2S event names */

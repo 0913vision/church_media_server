@@ -49,5 +49,12 @@
     "file": "./audio/reflection-of-christ.mp3",
     "durationSec": 540,
     "volume": 50
+  },
+  {
+    "id": "his-love-toward-us",
+    "title": "우리를 향한 그의 사랑",
+    "file": "./audio/his-love-toward-us.mp3",
+    "durationSec": 178.7,
+    "volume": 50
   }
 ]

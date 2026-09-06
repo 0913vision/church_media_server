@@ -149,11 +149,59 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return deps.trackLibrary.isDeckSong(value) ? accept(value) : BAD_VALUE;
       },
       async (song, deps) => {
-        if (song === deps.player.getCurrentSong()) return {};
+        if (song === deps.player.getCurrentSong() && deps.player.getDeck().source === 'song') return {};
         // Note(yoochan.kim): Switching songs also pauses the deck and moves the volume to that
-        // song's default, so all three are reported together.
+        // song's default, so all three are reported together. It also takes the deck
+        // back from any track an admin put on, which is what restores looping.
+        await deps.player.restoreSong();
         await deps.player.changeSong(song);
-        return { song, playback: PlaybackState.PAUSED, volume: deps.trackLibrary.songVolumes()[song]! };
+        return {
+          song,
+          playback: PlaybackState.PAUSED,
+          volume: deps.trackLibrary.songVolumes()[song]!,
+          deck: deps.player.getDeck(),
+          loop: deps.player.getLoop(),
+        };
+      },
+    ),
+  },
+
+  loop: {
+    read: (deps) => deps.player.getLoop(),
+    write: writable(
+      false,
+      (value, deps) => {
+        if (typeof value !== 'boolean') return BAD_VALUE;
+        // Note(yoochan.kim): only while the gate is held. With the panel open its two
+        // songs must run without ending, and nobody there should be able to
+        // stop that.
+        if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        return accept(value);
+      },
+      async (loop, deps) => {
+        deps.player.setLoop(loop);
+        deps.trackWatch.sync();
+        return { loop };
+      },
+    ),
+  },
+
+  deck: {
+    read: (deps) => deps.player.getDeck(),
+  },
+
+  unlockWhenDone: {
+    read: (deps) => deps.trackWatch.isArmed(),
+    write: writable(
+      false,
+      (value, deps) => {
+        if (typeof value !== 'boolean') return BAD_VALUE;
+        if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        return accept(value);
+      },
+      async (unlockWhenDone, deps) => {
+        deps.trackWatch.set(unlockWhenDone);
+        return { unlockWhenDone };
       },
     ),
   },
@@ -173,8 +221,26 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return accept(value);
       },
       async (adminLock, deps) => {
+        // Note(yoochan.kim): whatever the gate changed goes back before it opens — fade
+        // out, stop, restore the user's song, and only then release. The panel must
+        // never open onto a deck holding something it never chose.
+        const patch: StatePatch = {};
+        if (!adminLock) {
+          if (deps.player.getDeck().source === 'track') {
+            await deps.player.restoreSong();
+            patch.deck = deps.player.getDeck();
+            patch.playback = deps.player.getState();
+            patch.volume = deps.player.getVolume();
+          }
+          // Note(yoochan.kim): the choices the gate offered go back whether or not a track
+          // was ever put on — the panel's songs run without ending again.
+          deps.player.setLoop(true);
+          deps.trackWatch.reset();
+          patch.loop = true;
+          patch.unlockWhenDone = false;
+        }
         deps.lockCoordinator.setAdminLock(adminLock);
-        return {};
+        return patch;
       },
     ),
   },

@@ -112,6 +112,36 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       return deps.flowRunner.stop();
     },
   },
+
+  playTrack: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      // Note(yoochan.kim): while the panel is open it shows the song it believes is
+      // playing, and a track it never chose would make that a lie.
+      if (!deps.lockCoordinator.getLockState().admin) return refuse(RejectReason.ADMIN_UNLOCKED);
+
+      const track = deps.trackLibrary.get(id);
+      if (!track) return refuse(RejectReason.UNKNOWN_TRACK);
+
+      // Note(yoochan.kim): a song the panel can pick is one that runs under a service,
+      // so it repeats; anything else is put on to be heard once.
+      const loop = deps.trackLibrary.isDeckSong(id);
+      const ran = await deps.lockCoordinator.withAudioLock(true, async () => {
+        deps.player.setLoop(loop);
+        await deps.player.playTrackAt(track, 0, track.volume, loop);
+      });
+      if (!ran) return refuse(RejectReason.DEVICE_BUSY);
+
+      deps.trackWatch.sync();
+      deps.notifier.state({
+        deck: deps.player.getDeck(),
+        playback: deps.player.getState(),
+        loop: deps.player.getLoop(),
+      });
+      return DONE;
+    },
+  },
 };
 
 /** Command names this server implements, for the ready payload */

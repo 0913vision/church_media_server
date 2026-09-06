@@ -18,8 +18,13 @@ export interface AudioOutput {
   pause(fade?: boolean): Promise<void>;
   /** Saves the song's live playback position into its time memory */
   captureSongTime(song: SongId): void;
+  /** Whether what is loaded repeats */
+  setLoop(loop: boolean): void;
+  /** Whether the file on the deck has run out */
+  hasEnded(): boolean;
+  /** Plays a library file from an offset, repeating only if asked */
+  playFileAt(filePath: string, offsetSec: number, loop?: boolean): Promise<void>;
   /** Loads a song file onto the looping two-song deck (no position save) */
   loadSong(song: SongId): void;
   loadLastSongTime(song: SongId): Promise<void>;
-  playFileAt(filePath: string, offsetSec: number): Promise<void>;
 }

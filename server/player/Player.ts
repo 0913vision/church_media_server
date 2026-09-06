@@ -1,4 +1,5 @@
 import { PlaybackState, MuteState } from '../protocol.ts';
+import type { DeckSource } from '../protocol.ts';
 import type { SongId } from '../constants/songs.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
@@ -13,6 +14,12 @@ class Player {
   private state: PlayerConfig;
   /** True while a scheduled library track occupies the deck (not a song) */
   private trackMode = false;
+  private trackId = '';
+  /**
+   * Note(yoochan.kim): always on unless the gate is held. The panel's songs are meant
+   * to run under a service without ending, so this resets when the gate opens.
+   */
+  private loop = true;
 
   /**
    * @param device - Audio output (injected by the composition root)
@@ -217,16 +224,22 @@ class Player {
    * Muted still means silent — a flow may take the deck, but not the decision
    * to make noise.
    */
-  async playTrackAt(filePath: string, offsetSec: number, volume: number): Promise<void> {
+  async playTrackAt(track: { id: string; file: string }, offsetSec: number, volume: number, loop = false): Promise<void> {
     try {
       await this.takeDeck();
       this.device.setVolume(this.isMuted() ? 0 : volume);
-      await this.device.playFileAt(filePath, offsetSec);
+      await this.device.playFileAt(track.file, offsetSec, loop);
     } catch (error) {
-      log.error('player', null, 'Failed to play track', { filePath, offsetSec, volume, error: errorMessage(error) });
+      log.error('player', null, 'Failed to play track', { track: track.id, offsetSec, volume, error: errorMessage(error) });
       throw error;
     }
+    this.trackId = track.id;
     this.state.state = PlaybackState.PLAYING;
+  }
+
+  /** What has the deck: the panel's own song, or a library track an admin put on. */
+  getDeck(): DeckSource {
+    return this.trackMode ? { source: 'track', id: this.trackId } : { source: 'song' };
   }
 
   /**
@@ -254,6 +267,23 @@ class Player {
     }
     this.state.state = PlaybackState.PAUSED;
     this.trackMode = false;
+    this.trackId = '';
+    this.loop = true;
+  }
+
+  getLoop(): boolean {
+    return this.loop;
+  }
+
+  /** Whether what is on the deck has run out. False for the two-song deck, which loops. */
+  hasEnded(): boolean {
+    return this.device.hasEnded();
+  }
+
+  /** Sets whether what is on the deck repeats, and applies it to what is playing now. */
+  setLoop(loop: boolean): void {
+    this.loop = loop;
+    this.device.setLoop(loop);
   }
 
   // Note(yoochan.kim): Utility methods

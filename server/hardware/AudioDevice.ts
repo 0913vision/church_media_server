@@ -40,6 +40,31 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
+   * Whether the file on the deck has run out.
+   *
+   * Note(yoochan.kim): asked of mpv rather than worked out from a duration and a clock.
+   * A track can be paused part-way, and a timer started when it began would go
+   * off while it sat there stopped.
+   */
+  hasEnded(): boolean {
+    try {
+      return this.mpv.getProperty("eof-reached") === "yes";
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to read eof-reached', { error: errorMessage(error) });
+      return false;
+    }
+  }
+
+  /** Whether what is loaded repeats, applied to the file already playing. */
+  setLoop(loop: boolean): void {
+    try {
+      this.mpv.setProperty("loop", loop ? "inf" : "no");
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to set loop property', { loop, error: errorMessage(error) });
+    }
+  }
+
+  /**
    * Initializes the device with default settings and loads the initial song.
    */
   private initialize(): void {
@@ -212,13 +237,15 @@ class AudioDevice implements AudioOutput {
   /**
    * Plays an arbitrary library file from an offset (scheduled flows): loads it
    * paused, seeks, and starts. It fades in only when the offset put it past the
-   * opening — a song beginning at its beginning has no cut to cover. Looping is
-   * disabled so the track ends naturally; changeSong() restores it for the
-   * two-song system.
+   * opening — a song beginning at its beginning has no cut to cover.
+   *
+   * A flow's track runs once and ends on time; an admin may ask for one to
+   * repeat, so looping is the caller's to say. changeSong() restores it either
+   * way for the two-song deck.
    */
-  async playFileAt(filePath: string, offsetSec: number): Promise<void> {
+  async playFileAt(filePath: string, offsetSec: number, loop = false): Promise<void> {
     this.mpv.setProperty("pause", "yes");
-    this.mpv.setProperty("loop", "no");
+    this.mpv.setProperty("loop", loop ? "inf" : "no");
 
     try {
       this.mpv.executeCommand(["loadfile", filePath, null]);

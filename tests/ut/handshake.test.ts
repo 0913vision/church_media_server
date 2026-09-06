@@ -8,7 +8,8 @@ before(() => ensureServer());
 after(() => stopServer());
 
 const EXPECTED_ATTRIBUTES = [
-  'playback', 'volume', 'mute', 'song', 'adminLock', 'audioLock', 'isAdmin', 'flow', 'clockOffsetSec', 'console',
+  'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone',
+  'adminLock', 'audioLock', 'isAdmin', 'flow', 'clockOffsetSec', 'console',
 ];
 
 describe('Handshake and Read Tests', () => {

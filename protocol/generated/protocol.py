@@ -54,6 +54,7 @@ class RejectReason(str, Enum):
     INVALID_PASSWORD = "invalidPassword"
     NOT_ADMIN = "notAdmin"
     ADMIN_LOCKED = "adminLocked"
+    ADMIN_UNLOCKED = "adminUnlocked"
     DEVICE_BUSY = "deviceBusy"
     UNKNOWN_TRACK = "unknownTrack"
     FLOW_ACTIVE = "flowActive"
@@ -155,6 +156,25 @@ command.
 FlowPart = FlowPartMusic
 
 
+class DeckSourceSong(TypedDict):
+    """The panel's deck. Which song is in the song attribute."""
+    source: Literal["song"]
+
+
+class DeckSourceTrack(TypedDict):
+    """A library track, which only an admin holding the gate can put on"""
+    source: Literal["track"]
+    id: str  # Track id from ready.tracks
+
+
+"""
+What has the deck. The panel's own two-song deck is the ordinary case; a
+library track is something an admin put on while the gate was held, and it
+comes off again when the gate opens.
+"""
+DeckSource = DeckSourceSong | DeckSourceTrack
+
+
 class ConsoleReadUnknown(TypedDict):
     """No answer from the console yet, or the last one has gone stale"""
     kind: Literal["unknown"]
@@ -219,6 +239,9 @@ class State(TypedDict):
     playback: PlaybackState  # Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
+    loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and reset to true when it opens — like everything else the gate changes, it goes back to the user's state.
+    deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
+    unlockWhenDone: bool  # Whether reaching the end of what is playing releases the gate by itself, restoring the user's song on the way out. For putting one piece on and walking away. Means nothing while loop is on, since a repeating track never ends. Writable only while the gate is held, and false again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
@@ -233,6 +256,9 @@ class StatePatch(TypedDict, total=False):
     playback: PlaybackState  # Whether the deck is playing. Writing it fades in or out and holds the audio lock for the length of the fade. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     volume: float  # Output volume. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
+    loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and reset to true when it opens — like everything else the gate changes, it goes back to the user's state.
+    deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
+    unlockWhenDone: bool  # Whether reaching the end of what is playing releases the gate by itself, restoring the user's song on the way out. For putting one piece on and walking away. Means nothing while loop is on, since a repeating track never ends. Writable only while the gate is held, and false again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
@@ -311,6 +337,18 @@ class StopFlowArgs(TypedDict):
     pass
 
 
+class PlayTrackArgs(TypedDict):
+    """
+    Put a library track on the deck, from its start, at its own level. Any
+    track in ready.tracks, not only the ones a person may pick at the panel.
+    Refused with adminUnlocked unless the gate is held: while the panel is
+    open it shows the song it thinks is playing, and a track it never chose
+    would make that a lie. Releasing the gate takes the track off and puts the
+    user's song back.
+    """
+    id: str  # Track id from ready.tracks
+
+
 class InvokeRequest(TypedDict):
     """One invoke runs one command. See the *Args types for its arguments."""
     command: str
@@ -321,6 +359,9 @@ ATTRIBUTES: dict[str, dict] = {
     "playback": {"access": "rw", "permission": "any"},
     "volume": {"access": "rw", "permission": "any", "range": (0, 100)},
     "mute": {"access": "rw", "permission": "any"},
+    "loop": {"access": "rw", "permission": "admin"},
+    "deck": {"access": "ro"},
+    "unlockWhenDone": {"access": "rw", "permission": "admin"},
     "song": {"access": "rw", "permission": "any"},
     "adminLock": {"access": "rw", "permission": "admin"},
     "audioLock": {"access": "ro"},
@@ -336,6 +377,7 @@ COMMANDS: dict[str, dict] = {
     "initializeConsole": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
+    "playTrack": {"permission": "admin"},
 }
 
 

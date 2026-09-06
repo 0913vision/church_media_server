@@ -17,6 +17,7 @@ import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
 import FlowRunner from './flow/FlowRunner.ts';
+import TrackWatch from './player/TrackWatch.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
@@ -41,6 +42,7 @@ class MediaServer {
   private io: TypedServer | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private flowRunner: FlowRunner | null = null;
+  private trackWatch: TrackWatch | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -116,6 +118,8 @@ class MediaServer {
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
+    const trackWatch = new TrackWatch(player, lockCoordinator, notifier);
+    this.trackWatch = trackWatch;
 
     const deps: ServerDeps = {
       notifier,
@@ -125,6 +129,7 @@ class MediaServer {
       mixerConsole,
       trackLibrary,
       flowRunner,
+      trackWatch,
       clock,
     };
 
@@ -166,6 +171,10 @@ class MediaServer {
     if (this.flowRunner) {
       this.flowRunner.dispose();
       this.flowRunner = null;
+    }
+    if (this.trackWatch) {
+      this.trackWatch.dispose();
+      this.trackWatch = null;
     }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

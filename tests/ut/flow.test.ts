@@ -153,6 +153,49 @@ describe('Flow Tests', () => {
     }
   });
 
+  test('a library track needs the gate, and the gate puts the deck back', async () => {
+    const admin = await connectAuthedAdmin();
+
+    try {
+      const before = await admin.read();
+      // Note(yoochan.kim): every refusal here is decided before anything is loaded, so
+      // nothing in this test reaches the speakers.
+      const closed = admin.waitForRejected('playTrack');
+      admin.invoke('playTrack', { id: firstTrackId });
+      assert.strictEqual(await closed, RejectReason.ADMIN_UNLOCKED, 'no gate, no track');
+
+      const loopClosed = admin.waitForRejected('loop');
+      admin.write('loop', false);
+      assert.strictEqual(await loopClosed, RejectReason.ADMIN_UNLOCKED);
+
+      const held = admin.waitForState((patch) => patch.adminLock === true);
+      admin.write('adminLock', true);
+      await held;
+
+      const unknown = admin.waitForRejected('playTrack');
+      admin.invoke('playTrack', { id: 'no-such-track' });
+      assert.strictEqual(await unknown, RejectReason.UNKNOWN_TRACK);
+
+      const chosen = admin.waitForState((patch) => patch.loop === false);
+      admin.write('loop', false);
+      assert.strictEqual((await chosen).loop, false, 'the gate lets the choice through');
+
+      const opened = admin.waitForState((patch) => patch.adminLock === false);
+      admin.write('adminLock', false);
+      await opened;
+
+      const after = await admin.read();
+      assert.strictEqual(after.loop, true, 'looping comes back with the panel');
+      assert.strictEqual(after.unlockWhenDone, false);
+      assert.deepStrictEqual(after.deck, { source: 'song' });
+      assert.strictEqual(after.song, before.song);
+    } finally {
+      admin.write('adminLock', false);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      admin.disconnect();
+    }
+  });
+
   test('only one flow runs at a time', async () => {
     const admin = await connectAuthedAdmin();
 

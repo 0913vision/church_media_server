@@ -257,7 +257,7 @@ class FlowRunner {
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck();
       const offsetSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
-      await this.player.playTrackAt(track.file, offsetSec, track.volume);
+      await this.player.playTrackAt(track, offsetSec, track.volume);
     });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
