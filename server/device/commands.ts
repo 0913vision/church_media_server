@@ -132,6 +132,16 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
+  extendAdminHold: {
+    async run(_args, deps) {
+      if (deps.flowRunner.ownsAdminLock()) return refuse(RejectReason.FLOW_ACTIVE);
+      if (!deps.adminSession.extend()) return refuse(RejectReason.ADMIN_UNLOCKED);
+
+      deps.notifier.state({ adminHold: deps.adminSession.adminHold() });
+      return DONE;
+    },
+  },
+
   saveFlow: {
     async run(args, deps) {
       const entry = argsObject(args).flow;
@@ -227,7 +237,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       });
       if (!ran) return refuse(RejectReason.DEVICE_BUSY);
 
-      deps.trackWatch.sync();
+      deps.adminSession.sync();
       deps.notifier.state({
         deck: deps.player.getDeck(),
         playback: deps.player.getState(),

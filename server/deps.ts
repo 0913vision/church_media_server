@@ -7,7 +7,7 @@ import type TrackLibrary from './tracks/TrackLibrary.ts';
 import type FlowRunner from './flow/FlowRunner.ts';
 import type Schedule from './schedule/Schedule.ts';
 import type AutoStarter from './schedule/AutoStarter.ts';
-import type TrackWatch from './player/TrackWatch.ts';
+import type AdminSession from './lock/AdminSession.ts';
 import type Clock from './clock/Clock.ts';
 
 /**
@@ -32,8 +32,8 @@ export interface ServerDeps {
   schedule: Schedule;
   /** Starts the calendar's auto-start entries when their window opens */
   autoStarter: AutoStarter;
-  /** Releases the gate when an admin's track reaches its end */
-  trackWatch: TrackWatch;
+  /** Everything about a gate a person holds that runs on a clock */
+  adminSession: AdminSession;
   /** Church time — every instant on the wire is read against it */
   clock: Clock;
 }

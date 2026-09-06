@@ -225,6 +225,22 @@ export const ScheduleUntilKind = {
 } as const;
 
 /**
+ * An instant something is due to happen at, or the fact that nothing is. A union
+ * rather than a nullable instant, for the same reason as everywhere else here:
+ * 'nothing is scheduled' is a state worth naming.
+ */
+export type Deadline =
+  /** Nothing is due */
+  | { kind: 'none' }
+  /** Due at this instant */
+  | { kind: 'at'; at: string }
+  ;
+export const DeadlineKind = {
+  NONE: 'none',
+  AT: 'at',
+} as const;
+
+/**
  * One thing a scheduled flow does, in the calendar's own vocabulary. The same kinds as
  * FlowPart, but the times are wall-clock rather than instants: a weekly entry says
  * 19:30, and which 19:30 is decided when it starts.
@@ -355,12 +371,22 @@ export const ATTRIBUTES = {
    */
   deck: { access: 'ro' },
   /**
-   * Whether reaching the end of what is playing releases the gate by itself, restoring
-   * the user's song on the way out. For putting one piece on and walking away. Means
-   * nothing while loop is on, since a repeating track never ends. Writable only while
-   * the gate is held, and false again once it opens.
+   * Whether the music stopping also releases the gate, restoring the user's song on
+   * the way out. For putting one piece on and walking away. 'Stopping' means either
+   * the track running out or musicEndsAt arriving — with loop on, only the latter can
+   * ever happen. Writable only while the gate is held, and false again once it opens.
    */
   unlockWhenDone: { access: 'rw', permission: 'admin' },
+  /**
+   * When the music an admin put on should stop, whether or not it has run out. This is
+   * what makes a repeating track finite: looping audio has no end of its own, so
+   * without this a gate held over it is held until somebody comes back. A client
+   * should ask for it whenever loop is on, and say plainly that nothing will stop on
+   * its own if it is left at none. Reaching it stops the music and puts the user's
+   * song back; the gate goes too if unlockWhenDone is on. Writable only while the gate
+   * is held, and cleared once it opens.
+   */
+  musicEndsAt: { access: 'rw', permission: 'admin' },
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
@@ -372,9 +398,19 @@ export const ATTRIBUTES = {
   song: { access: 'rw', permission: 'any' },
   /**
    * Global gate on non-admin writes. Any admin may release it, it survives
-   * disconnects, and it is cleared by a restart.
+   * disconnects, and it is cleared by a restart. A gate a person engaged also lapses
+   * by itself — see adminHold.
    */
   adminLock: { access: 'rw', permission: 'admin' },
+  /**
+   * When a gate a person engaged lapses by itself. Never more than an hour ahead: a
+   * panel locked and forgotten is a panel nobody in the building can use, and the
+   * person who locked it has usually gone home. Lapsing does what releasing does — the
+   * user's song comes back with it. extendAdminHold pushes it out while somebody is
+   * still there. Reads none when the gate is open, and while a flow holds it: a run
+   * names its own window and ends on its own.
+   */
+  adminHold: { access: 'ro' },
   /**
    * True while the audio device is mid-transition. Read-only, and it refuses everyone
    * including admins: it guards the device, not permissions.
@@ -460,6 +496,13 @@ export const COMMANDS = {
    * admin lock.
    */
   stopFlow: { permission: 'admin' },
+  /**
+   * Pushes back when the gate lapses, by thirty minutes, never past an hour from now.
+   * So it can be pressed as often as somebody is there to press it, and the moment
+   * nobody is, the hour starts running out. Refused with adminUnlocked when no gate is
+   * held, and with flowActive while a flow holds one — a run's window is the run's.
+   */
+  extendAdminHold: { permission: 'admin' },
   /**
    * Create or replace one calendar entry, and write the calendar to disk. Validated
    * the way the file is at boot, so an entry saved here cannot be one the next boot
@@ -548,12 +591,22 @@ export interface State {
    */
   deck: DeckSource;
   /**
-   * Whether reaching the end of what is playing releases the gate by itself, restoring
-   * the user's song on the way out. For putting one piece on and walking away. Means
-   * nothing while loop is on, since a repeating track never ends. Writable only while
-   * the gate is held, and false again once it opens.
+   * Whether the music stopping also releases the gate, restoring the user's song on
+   * the way out. For putting one piece on and walking away. 'Stopping' means either
+   * the track running out or musicEndsAt arriving — with loop on, only the latter can
+   * ever happen. Writable only while the gate is held, and false again once it opens.
    */
   unlockWhenDone: boolean;
+  /**
+   * When the music an admin put on should stop, whether or not it has run out. This is
+   * what makes a repeating track finite: looping audio has no end of its own, so
+   * without this a gate held over it is held until somebody comes back. A client
+   * should ask for it whenever loop is on, and say plainly that nothing will stop on
+   * its own if it is left at none. Reaching it stops the music and puts the user's
+   * song back; the gate goes too if unlockWhenDone is on. Writable only while the gate
+   * is held, and cleared once it opens.
+   */
+  musicEndsAt: Deadline;
   /**
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
@@ -565,9 +618,19 @@ export interface State {
   song: string;
   /**
    * Global gate on non-admin writes. Any admin may release it, it survives
-   * disconnects, and it is cleared by a restart.
+   * disconnects, and it is cleared by a restart. A gate a person engaged also lapses
+   * by itself — see adminHold.
    */
   adminLock: boolean;
+  /**
+   * When a gate a person engaged lapses by itself. Never more than an hour ahead: a
+   * panel locked and forgotten is a panel nobody in the building can use, and the
+   * person who locked it has usually gone home. Lapsing does what releasing does — the
+   * user's song comes back with it. extendAdminHold pushes it out while somebody is
+   * still there. Reads none when the gate is open, and while a flow holds it: a run
+   * names its own window and ends on its own.
+   */
+  adminHold: Deadline;
   /**
    * True while the audio device is mid-transition. Read-only, and it refuses everyone
    * including admins: it guards the device, not permissions.
@@ -616,6 +679,7 @@ export type WriteRequest =
   | { field: 'mute'; value: MuteState }
   | { field: 'loop'; value: boolean }
   | { field: 'unlockWhenDone'; value: boolean }
+  | { field: 'musicEndsAt'; value: Deadline }
   | { field: 'song'; value: string }
   | { field: 'adminLock'; value: boolean }
   | { field: 'clockOffsetSec'; value: number }
@@ -628,6 +692,7 @@ export type InvokeRequest =
   | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
+  | { command: 'extendAdminHold'; args: Record<string, never> }
   | { command: 'saveFlow'; args: { flow: ScheduleEntry } }
   | { command: 'deleteFlow'; args: { id: string } }
   | { command: 'startScheduledFlow'; args: { id: string } }

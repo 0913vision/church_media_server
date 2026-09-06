@@ -153,6 +153,22 @@
         }
       }
     },
+    "Deadline": {
+      "description": "An instant something is due to happen at, or the fact that nothing is. A union rather than a nullable instant, for the same reason as everywhere else here: 'nothing is scheduled' is a state worth naming.",
+      "discriminator": "kind",
+      "variants": {
+        "none": {
+          "description": "Nothing is due",
+          "fields": {}
+        },
+        "at": {
+          "description": "Due at this instant",
+          "fields": {
+            "at": { "type": "string", "description": "Church-time instant" }
+          }
+        }
+      }
+    },
     "SchedulePart": {
       "description": "One thing a scheduled flow does, in the calendar's own vocabulary. The same kinds as FlowPart, but the times are wall-clock rather than instants: a weekly entry says 19:30, and which 19:30 is decided when it starts.",
       "discriminator": "kind",
@@ -285,8 +301,14 @@
       "access": "ro"
     },
     "unlockWhenDone": {
-      "description": "Whether reaching the end of what is playing releases the gate by itself, restoring the user's song on the way out. For putting one piece on and walking away. Means nothing while loop is on, since a repeating track never ends. Writable only while the gate is held, and false again once it opens.",
+      "description": "Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while the gate is held, and false again once it opens.",
       "type": "boolean",
+      "access": "rw",
+      "permission": "admin"
+    },
+    "musicEndsAt": {
+      "description": "When the music an admin put on should stop, whether or not it has run out. This is what makes a repeating track finite: looping audio has no end of its own, so without this a gate held over it is held until somebody comes back. A client should ask for it whenever loop is on, and say plainly that nothing will stop on its own if it is left at none. Reaching it stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while the gate is held, and cleared once it opens.",
+      "type": "Deadline",
       "access": "rw",
       "permission": "admin"
     },
@@ -297,10 +319,15 @@
       "permission": "any"
     },
     "adminLock": {
-      "description": "Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart.",
+      "description": "Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart. A gate a person engaged also lapses by itself — see adminHold.",
       "type": "boolean",
       "access": "rw",
       "permission": "admin"
+    },
+    "adminHold": {
+      "description": "When a gate a person engaged lapses by itself. Never more than an hour ahead: a panel locked and forgotten is a panel nobody in the building can use, and the person who locked it has usually gone home. Lapsing does what releasing does — the user's song comes back with it. extendAdminHold pushes it out while somebody is still there. Reads none when the gate is open, and while a flow holds it: a run names its own window and ends on its own.",
+      "type": "Deadline",
+      "access": "ro"
     },
     "audioLock": {
       "description": "True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.",
@@ -360,6 +387,11 @@
     },
     "stopFlow": {
       "description": "End the running flow now: stop playback, restore the user's song, release the admin lock.",
+      "permission": "admin",
+      "args": {}
+    },
+    "extendAdminHold": {
+      "description": "Pushes back when the gate lapses, by thirty minutes, never past an hour from now. So it can be pressed as often as somebody is there to press it, and the moment nobody is, the hour starts running out. Refused with adminUnlocked when no gate is held, and with flowActive while a flow holds one — a run's window is the run's.",
       "permission": "admin",
       "args": {}
     },

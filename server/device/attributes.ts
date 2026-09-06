@@ -2,6 +2,7 @@ import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState }
 import type { AttributeName, State, StatePatch } from '../protocol.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
+import { isWireInstant } from '../utils/instant.ts';
 
 /**
  * The outcome of checking a value: either work to run, or a refusal with its
@@ -72,6 +73,21 @@ function checkVolume(value: unknown): Checked<number> {
  */
 function deckIsFlows(deps: ServerDeps): boolean {
   return deps.flowRunner.ownsDeck();
+}
+
+/**
+ * A Deadline off the wire. `none` clears it; an instant has to be in the future
+ * and inside the day, since an end already gone by would fire the moment it landed.
+ */
+function asDeadline(value: unknown, deps: ServerDeps): Checked<Date | undefined> {
+  if (typeof value !== 'object' || value === null) return BAD_VALUE;
+  const { kind, at } = value as Record<string, unknown>;
+  if (kind === 'none') return accept(undefined);
+  if (kind !== 'at' || !isWireInstant(at)) return BAD_VALUE;
+
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime()) || when <= deps.clock.now()) return BAD_VALUE;
+  return accept(when);
 }
 
 /**
@@ -180,7 +196,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       },
       async (loop, deps) => {
         deps.player.setLoop(loop);
-        deps.trackWatch.sync();
+        deps.adminSession.sync();
         return { loop };
       },
     ),
@@ -199,7 +215,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
   },
 
   unlockWhenDone: {
-    read: (deps) => deps.trackWatch.isArmed(),
+    read: (deps) => deps.adminSession.isArmed(),
     write: writable(
       false,
       (value, deps) => {
@@ -208,10 +224,30 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         return accept(value);
       },
       async (unlockWhenDone, deps) => {
-        deps.trackWatch.set(unlockWhenDone);
+        deps.adminSession.setUnlockWhenDone(unlockWhenDone);
         return { unlockWhenDone };
       },
     ),
+  },
+
+  musicEndsAt: {
+    read: (deps) => deps.adminSession.musicEndsAt(),
+    write: writable(
+      false,
+      (value, deps) => {
+        if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        const parsed = asDeadline(value, deps);
+        return parsed.ok ? parsed : BAD_VALUE;
+      },
+      async (at, deps) => {
+        deps.adminSession.setMusicEndsAt(at);
+        return { musicEndsAt: deps.adminSession.musicEndsAt() };
+      },
+    ),
+  },
+
+  adminHold: {
+    read: (deps) => deps.adminSession.adminHold(),
   },
 
   adminLock: {
@@ -243,11 +279,17 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
           // Note(yoochan.kim): the choices the gate offered go back whether or not a track
           // was ever put on — the panel's songs run without ending again.
           deps.player.setLoop(true);
-          deps.trackWatch.reset();
+          deps.adminSession.reset();
           patch.loop = true;
           patch.unlockWhenDone = false;
+        } else {
+          // Note(yoochan.kim): the hour starts here. Only a person's hold gets one — a flow
+          // names its own window, and never reaches this write.
+          deps.adminSession.engage();
         }
         deps.lockCoordinator.setAdminLock(adminLock);
+        patch.musicEndsAt = deps.adminSession.musicEndsAt();
+        patch.adminHold = deps.adminSession.adminHold();
         return patch;
       },
     ),

@@ -150,4 +150,84 @@ describe('Admin Lock Tests', () => {
       adminB?.disconnect();
     }
   });
+
+  test('a gate a person engaged lapses by itself, and never sits more than an hour out', async () => {
+    const admin = await connectAuthedAdmin();
+    const minutesUntil = (at: string): number => (new Date(at).getTime() - Date.now()) / 60_000;
+
+    try {
+      const idle = await admin.read();
+      assert.deepStrictEqual(idle.adminHold, { kind: 'none' }, 'an open gate is due nothing');
+
+      const closed = admin.waitForState((patch) => patch.adminHold !== undefined);
+      admin.write('adminLock', true);
+      const hold = (await closed).adminHold!;
+      assert.strictEqual(hold.kind, 'at');
+      const engagedAt = hold.kind === 'at' ? minutesUntil(hold.at) : NaN;
+      assert.ok(Math.abs(engagedAt - 60) < 1, `an hour out, got ${engagedAt}`);
+
+      // Note(yoochan.kim): pressing extend with nearly an hour left cannot buy an hour and a
+      // half — the clamp is what makes "releases within the hour" true at every moment.
+      const extended = admin.waitForState((patch) => patch.adminHold !== undefined);
+      admin.invoke('extendAdminHold', {});
+      const after = (await extended).adminHold!;
+      const extendedTo = after.kind === 'at' ? minutesUntil(after.at) : NaN;
+      assert.ok(extendedTo <= 60.1, `still inside the hour, got ${extendedTo}`);
+
+      // Note(yoochan.kim): the lock announces itself in a patch of its own, so this waits on
+      // what the write returned rather than expecting both in one.
+      const opened = admin.waitForState((patch) => patch.adminHold?.kind === 'none');
+      admin.write('adminLock', false);
+      await opened;
+      assert.strictEqual((await admin.read()).adminLock, false);
+
+      const refused = admin.waitForRejected('extendAdminHold');
+      admin.invoke('extendAdminHold', {});
+      assert.strictEqual(await refused, RejectReason.ADMIN_UNLOCKED, 'nothing to extend');
+    } finally {
+      admin.write('adminLock', false);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      admin.disconnect();
+    }
+  });
+
+  test('when the music stops is the gate holder\'s to set, and only theirs', async () => {
+    const admin = await connectAuthedAdmin();
+    const soon = (ms: number): string => {
+      const at = new Date(Date.now() + ms);
+      const pad = (v: number, w = 2): string => String(v).padStart(w, '0');
+      return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` +
+        `T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}.${pad(at.getMilliseconds(), 3)}`;
+    };
+
+    try {
+      const closedGate = admin.waitForRejected('musicEndsAt');
+      admin.write('musicEndsAt', { kind: 'at', at: soon(600_000) });
+      assert.strictEqual(await closedGate, RejectReason.ADMIN_UNLOCKED, 'no gate, no say');
+
+      const held = admin.waitForState((patch) => patch.adminLock === true);
+      admin.write('adminLock', true);
+      await held;
+
+      // Note(yoochan.kim): an end already gone by would fire the instant it landed, which
+      // reads as the panel unlocking itself for no reason.
+      const past = admin.waitForRejected('musicEndsAt');
+      admin.write('musicEndsAt', { kind: 'at', at: soon(-60_000) });
+      assert.strictEqual(await past, RejectReason.INVALID_VALUE);
+
+      const set = admin.waitForState((patch) => patch.musicEndsAt !== undefined);
+      admin.write('musicEndsAt', { kind: 'at', at: soon(600_000) });
+      assert.strictEqual((await set).musicEndsAt!.kind, 'at');
+
+      // Note(yoochan.kim): opening the gate gives everything back, this along with the rest.
+      const opened = admin.waitForState((patch) => patch.musicEndsAt?.kind === 'none');
+      admin.write('adminLock', false);
+      await opened;
+      assert.deepStrictEqual((await admin.read()).musicEndsAt, { kind: 'none' });
+    } finally {
+      admin.write('adminLock', false);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      admin.disconnect();
+    }
+  });
 });

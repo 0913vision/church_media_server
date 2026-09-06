@@ -19,7 +19,7 @@ import TrackLibrary from './tracks/TrackLibrary.ts';
 import FlowRunner from './flow/FlowRunner.ts';
 import Schedule from './schedule/Schedule.ts';
 import AutoStarter from './schedule/AutoStarter.ts';
-import TrackWatch from './player/TrackWatch.ts';
+import AdminSession from './lock/AdminSession.ts';
 import type { ConsoleDevice } from './console/ConsoleDevice.ts';
 import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
@@ -45,7 +45,7 @@ class MediaServer {
   private pingInterval: NodeJS.Timeout | null = null;
   private flowRunner: FlowRunner | null = null;
   private autoStarter: AutoStarter | null = null;
-  private trackWatch: TrackWatch | null = null;
+  private adminSession: AdminSession | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -122,8 +122,8 @@ class MediaServer {
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
-    const trackWatch = new TrackWatch(player, lockCoordinator, notifier);
-    this.trackWatch = trackWatch;
+    const adminSession = new AdminSession(player, lockCoordinator, notifier, clock);
+    this.adminSession = adminSession;
     const autoStarter = new AutoStarter(schedule, clock, flowRunner);
     this.autoStarter = autoStarter;
     autoStarter.start();
@@ -138,7 +138,7 @@ class MediaServer {
       flowRunner,
       schedule,
       autoStarter,
-      trackWatch,
+      adminSession,
       clock,
     };
 
@@ -185,9 +185,9 @@ class MediaServer {
       this.autoStarter.dispose();
       this.autoStarter = null;
     }
-    if (this.trackWatch) {
-      this.trackWatch.dispose();
-      this.trackWatch = null;
+    if (this.adminSession) {
+      this.adminSession.dispose();
+      this.adminSession = null;
     }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
