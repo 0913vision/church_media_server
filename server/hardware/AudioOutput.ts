@@ -24,6 +24,8 @@ export interface AudioOutput {
   hasEnded(): boolean;
   /** Plays a library file from an offset, repeating only if asked */
   playFileAt(filePath: string, offsetSec: number, loop?: boolean): Promise<void>;
+  /** Puts a library file on the deck, paused at its start */
+  loadFile(filePath: string, loop: boolean): void;
   /** Loads a song file onto the looping two-song deck (no position save) */
   loadSong(song: SongId): void;
   loadLastSongTime(song: SongId): Promise<void>;

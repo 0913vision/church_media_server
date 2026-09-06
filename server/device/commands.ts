@@ -113,7 +113,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
-  playTrack: {
+  selectTrack: {
     async run(args, deps) {
       const id = argsObject(args).id;
       if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
@@ -129,7 +129,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       const loop = deps.trackLibrary.isDeckSong(id);
       const ran = await deps.lockCoordinator.withAudioLock(true, async () => {
         deps.player.setLoop(loop);
-        await deps.player.playTrackAt(track, 0, track.volume, loop);
+        await deps.player.selectTrack(track, track.volume, loop);
       });
       if (!ran) return refuse(RejectReason.DEVICE_BUSY);
 
@@ -137,6 +137,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       deps.notifier.state({
         deck: deps.player.getDeck(),
         playback: deps.player.getState(),
+        volume: deps.player.getVolume(),
         loop: deps.player.getLoop(),
       });
       return DONE;

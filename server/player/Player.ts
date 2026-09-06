@@ -237,6 +237,25 @@ class Player {
     this.state.state = PlaybackState.PLAYING;
   }
 
+  /**
+   * Puts a library track on the deck, paused at its start.
+   *
+   * Note(yoochan.kim): chosen, not started — the same as picking one of the panel's
+   * songs. Pressing a name in a list is how you say which one, not how you say go.
+   */
+  async selectTrack(track: { id: string; file: string }, volume: number, loop: boolean): Promise<void> {
+    try {
+      await this.takeDeck();
+      this.device.setVolume(this.isMuted() ? 0 : volume);
+      this.device.loadFile(track.file, loop);
+    } catch (error) {
+      log.error('player', null, 'Failed to select track', { track: track.id, error: errorMessage(error) });
+      throw error;
+    }
+    this.trackId = track.id;
+    this.state.state = PlaybackState.PAUSED;
+  }
+
   /** What has the deck: the panel's own song, or a library track an admin put on. */
   getDeck(): DeckSource {
     return this.trackMode ? { source: 'track', id: this.trackId } : { source: 'song' };

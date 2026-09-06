@@ -337,14 +337,15 @@ class StopFlowArgs(TypedDict):
     pass
 
 
-class PlayTrackArgs(TypedDict):
+class SelectTrackArgs(TypedDict):
     """
-    Put a library track on the deck, from its start, at its own level. Any
-    track in ready.tracks, not only the ones a person may pick at the panel.
-    Refused with adminUnlocked unless the gate is held: while the panel is
-    open it shows the song it thinks is playing, and a track it never chose
-    would make that a lie. Releasing the gate takes the track off and puts the
-    user's song back.
+    Put a library track on the deck, paused at its start, at its own level —
+    the same act as writing the song attribute, for the tracks that are not
+    among ready.songs. Playing it is a separate write to playback. Refused
+    with adminUnlocked unless the gate is held: while the panel is open it
+    shows the song it thinks is playing, and a track it never chose would make
+    that a lie. Releasing the gate takes the track off and puts the user's
+    song back.
     """
     id: str  # Track id from ready.tracks
 
@@ -377,7 +378,7 @@ COMMANDS: dict[str, dict] = {
     "initializeConsole": {"permission": "any"},
     "startFlow": {"permission": "admin"},
     "stopFlow": {"permission": "admin"},
-    "playTrack": {"permission": "admin"},
+    "selectTrack": {"permission": "admin"},
 }
 
 

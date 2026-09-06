@@ -376,13 +376,14 @@ export const COMMANDS = {
    */
   stopFlow: { permission: 'admin' },
   /**
-   * Put a library track on the deck, from its start, at its own level. Any track in
-   * ready.tracks, not only the ones a person may pick at the panel. Refused with
-   * adminUnlocked unless the gate is held: while the panel is open it shows the song
-   * it thinks is playing, and a track it never chose would make that a lie. Releasing
-   * the gate takes the track off and puts the user's song back.
+   * Put a library track on the deck, paused at its start, at its own level — the same
+   * act as writing the song attribute, for the tracks that are not among ready.songs.
+   * Playing it is a separate write to playback. Refused with adminUnlocked unless the
+   * gate is held: while the panel is open it shows the song it thinks is playing, and
+   * a track it never chose would make that a lie. Releasing the gate takes the track
+   * off and puts the user's song back.
    */
-  playTrack: { permission: 'admin' },
+  selectTrack: { permission: 'admin' },
 } as const;
 export type CommandName = keyof typeof COMMANDS;
 
@@ -495,7 +496,7 @@ export type InvokeRequest =
   | { command: 'initializeConsole'; args: Record<string, never> }
   | { command: 'startFlow'; args: { id: string; name: string; lock: FlowLock; parts: FlowPart[] } }
   | { command: 'stopFlow'; args: Record<string, never> }
-  | { command: 'playTrack'; args: { id: string } }
+  | { command: 'selectTrack'; args: { id: string } }
   ;
 
 /** C2S event names */

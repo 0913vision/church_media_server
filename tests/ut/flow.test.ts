@@ -160,8 +160,8 @@ describe('Flow Tests', () => {
       const before = await admin.read();
       // Note(yoochan.kim): every refusal here is decided before anything is loaded, so
       // nothing in this test reaches the speakers.
-      const closed = admin.waitForRejected('playTrack');
-      admin.invoke('playTrack', { id: firstTrackId });
+      const closed = admin.waitForRejected('selectTrack');
+      admin.invoke('selectTrack', { id: firstTrackId });
       assert.strictEqual(await closed, RejectReason.ADMIN_UNLOCKED, 'no gate, no track');
 
       const loopClosed = admin.waitForRejected('loop');
@@ -172,8 +172,8 @@ describe('Flow Tests', () => {
       admin.write('adminLock', true);
       await held;
 
-      const unknown = admin.waitForRejected('playTrack');
-      admin.invoke('playTrack', { id: 'no-such-track' });
+      const unknown = admin.waitForRejected('selectTrack');
+      admin.invoke('selectTrack', { id: 'no-such-track' });
       assert.strictEqual(await unknown, RejectReason.UNKNOWN_TRACK);
 
       const chosen = admin.waitForState((patch) => patch.loop === false);

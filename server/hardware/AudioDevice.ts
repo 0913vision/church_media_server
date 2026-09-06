@@ -244,6 +244,18 @@ class AudioDevice implements AudioOutput {
    * repeat, so looping is the caller's to say. changeSong() restores it either
    * way for the two-song deck.
    */
+  /** Puts a library file on the deck and leaves it there, paused at its start. */
+  loadFile(filePath: string, loop: boolean): void {
+    this.mpv.setProperty("pause", "yes");
+    this.mpv.setProperty("loop", loop ? "inf" : "no");
+    try {
+      this.mpv.executeCommand(["loadfile", filePath, null]);
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to load track file', { filePath, error: errorMessage(error) });
+      throw error;
+    }
+  }
+
   async playFileAt(filePath: string, offsetSec: number, loop = false): Promise<void> {
     this.mpv.setProperty("pause", "yes");
     this.mpv.setProperty("loop", loop ? "inf" : "no");
