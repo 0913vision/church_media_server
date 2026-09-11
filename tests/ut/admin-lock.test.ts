@@ -220,10 +220,10 @@ describe('Admin Lock Tests', () => {
       assert.strictEqual((await set).musicEndsAt!.kind, 'at');
 
       // Note(yoochan.kim): opening the gate gives everything back, this along with the rest.
-      const opened = admin.waitForState((patch) => patch.musicEndsAt?.kind === 'none');
+      const opened = admin.waitForState((patch) => patch.musicEndsAt?.kind === 'undecided');
       admin.write('adminLock', false);
       await opened;
-      assert.deepStrictEqual((await admin.read()).musicEndsAt, { kind: 'none' });
+      assert.deepStrictEqual((await admin.read()).musicEndsAt, { kind: 'undecided' });
     } finally {
       admin.write('adminLock', false);
       await new Promise((resolve) => setTimeout(resolve, 150));

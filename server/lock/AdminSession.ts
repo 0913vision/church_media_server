@@ -2,7 +2,8 @@ import type Player from '../player/Player.ts';
 import type LockCoordinator from './LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Clock from '../clock/Clock.ts';
-import type { Deadline, StatePatch } from '../protocol.ts';
+import { PlaybackState } from '../protocol.ts';
+import type { Deadline, MusicEnd, StatePatch } from '../protocol.ts';
 import { formatInstant } from '../utils/instant.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -13,7 +14,8 @@ export const HOLD_LIMIT_MS = 60 * 60 * 1000;
 /** What one press of extend buys. */
 export const EXTEND_MS = 30 * 60 * 1000;
 
-const NONE: Deadline = { kind: 'none' };
+const NO_HOLD: Deadline = { kind: 'none' };
+const UNDECIDED: MusicEnd = { kind: 'undecided' };
 
 /**
  * Everything about a gate a person is holding that runs on a clock: when the
@@ -29,7 +31,8 @@ const NONE: Deadline = { kind: 'none' };
  */
 class AdminSession {
   private unlockWhenDone = false;
-  private musicEnd: Date | undefined;
+  /** Undecided until somebody says; an instant only in the third case. */
+  private musicEnd: MusicEnd = UNDECIDED;
   private lapsesAt: Date | undefined;
   private timer: NodeJS.Timeout | undefined;
 
@@ -50,17 +53,29 @@ class AdminSession {
     this.sync();
   }
 
-  musicEndsAt(): Deadline {
-    return this.musicEnd ? { kind: 'at', at: formatInstant(this.musicEnd) } : NONE;
+  musicEndsAt(): MusicEnd {
+    return this.musicEnd;
   }
 
-  setMusicEndsAt(at: Date | undefined): void {
-    this.musicEnd = at;
+  /**
+   * Says when the music stops.
+   *
+   * Note(yoochan.kim): an end past the lapse drags the lapse out with it, rather than
+   * being refused. Music that was given an end gets to reach it — the same rule
+   * a flow is held to — and the hour still binds, because an end may not be set
+   * further out than that.
+   */
+  setMusicEndsAt(end: MusicEnd): void {
+    this.musicEnd = end;
+    if (end.kind === 'at' && this.lapsesAt) {
+      const at = new Date(end.at);
+      if (at > this.lapsesAt) this.lapsesAt = at;
+    }
     this.sync();
   }
 
   adminHold(): Deadline {
-    return this.lapsesAt ? { kind: 'at', at: formatInstant(this.lapsesAt) } : NONE;
+    return this.lapsesAt ? { kind: 'at', at: formatInstant(this.lapsesAt) } : NO_HOLD;
   }
 
   /** Starts the hour running. Called when a person engages the gate, never for a flow. */
@@ -83,7 +98,7 @@ class AdminSession {
   /** Forgets all of it; the gate opening is the one thing that does this. */
   reset(): void {
     this.unlockWhenDone = false;
-    this.musicEnd = undefined;
+    this.musicEnd = UNDECIDED;
     this.lapsesAt = undefined;
     this.sync();
   }
@@ -91,7 +106,7 @@ class AdminSession {
   /** Called whenever the deck, the loop setting or the gate changes. */
   sync(): void {
     const watchingMusic = this.unlockWhenDone && !this.player.getLoop() && this.player.getDeck().source === 'track';
-    const wanted = watchingMusic || this.musicEnd !== undefined || this.lapsesAt !== undefined;
+    const wanted = watchingMusic || this.musicEnd.kind === 'at' || this.lapsesAt !== undefined;
     if (wanted === (this.timer !== undefined)) return;
     if (wanted) {
       this.timer = setInterval(() => void this.check(), POLL_MS);
@@ -109,13 +124,13 @@ class AdminSession {
   private async check(): Promise<void> {
     const now = this.clock.now();
 
-    if (this.lapsesAt && now >= this.lapsesAt) {
+    if (this.lapsesAt && now >= this.lapsesAt && !this.musicIsOwedItsEnd()) {
       log.info('adminSession', null, 'The hold lapsed, gate released');
       await this.release(true);
       return;
     }
 
-    const musicDue = this.musicEnd !== undefined && now >= this.musicEnd;
+    const musicDue = this.musicEnd.kind === 'at' && now >= new Date(this.musicEnd.at);
     // Nothing to fade when the track has already run out.
     const ranOut = this.unlockWhenDone && !this.player.getLoop()
       && this.player.getDeck().source === 'track' && this.player.hasEnded();
@@ -130,11 +145,25 @@ class AdminSession {
     // Note(yoochan.kim): the music was given an end but the gate was not, so only the
     // music stops. Cleared first: the restore takes a moment, and a second tick
     // landing inside it would run the whole thing twice.
-    this.musicEnd = undefined;
+    this.musicEnd = UNDECIDED;
     this.sync();
     const patch = await this.restore(true);
-    this.notifier.state({ ...patch, musicEndsAt: NONE });
+    this.notifier.state({ ...patch, musicEndsAt: UNDECIDED });
     log.info('adminSession', null, 'The music reached its end');
+  }
+
+  /**
+   * Whether music that is sounding still has an end coming, which the lapse waits for.
+   *
+   * Note(yoochan.kim): opening the panel out from under a song that is still playing is
+   * the thing this avoids — the same rule a flow is held to. It can only wait
+   * for an end that exists: a track that will run out, or one told when to stop.
+   * Repeating music nobody gave an end to is exactly the case the hour is for,
+   * so that one is let go.
+   */
+  private musicIsOwedItsEnd(): boolean {
+    const sounding = this.player.getDeck().source === 'track' && this.player.getState() === PlaybackState.PLAYING;
+    return sounding && (!this.player.getLoop() || this.musicEnd.kind === 'at');
   }
 
   /** Puts the deck back and opens the gate — the same unwinding a manual release does. */
@@ -146,8 +175,8 @@ class AdminSession {
       ...patch,
       loop: this.player.getLoop(),
       unlockWhenDone: false,
-      musicEndsAt: NONE,
-      adminHold: NONE,
+      musicEndsAt: UNDECIDED,
+      adminHold: NO_HOLD,
     });
   }
 

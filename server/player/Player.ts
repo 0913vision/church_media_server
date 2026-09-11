@@ -15,6 +15,8 @@ class Player {
   /** True while a scheduled library track occupies the deck (not a song) */
   private trackMode = false;
   private trackId = '';
+  /** What the device is set to right now, mute aside. See getVolume. */
+  private liveVolume: number;
   /**
    * Note(yoochan.kim): always on unless the gate is held. The panel's songs are meant
    * to run under a service without ending, so this resets when the gate opens.
@@ -37,6 +39,7 @@ class Player {
     private readonly persist: (state: PersistedState) => void
   ) {
     this.state = { ...initialConfig };
+    this.liveVolume = this.state.serverVolume;
     // Note(yoochan.kim): Initialize hardware with the starting volume (silent if muted)
     this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
   }
@@ -52,10 +55,19 @@ class Player {
 
   // Note(yoochan.kim): Volume methods
   /**
-   * Gets the current volume level
-   * @returns Current volume (0-100)
+   * What is sounding, 0-100 — not what the user set.
+   *
+   * Note(yoochan.kim): the two part company whenever something else has the deck. A flow
+   * plays each track at the level that flow was written with, and an admin's
+   * track at its own, while the user's setting waits to come back. Reporting the
+   * setting then would have the panel showing 30 into a room hearing 48.
    */
   getVolume(): number {
+    return this.liveVolume;
+  }
+
+  /** The level the user's own song comes back to. */
+  getUserVolume(): number {
     return this.state.serverVolume;
   }
 
@@ -66,6 +78,7 @@ class Player {
    */
   setVolume(volume: number): void {
     this.state.serverVolume = volume;
+    this.liveVolume = volume;
     this.device.setVolume(this.isMuted() ? 0 : volume);
     this.persist(this.snapshot());
   }
@@ -120,7 +133,9 @@ class Player {
     if (muted === MuteState.MUTED) {
       this.device.setVolume(0);
     } else {
-      this.device.setVolume(this.state.serverVolume);
+      // Back to what was sounding, which is not the user's setting while a flow
+      // or an admin's track has the deck.
+      this.device.setVolume(this.liveVolume);
     }
     this.persist(this.snapshot());
   }
@@ -178,6 +193,7 @@ class Player {
     this.state.currentSong = newSong;
     this.state.state = PlaybackState.PAUSED;
     this.state.serverVolume = newVolume;
+    this.liveVolume = newVolume;
     this.persist(this.snapshot());
 
     try {
@@ -229,6 +245,7 @@ class Player {
     try {
       await this.takeDeck();
       this.device.setVolume(this.isMuted() ? 0 : volume);
+      this.liveVolume = volume;
       await this.device.playFileAt(track.file, offsetSec, loop);
     } catch (error) {
       log.error('player', null, 'Failed to play track', { track: track.id, offsetSec, volume, error: errorMessage(error) });
@@ -248,6 +265,7 @@ class Player {
     try {
       await this.takeDeck();
       this.device.setVolume(this.isMuted() ? 0 : volume);
+      this.liveVolume = volume;
       this.device.loadFile(track.file, loop);
     } catch (error) {
       log.error('player', null, 'Failed to select track', { track: track.id, error: errorMessage(error) });
@@ -279,6 +297,7 @@ class Player {
       // Note(yoochan.kim): the flow played at its own level; the user's comes
       // back with their song
       this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
+      this.liveVolume = this.state.serverVolume;
       this.device.loadSong(this.state.currentSong);
       await this.device.loadLastSongTime(this.state.currentSong);
     } catch (error) {

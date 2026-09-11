@@ -1,8 +1,9 @@
 import { ATTRIBUTES, PlaybackState, RejectReason, isMuteState, isPlaybackState } from '../protocol.ts';
-import type { AttributeName, State, StatePatch } from '../protocol.ts';
+import type { AttributeName, MusicEnd, State, StatePatch } from '../protocol.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 import { isWireInstant } from '../utils/instant.ts';
+import { HOLD_LIMIT_MS } from '../lock/AdminSession.ts';
 
 /**
  * The outcome of checking a value: either work to run, or a refusal with its
@@ -79,15 +80,19 @@ function deckIsFlows(deps: ServerDeps): boolean {
  * A Deadline off the wire. `none` clears it; an instant has to be in the future
  * and inside the day, since an end already gone by would fire the moment it landed.
  */
-function asDeadline(value: unknown, deps: ServerDeps): Checked<Date | undefined> {
+function asMusicEnd(value: unknown, deps: ServerDeps): Checked<MusicEnd> {
   if (typeof value !== 'object' || value === null) return BAD_VALUE;
   const { kind, at } = value as Record<string, unknown>;
-  if (kind === 'none') return accept(undefined);
+  if (kind === 'undecided' || kind === 'withHold') return accept({ kind });
   if (kind !== 'at' || !isWireInstant(at)) return BAD_VALUE;
 
   const when = new Date(at);
-  if (Number.isNaN(when.getTime()) || when <= deps.clock.now()) return BAD_VALUE;
-  return accept(when);
+  const now = deps.clock.now();
+  // An end already gone by would fire the moment it landed, and one further out
+  // than the hour would be an end the gate is made to wait for past its limit.
+  if (Number.isNaN(when.getTime()) || when <= now) return BAD_VALUE;
+  if (when.getTime() - now.getTime() > HOLD_LIMIT_MS) return BAD_VALUE;
+  return accept({ kind: 'at', at });
 }
 
 /**
@@ -236,11 +241,11 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       false,
       (value, deps) => {
         if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
-        const parsed = asDeadline(value, deps);
+        const parsed = asMusicEnd(value, deps);
         return parsed.ok ? parsed : BAD_VALUE;
       },
-      async (at, deps) => {
-        deps.adminSession.setMusicEndsAt(at);
+      async (end, deps) => {
+        deps.adminSession.setMusicEndsAt(end);
         return { musicEndsAt: deps.adminSession.musicEndsAt() };
       },
     ),

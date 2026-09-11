@@ -272,7 +272,7 @@ class FlowRunner {
       title: track.title,
       offset: `${offsetOf(this.clock, startedAt)}s`,
     });
-    this.notifier.state({ playback: this.player.getState(), flow: this.status() });
+    this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
     return true;
   }
 
@@ -302,7 +302,11 @@ class FlowRunner {
       log.error('flow', null, 'Could not take the audio device to restore the deck');
       return;
     }
-    this.notifier.state({ playback: this.player.getState(), song: this.player.getCurrentSong() });
+    this.notifier.state({
+      playback: this.player.getState(),
+      volume: this.player.getVolume(),
+      song: this.player.getCurrentSong(),
+    });
   }
 
   private async withAudio(work: () => Promise<void>): Promise<boolean> {

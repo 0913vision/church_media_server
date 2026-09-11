@@ -189,6 +189,40 @@ copied time, so moving the music moves the gate with it.
 ScheduleUntil = ScheduleUntilMusic | ScheduleUntilClock
 
 
+class MusicEndUndecided(TypedDict):
+    """
+    Nobody has said. With loop on this is the one to warn about: repeating
+    audio has no end of its own, so the music runs until the gate lapses and
+    takes it down — which nobody asked for.
+    """
+    kind: Literal["undecided"]
+
+
+class MusicEndWithHold(TypedDict):
+    """
+    Until the gate lapses, chosen deliberately. Same behaviour as undecided,
+    and no warning: somebody said so.
+    """
+    kind: Literal["withHold"]
+
+
+class MusicEndAt(TypedDict):
+    """
+    Stops at this instant. The gate will not lapse before it — music that was
+    given an end gets to reach it.
+    """
+    kind: Literal["at"]
+    at: str  # Church-time instant, no more than an hour ahead
+
+
+"""
+When the music an admin put on should stop. Three states rather than an
+instant that may be absent, because 'nobody has said' and 'it runs until the
+gate lapses' are different things, and only the first is worth warning about.
+"""
+MusicEnd = MusicEndUndecided | MusicEndWithHold | MusicEndAt
+
+
 class DeadlineNone(TypedDict):
     """Nothing is due"""
     kind: Literal["none"]
@@ -330,10 +364,10 @@ class State(TypedDict):
     trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while the gate is held, and false again once it opens.
-    musicEndsAt: Deadline  # When the music an admin put on should stop, whether or not it has run out. This is what makes a repeating track finite: looping audio has no end of its own, so without this a gate held over it is held until somebody comes back. A client should ask for it whenever loop is on, and say plainly that nothing will stop on its own if it is left at none. Reaching it stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while the gate is held, and cleared once it opens.
+    musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while the gate is held, and undecided again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart. A gate a person engaged also lapses by itself — see adminHold.
-    adminHold: Deadline  # When a gate a person engaged lapses by itself. Never more than an hour ahead: a panel locked and forgotten is a panel nobody in the building can use, and the person who locked it has usually gone home. Lapsing does what releasing does — the user's song comes back with it. extendAdminHold pushes it out while somebody is still there. Reads none when the gate is open, and while a flow holds it: a run names its own window and ends on its own.
+    adminHold: Deadline  # When a gate a person engaged lapses by itself. It waits for music that has an end — a track that will finish, or one told when to stop — because releasing under a song that is still sounding opens the panel mid-music. Never more than an hour ahead: a panel locked and forgotten is a panel nobody in the building can use, and the person who locked it has usually gone home. Lapsing does what releasing does — the user's song comes back with it. extendAdminHold pushes it out while somebody is still there. Reads none when the gate is open, and while a flow holds it: a run names its own window and ends on its own.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
@@ -351,10 +385,10 @@ class StatePatch(TypedDict, total=False):
     trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while the gate is held, and false again once it opens.
-    musicEndsAt: Deadline  # When the music an admin put on should stop, whether or not it has run out. This is what makes a repeating track finite: looping audio has no end of its own, so without this a gate held over it is held until somebody comes back. A client should ask for it whenever loop is on, and say plainly that nothing will stop on its own if it is left at none. Reaching it stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while the gate is held, and cleared once it opens.
+    musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while the gate is held, and undecided again once it opens.
     song: str  # Id of the selected song, one of the ids listed in ready.songs. Writing it fades out, switches, and restores that song's remembered position, paused. It is an id rather than a fixed set because which songs exist, and what they are called, is the server's to say. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     adminLock: bool  # Global gate on non-admin writes. Any admin may release it, it survives disconnects, and it is cleared by a restart. A gate a person engaged also lapses by itself — see adminHold.
-    adminHold: Deadline  # When a gate a person engaged lapses by itself. Never more than an hour ahead: a panel locked and forgotten is a panel nobody in the building can use, and the person who locked it has usually gone home. Lapsing does what releasing does — the user's song comes back with it. extendAdminHold pushes it out while somebody is still there. Reads none when the gate is open, and while a flow holds it: a run names its own window and ends on its own.
+    adminHold: Deadline  # When a gate a person engaged lapses by itself. It waits for music that has an end — a track that will finish, or one told when to stop — because releasing under a song that is still sounding opens the panel mid-music. Never more than an hour ahead: a panel locked and forgotten is a panel nobody in the building can use, and the person who locked it has usually gone home. Lapsing does what releasing does — the user's song comes back with it. extendAdminHold pushes it out while somebody is still there. Reads none when the gate is open, and while a flow holds it: a run names its own window and ends on its own.
     audioLock: bool  # True while the audio device is mid-transition. Read-only, and it refuses everyone including admins: it guards the device, not permissions.
     isAdmin: bool  # Whether this connection holds admin rights. Per-connection, so it is only ever sent to the client it describes.
     flow: FlowStatus  # What the server's one flow slot is doing. Always readable: an idle slot says so rather than reading as nothing. Read-only — startFlow and stopFlow change it.
