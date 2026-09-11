@@ -365,10 +365,14 @@ export const ATTRIBUTES = {
    */
   playback: { access: 'rw', permission: 'any' },
   /**
-   * Output volume. Applies immediately, so it is safe to write continuously while
-   * dragging a fader. Refused with flowActive while a flow's music is sounding: the
-   * run was handed the deck and puts it back itself. A flow that only holds the gate
-   * is keeping the panel out, not using the deck, so this stays writable then.
+   * Output volume, 0-100, whole numbers — a value with a fraction is rounded rather
+   * than refused, since a dragged fader sends the ratio of a pixel to a width. Reports
+   * what is *sounding*: while a run plays, this is the level that run was written
+   * with, not the one the panel was left at, and the panel's own level comes back with
+   * its song. Applies immediately, so it is safe to write continuously while dragging
+   * a fader. Refused with flowActive while a flow's music is sounding: the run was
+   * handed the deck and puts it back itself. A flow that only holds the gate is
+   * keeping the panel out, not using the deck, so this stays writable then.
    */
   volume: { access: 'rw', permission: 'any', range: { min: 0, max: 100 } },
   /**
@@ -381,8 +385,11 @@ export const ATTRIBUTES = {
    * Whether what is on the deck repeats. Always true unless the gate is held: the
    * panel's two songs are meant to run under a service without ending, and nobody at
    * the panel should be able to stop that. Writable only while the gate is held, and
-   * reset to true when it opens — like everything else the gate changes, it goes back
-   * to the user's state.
+   * refused with flowActive while a run's music is sounding — it describes what is on
+   * the deck, and a run's track made to repeat is a timeline that never finishes. A
+   * run merely holding the gate is not using the deck, so this stays writable then.
+   * Reset to true when the gate opens — like everything else the gate changes, it goes
+   * back to the user's state.
    */
   loop: { access: 'rw', permission: 'admin' },
   /**
@@ -403,7 +410,9 @@ export const ATTRIBUTES = {
    * Whether the music stopping also releases the gate, restoring the user's song on
    * the way out. For putting one piece on and walking away. 'Stopping' means either
    * the track running out or musicEndsAt arriving — with loop on, only the latter can
-   * ever happen. Writable only while the gate is held, and false again once it opens.
+   * ever happen. Writable only while a *person* is holding the gate — during a run the
+   * gate is the run's and there is no hold to arm, so this is refused with flowActive.
+   * False again once the gate opens.
    */
   unlockWhenDone: { access: 'rw', permission: 'admin' },
   /**
@@ -413,7 +422,8 @@ export const ATTRIBUTES = {
    * switched on, and while the answer is undecided say plainly — in words, not as an
    * alarm — that nothing will stop by itself. Reaching an instant stops the music and
    * puts the user's song back; the gate goes too if unlockWhenDone is on. Writable
-   * only while the gate is held, and undecided again once it opens.
+   * only while a *person* is holding the gate, for the same reason unlockWhenDone is;
+   * refused with flowActive during a run. Undecided again once the gate opens.
    */
   musicEndsAt: { access: 'rw', permission: 'admin' },
   /**
@@ -428,7 +438,10 @@ export const ATTRIBUTES = {
   /**
    * Global gate on non-admin writes. Any admin may release it, it survives
    * disconnects, and it is cleared by a restart. A gate a person engaged also lapses
-   * by itself — see adminHold.
+   * by itself — see adminHold. A run engages the same gate, and a run starting over a
+   * person's hold takes it: a scheduled service outranks an ad-hoc lock, and the hold
+   * stops counting from that moment rather than expiring later under music that is
+   * playing.
    */
   adminLock: { access: 'rw', permission: 'admin' },
   /**
@@ -592,10 +605,14 @@ export interface State {
    */
   playback: PlaybackState;
   /**
-   * Output volume. Applies immediately, so it is safe to write continuously while
-   * dragging a fader. Refused with flowActive while a flow's music is sounding: the
-   * run was handed the deck and puts it back itself. A flow that only holds the gate
-   * is keeping the panel out, not using the deck, so this stays writable then.
+   * Output volume, 0-100, whole numbers — a value with a fraction is rounded rather
+   * than refused, since a dragged fader sends the ratio of a pixel to a width. Reports
+   * what is *sounding*: while a run plays, this is the level that run was written
+   * with, not the one the panel was left at, and the panel's own level comes back with
+   * its song. Applies immediately, so it is safe to write continuously while dragging
+   * a fader. Refused with flowActive while a flow's music is sounding: the run was
+   * handed the deck and puts it back itself. A flow that only holds the gate is
+   * keeping the panel out, not using the deck, so this stays writable then.
    */
   volume: number;
   /**
@@ -608,8 +625,11 @@ export interface State {
    * Whether what is on the deck repeats. Always true unless the gate is held: the
    * panel's two songs are meant to run under a service without ending, and nobody at
    * the panel should be able to stop that. Writable only while the gate is held, and
-   * reset to true when it opens — like everything else the gate changes, it goes back
-   * to the user's state.
+   * refused with flowActive while a run's music is sounding — it describes what is on
+   * the deck, and a run's track made to repeat is a timeline that never finishes. A
+   * run merely holding the gate is not using the deck, so this stays writable then.
+   * Reset to true when the gate opens — like everything else the gate changes, it goes
+   * back to the user's state.
    */
   loop: boolean;
   /**
@@ -630,7 +650,9 @@ export interface State {
    * Whether the music stopping also releases the gate, restoring the user's song on
    * the way out. For putting one piece on and walking away. 'Stopping' means either
    * the track running out or musicEndsAt arriving — with loop on, only the latter can
-   * ever happen. Writable only while the gate is held, and false again once it opens.
+   * ever happen. Writable only while a *person* is holding the gate — during a run the
+   * gate is the run's and there is no hold to arm, so this is refused with flowActive.
+   * False again once the gate opens.
    */
   unlockWhenDone: boolean;
   /**
@@ -640,7 +662,8 @@ export interface State {
    * switched on, and while the answer is undecided say plainly — in words, not as an
    * alarm — that nothing will stop by itself. Reaching an instant stops the music and
    * puts the user's song back; the gate goes too if unlockWhenDone is on. Writable
-   * only while the gate is held, and undecided again once it opens.
+   * only while a *person* is holding the gate, for the same reason unlockWhenDone is;
+   * refused with flowActive during a run. Undecided again once the gate opens.
    */
   musicEndsAt: MusicEnd;
   /**
@@ -655,7 +678,10 @@ export interface State {
   /**
    * Global gate on non-admin writes. Any admin may release it, it survives
    * disconnects, and it is cleared by a restart. A gate a person engaged also lapses
-   * by itself — see adminHold.
+   * by itself — see adminHold. A run engages the same gate, and a run starting over a
+   * person's hold takes it: a scheduled service outranks an ad-hoc lock, and the hold
+   * stops counting from that moment rather than expiring later under music that is
+   * playing.
    */
   adminLock: boolean;
   /**

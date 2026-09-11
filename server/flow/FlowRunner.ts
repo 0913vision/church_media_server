@@ -211,7 +211,7 @@ class FlowRunner {
 
   private async runLock(lock: LockPlan): Promise<void> {
     await this.sleepUntil(lock.at);
-    this.lockCoordinator.setAdminLock(true);
+    this.lockCoordinator.setAdminLock(true, 'flow');
     if (this.active) this.active.lockEngaged = true;
     this.publish();
 

@@ -191,6 +191,55 @@ describe('Admin Lock Tests', () => {
     }
   });
 
+  test('a run takes the gate over a hold, and the hold stops acting on it', async () => {
+    const admin = await connectAuthedAdmin();
+    const soon = (ms: number): string => {
+      const at = new Date(Date.now() + ms);
+      const pad = (v: number, w = 2): string => String(v).padStart(w, '0');
+      return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` +
+        `T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}.${pad(at.getMilliseconds(), 3)}`;
+    };
+
+    try {
+      const held = admin.waitForState((patch) => patch.adminHold?.kind === 'at');
+      admin.write('adminLock', true);
+      await held;
+
+      // Note(yoochan.kim): a scheduled service outranks an ad-hoc hold, so the run is
+      // accepted rather than refused — and the hold is over from that moment.
+      const running = admin.waitForState((patch) => patch.flow?.phase === 'holding');
+      admin.invoke('startFlow', {
+        id: 'takeover', name: '겹친 예배',
+        lock: { at: soon(-1000), until: soon(600_000) },
+        parts: [],
+      });
+      await running;
+
+      const dropped = await admin.waitForState((patch) => patch.adminHold?.kind === 'none');
+      assert.deepStrictEqual(dropped.adminHold, { kind: 'none' }, 'the hold is no longer counting down');
+      assert.strictEqual((await admin.read()).adminLock, true, 'the gate is still held — by the run');
+
+      // Note(yoochan.kim): the settings that describe a *hold* are the run's to refuse now.
+      for (const field of ['unlockWhenDone', 'musicEndsAt'] as const) {
+        const refused = admin.waitForRejected(field);
+        admin.write(field, field === 'musicEndsAt' ? { kind: 'withHold' } : true);
+        assert.strictEqual(await refused, RejectReason.FLOW_ACTIVE, `${field} was not refused`);
+      }
+
+      // Note(yoochan.kim): loop is not one of them. It describes the deck, and a run that
+      // only holds the gate is not using the deck — the panel still is.
+      const looped = admin.waitForState((patch) => patch.loop !== undefined);
+      admin.write('loop', false);
+      assert.strictEqual((await looped).loop, false, 'the deck is still the panel\'s');
+    } finally {
+      admin.invoke('stopFlow', {});
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      admin.write('adminLock', false);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      admin.disconnect();
+    }
+  });
+
   test('when the music stops is the gate holder\'s to set, and only theirs', async () => {
     const admin = await connectAuthedAdmin();
     const soon = (ms: number): string => {

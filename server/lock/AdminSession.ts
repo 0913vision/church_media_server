@@ -122,6 +122,19 @@ class AdminSession {
   }
 
   private async check(): Promise<void> {
+    // Note(yoochan.kim): a run may have engaged the gate over a hold that was already
+    // running — a scheduled service outranks somebody's ad-hoc lock. The hold is
+    // over from that moment: acting on it would release the run's gate and pull
+    // the deck out from under its music.
+    if (this.lockCoordinator.adminGateHeldBy() !== 'person') {
+      if (this.lapsesAt) {
+        log.info('adminSession', null, 'A run took the gate; the hold is over');
+        this.reset();
+        this.notifier.state({ musicEndsAt: UNDECIDED, adminHold: NO_HOLD });
+      }
+      return;
+    }
+
     const now = this.clock.now();
 
     if (this.lapsesAt && now >= this.lapsesAt && !this.musicIsOwedItsEnd()) {
@@ -168,6 +181,7 @@ class AdminSession {
 
   /** Puts the deck back and opens the gate — the same unwinding a manual release does. */
   private async release(fade: boolean): Promise<void> {
+    // Only ever this session's own gate; check() has already established that.
     this.reset();
     const patch = await this.restore(fade);
     this.lockCoordinator.setAdminLock(false);

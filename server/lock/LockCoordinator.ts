@@ -27,9 +27,13 @@ export interface LockState {
  * themselves and pass `isAdmin` booleans, and lock state changes are announced
  * through the injected notifier.
  */
+/** Who is holding the admin gate: a person at a panel, or a run carrying it out. */
+export type GateHolder = 'person' | 'flow';
+
 class LockCoordinator {
   private readonly audioLock: Lock;
   private readonly adminLock: Lock;
+  private holder: GateHolder | null = null;
 
   /**
    * @param notifier - Announces each lock's state changes
@@ -81,19 +85,30 @@ class LockCoordinator {
   }
 
   /**
-   * Sets the global admin lock on or off. The admin lock is server-global
-   * state: any authenticated admin may toggle it (the caller verifies admin
-   * identity), the new value is broadcast to everyone, and it persists until an
-   * admin turns it off — a setter disconnecting does NOT clear it. Idempotent:
-   * the notifier only broadcasts on an actual on/off transition.
-   * @param locked - true to engage the gate, false to release it
+   * Engages or releases the global gate, saying who is doing it. Any admin may
+   * toggle it, it is broadcast to everyone, and it persists until released — a
+   * setter disconnecting does NOT clear it.
+   *
+   * Note(yoochan.kim): the boolean was never enough. A run and a person both engage the
+   * same gate, so "it is held" says nothing about whose it is — and everything
+   * that read it as "mine to act on" let a person into the middle of a service,
+   * or let a person's expiring hold open the panel under a run. The holder lives
+   * here because it is the one thing both of them already depend on, and neither
+   * of them can be made to depend on the other.
    */
-  setAdminLock(locked: boolean): void {
+  setAdminLock(locked: boolean, by: GateHolder = 'person'): void {
     if (locked) {
+      this.holder = by;
       this.adminLock.tryLock();
     } else {
+      this.holder = null;
       this.adminLock.unlock();
     }
+  }
+
+  /** Who engaged the gate, or null when it is open. */
+  adminGateHeldBy(): GateHolder | null {
+    return this.adminLock.isLocked() ? this.holder : null;
   }
 
   /**

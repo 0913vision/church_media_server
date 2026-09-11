@@ -60,10 +60,17 @@ function writable<T>(
   };
 }
 
+/**
+ * Note(yoochan.kim): rounded here rather than demanded of the caller. A fader sends the
+ * ratio of a pixel to a width, so 44.599303135888505 is what arrives and what
+ * was being stored; track levels are integers, and two names for the same kind
+ * of value should not disagree about what one is. Rounded rather than refused,
+ * because the panel app is installed by hand and must not start being refused.
+ */
 function checkVolume(value: unknown): Checked<number> {
   const { min, max } = ATTRIBUTES.volume.range;
   const valid = typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
-  return valid ? accept(value) : BAD_VALUE;
+  return valid ? accept(Math.round(value)) : BAD_VALUE;
 }
 
 /**
@@ -74,6 +81,24 @@ function checkVolume(value: unknown): Checked<number> {
  */
 function deckIsFlows(deps: ServerDeps): boolean {
   return deps.flowRunner.ownsDeck();
+}
+
+/**
+ * Whether the gate belongs to a run rather than to a person.
+ *
+ * Note(yoochan.kim): "the gate is held" and "it is yours to act on" are different
+ * questions, and reading the first as the second is the same bug four times
+ * over — a run holds the gate, so `adminLock` is true and every check written
+ * that way waves a person through into the middle of a service. Named so the
+ * next setting added here has to say which of the two it means.
+ */
+function gateIsFlows(deps: ServerDeps): boolean {
+  return deps.flowRunner.ownsAdminLock();
+}
+
+/** Whether a *person* is holding the gate — the only case a session setting exists in. */
+function personHoldsGate(deps: ServerDeps): boolean {
+  return deps.adminSession.adminHold().kind === 'at';
 }
 
 /**
@@ -197,6 +222,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         // songs must run without ending, and nobody there should be able to
         // stop that.
         if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        // Note(yoochan.kim): this moves what is on the deck, so it follows the deck. Set
+        // during a run's music it would make that run's track repeat, and a
+        // track that never ends is a timeline that never finishes.
+        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
         return accept(value);
       },
       async (loop, deps) => {
@@ -225,7 +254,11 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       false,
       (value, deps) => {
         if (typeof value !== 'boolean') return BAD_VALUE;
-        if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        // Note(yoochan.kim): this is a setting *on a person's hold*, so it needs one. During
+        // a run the gate is the run's and there is no hold to arm — arming it
+        // anyway pointed the session at a gate it does not own.
+        if (gateIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        if (!personHoldsGate(deps)) return reject(RejectReason.ADMIN_UNLOCKED);
         return accept(value);
       },
       async (unlockWhenDone, deps) => {
@@ -240,7 +273,9 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
-        if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
+        // The same reasoning as unlockWhenDone: it says when *this hold's* music stops.
+        if (gateIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        if (!personHoldsGate(deps)) return reject(RejectReason.ADMIN_UNLOCKED);
         const parsed = asMusicEnd(value, deps);
         return parsed.ok ? parsed : BAD_VALUE;
       },
