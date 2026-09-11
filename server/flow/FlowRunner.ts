@@ -1,6 +1,7 @@
 import { RejectReason } from '../protocol.ts';
 import type { FlowStatus, FlowTrack } from '../protocol.ts';
 import type Player from '../player/Player.ts';
+import type { SongId } from '../constants/songs.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
@@ -53,6 +54,15 @@ interface ActiveRun {
   lockEngaged: boolean;
   playing: { track: FlowTrack; endsAt: Date } | undefined;
   finished: Promise<void>;
+  /**
+   * The deck as it was when this run was accepted, and what it goes back to.
+   *
+   * Note(yoochan.kim): taken once, at the start — not read again at the end. The panel is
+   * usable while a run is only holding the gate, and anything done there belongs
+   * to the person who did it, not to what the service should return to. Someone
+   * putting a track on during the quiet half must not decide what plays after.
+   */
+  restorePoint: { song: SongId; volume: number };
 }
 
 /**
@@ -156,6 +166,7 @@ class FlowRunner {
       lockEngaged: false,
       playing: undefined,
       finished: Promise.resolve(),
+      restorePoint: { song: this.player.getCurrentSong(), volume: this.player.getUserVolume() },
     };
     this.active.finished = this.run(plan);
     this.publish();
@@ -297,7 +308,14 @@ class FlowRunner {
 
   /** Returns the deck to the two-song system; a no-op when no track took it. */
   private async restoreDeck(fade = true): Promise<void> {
-    const ran = await this.withAudio(() => this.player.restoreSong(fade));
+    const point = this.active?.restorePoint;
+    const ran = await this.withAudio(async () => {
+      await this.player.restoreSong(fade);
+      if (!point) return;
+      // Back to the deck this run was handed, not the one it happens to find.
+      if (this.player.getCurrentSong() !== point.song) await this.player.changeSong(point.song);
+      this.player.setVolume(point.volume);
+    });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device to restore the deck');
       return;

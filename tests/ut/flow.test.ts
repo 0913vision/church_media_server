@@ -153,6 +153,35 @@ describe('Flow Tests', () => {
     }
   });
 
+  test('a run only holding the gate leaves the deck usable, and takes it back at its own start', async () => {
+    const admin = await connectAuthedAdmin();
+
+    try {
+      const before = await admin.read();
+      await startHoldingFlow(admin);
+
+      // Note(yoochan.kim): the gate is held but nothing is sounding, so the panel is still
+      // the panel. Only a selection is asserted here — playing would make the
+      // host audible, and what a run does to a sounding deck is FlowRunner's.
+      const chosen = admin.waitForState((patch) => patch.deck?.source === 'track');
+      admin.invoke('selectTrack', { id: firstTrackId });
+      assert.strictEqual((await chosen).deck!.source, 'track', 'a quiet run does not own the deck');
+
+      await stopFlow(admin);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Note(yoochan.kim): back to the deck the run was handed, not the track put on
+      // halfway through it.
+      const after = await admin.read();
+      assert.deepStrictEqual(after.deck, { source: 'song' });
+      assert.strictEqual(after.song, before.song, 'the run restored what it was given');
+      assert.strictEqual(after.volume, before.volume);
+    } finally {
+      await stopFlow(admin).catch(() => {});
+      admin.disconnect();
+    }
+  });
+
   test('a library track needs the gate, and the gate puts the deck back', async () => {
     const admin = await connectAuthedAdmin();
 

@@ -533,8 +533,13 @@ class SelectTrackArgs(TypedDict):
     among ready.songs. Playing it is a separate write to playback. Refused
     with adminUnlocked unless the gate is held: while the panel is open it
     shows the song it thinks is playing, and a track it never chose would make
-    that a lie. Releasing the gate takes the track off and puts the user's
-    song back.
+    that a lie. Refused with flowActive while a run's music is sounding — a
+    run holds the gate, so that first check passes during a service and this
+    one is what keeps the deck the run's. While a run only holds the gate this
+    is allowed, and what it puts on is faded out when the run's own music
+    comes due; the run goes back to the deck it was handed, not to the track
+    somebody put on during its quiet half. Releasing the gate takes the track
+    off and puts the user's song back.
     """
     id: str  # Track id from ready.tracks
 

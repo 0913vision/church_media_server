@@ -218,10 +218,15 @@ class Player {
    * it seeks to where the music was when the fade began.
    */
   async takeDeck(): Promise<void> {
-    if (this.trackMode) return;
-
-    this.device.captureSongTime(this.state.currentSong);
-    this.trackMode = true;
+    // Note(yoochan.kim): the *position* is captured once, the first time the deck is taken —
+    // a track's position must never be written into a song's memory. The fade is
+    // not once: an admin's track already on the deck is still sounding, and it
+    // has to be brought down before the next thing starts, or the handover is a
+    // cut in the middle of the room.
+    if (!this.trackMode) {
+      this.device.captureSongTime(this.state.currentSong);
+      this.trackMode = true;
+    }
     if (this.isPlaying()) {
       try {
         await this.device.pause();

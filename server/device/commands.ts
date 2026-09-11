@@ -224,6 +224,10 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // Note(yoochan.kim): while the panel is open it shows the song it believes is
       // playing, and a track it never chose would make that a lie.
       if (!deps.lockCoordinator.getLockState().admin) return refuse(RejectReason.ADMIN_UNLOCKED);
+      // Note(yoochan.kim): the same rule the deck's attributes follow. It was missing here,
+      // and a run holds the gate — so the one check above passes during a service
+      // and this was the one door left open onto music that is already sounding.
+      if (deps.flowRunner.ownsDeck()) return refuse(RejectReason.FLOW_ACTIVE);
 
       const track = deps.trackLibrary.get(id);
       if (!track) return refuse(RejectReason.UNKNOWN_TRACK);
