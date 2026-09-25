@@ -60,7 +60,7 @@ async function receive(req: IncomingMessage, library: TrackLibrary, uploads: Upl
     return { status: 413 };
   }
 
-  const staged = library.stagingPath();
+  const staged = `${library.stagingBase()}.part`;
   let kept = false;
   try {
     if (!(await save(req, staged, TRACK_CONFIG.MAX_BYTES))) {

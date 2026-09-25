@@ -1,10 +1,11 @@
 import { RejectReason } from '../protocol.ts';
-import type { CommandName } from '../protocol.ts';
+import type { CommandName, StatePatch } from '../protocol.ts';
 import { ADMIN_CONFIG } from '../constants/authConfig.ts';
 import { verifyPassword } from '../auth/password.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 import { runsOn } from '../schedule/Schedule.ts';
+import { isYoutube } from '../tracks/Fetcher.ts';
 import { log } from '../utils/logger.ts';
 
 /**
@@ -52,6 +53,14 @@ function tracksNamedBy(entry: unknown): string[] {
     if (!Array.isArray(tracks)) return [];
     return tracks.map((track) => argsObject(track).id).filter((id): id is string => typeof id === 'string');
   });
+}
+
+/** Makes a track of audio that has arrived, and tells every client in one patch. */
+function addFrom(deps: ServerDeps, file: string, title: string, durationSec: number, alongside: StatePatch): CommandOutcome {
+  const track = deps.trackLibrary.add(file, title, durationSec);
+  deps.notifier.state({ ...alongside, tracks: deps.trackLibrary.list() });
+  log.info('command', null, 'Track added', { id: track.id, title: track.title, durationSec: track.durationSec });
+  return DONE;
 }
 
 /**
@@ -223,16 +232,36 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // Note(yoochan.kim): the title is checked before the upload is claimed, so a refusal
       // here leaves the same upload to try again with a name.
       if (typeof title !== 'string' || title.trim().length === 0) return refuse(RejectReason.INVALID_VALUE);
+      const named = title.trim();
       const from = argsObject(source);
-      if (from.kind !== 'upload' || typeof from.upload !== 'string') return refuse(RejectReason.INVALID_VALUE);
 
-      const upload = deps.uploads.take(from.upload);
-      if (!upload) return refuse(RejectReason.UNKNOWN_UPLOAD);
+      if (from.kind === 'upload') {
+        if (typeof from.upload !== 'string') return refuse(RejectReason.INVALID_VALUE);
+        const upload = deps.uploads.take(from.upload);
+        if (!upload) return refuse(RejectReason.UNKNOWN_UPLOAD);
+        return addFrom(deps, upload.file, named, upload.durationSec, {});
+      }
 
-      const track = deps.trackLibrary.add(upload.file, title.trim(), upload.durationSec);
-      deps.notifier.state({ tracks: deps.trackLibrary.list() });
-      log.info('command', null, 'Track added', { id: track.id, title: track.title, durationSec: track.durationSec });
-      return DONE;
+      if (from.kind === 'youtube') {
+        if (typeof from.url !== 'string' || !isYoutube(from.url)) return refuse(RejectReason.INVALID_VALUE);
+        if (deps.fetcher.busy()) return refuse(RejectReason.FETCH_BUSY);
+
+        // Note(yoochan.kim): fetch() claims the slot before it first waits, so the status
+        // sent here already says fetching.
+        const tell = (): void => deps.notifier.state({ trackFetch: deps.fetcher.status() });
+        const fetching = deps.fetcher.fetch(from.url, named, deps.trackLibrary.stagingBase(), tell);
+        tell();
+        const fetched = await fetching;
+        if (!fetched.ok) {
+          deps.notifier.state({ trackFetch: deps.fetcher.status() });
+          return refuse(fetched.reason);
+        }
+        // Note(yoochan.kim): the fetch ends in the same patch the track arrives in, so no
+        // screen sees it finished with nothing to show for it.
+        return addFrom(deps, fetched.file, named, fetched.durationSec, { trackFetch: deps.fetcher.status() });
+      }
+
+      return refuse(RejectReason.INVALID_VALUE);
     },
   },
 

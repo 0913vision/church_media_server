@@ -17,8 +17,11 @@ export interface LibraryEntry extends Track {
   userSelectable: boolean;
 }
 
-/** How a file still arriving in the audio folder is named, so a boot can tell it apart */
-const STAGING = /^\.incoming-[0-9a-f]+\.part$/;
+/**
+ * How a file still arriving in the audio folder is named, so a boot can tell it
+ * apart — whatever comes after the base, since a fetcher writes its own steps.
+ */
+const STAGING = /^\.incoming-[0-9a-f]+\./;
 
 /**
  * Track library: loads a JSON manifest at boot
@@ -137,9 +140,12 @@ class TrackLibrary {
     this.persist();
   }
 
-  /** A fresh path in the audio folder for a file on its way in. */
-  stagingPath(): string {
-    return path.join(this.audioDir, `.incoming-${randomBytes(6).toString('hex')}.part`);
+  /**
+   * A fresh name in the audio folder for a file on its way in, without an
+   * extension: the caller adds its own, and everything under it is cleared at boot.
+   */
+  stagingBase(): string {
+    return path.join(this.audioDir, `.incoming-${randomBytes(6).toString('hex')}`);
   }
 
   /**

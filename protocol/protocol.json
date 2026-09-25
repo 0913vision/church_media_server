@@ -56,6 +56,9 @@
         "DECK_SONG": "deckSong",
         "TRACK_IN_USE": "trackInUse",
         "UNKNOWN_UPLOAD": "unknownUpload",
+        "TOO_LARGE": "tooLarge",
+        "FETCH_FAILED": "fetchFailed",
+        "FETCH_BUSY": "fetchBusy",
         "PROTOCOL_MISMATCH": "protocolMismatch"
       }
     }
@@ -209,6 +212,49 @@
           "fields": {
             "upload": { "type": "string", "description": "The id POST /uploads answered with. Good once, and for ten minutes." }
           }
+        },
+        "youtube": {
+          "description": "A YouTube video, whose audio the server fetches itself as an mp3. One video, never a playlist.",
+          "fields": {
+            "url": { "type": "string", "description": "A youtube.com or youtu.be address" }
+          }
+        }
+      }
+    },
+    "TrackFetch": {
+      "description": "What the server is fetching from outside to make a track. Fetching takes minutes where an upload takes a moment, so it is state: every screen can say that a track is on its way.",
+      "discriminator": "kind",
+      "variants": {
+        "idle": {
+          "description": "Nothing is being fetched",
+          "fields": {}
+        },
+        "fetching": {
+          "description": "A video's audio is on its way",
+          "fields": {
+            "title": { "type": "string", "description": "The title the track will have" },
+            "progress": { "type": "FetchProgress", "description": "How far it has got" }
+          }
+        }
+      }
+    },
+    "FetchProgress": {
+      "description": "How far a fetch has got. A stage rather than a bare percentage, because the last stage has none to give: the audio has all arrived and is being made into an mp3, and the converter says nothing about how far along it is. Sent at most once a second.",
+      "discriminator": "stage",
+      "variants": {
+        "starting": {
+          "description": "Nothing has arrived yet: the video is being looked up",
+          "fields": {}
+        },
+        "downloading": {
+          "description": "The audio is arriving",
+          "fields": {
+            "percent": { "type": "number", "description": "How much has arrived, 0-100, whole numbers" }
+          }
+        },
+        "converting": {
+          "description": "All of it has arrived and is being made into an mp3",
+          "fields": {}
         }
       }
     },
@@ -323,6 +369,11 @@
     "tracks": {
       "description": "Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — addTrack, setTrackVolume, renameTrack and deleteTrack move it.",
       "type": "Track[]",
+      "access": "ro"
+    },
+    "trackFetch": {
+      "description": "Whether a track is being fetched from YouTube right now. Changes in the same patch as the tracks it produced, so a screen never sees the fetch end before the track appears. Read-only — addTrack moves it.",
+      "type": "TrackFetch",
       "access": "ro"
     },
     "deck": {
@@ -462,7 +513,7 @@
       }
     },
     "addTrack": {
-      "description": "Make a new track, stored on the server for good: its audio moves into the library's folder and the track is written to the manifest, so it survives a restart. It arrives on every client as a tracks patch, at the level every new track starts at (50), and the panel does not offer it — a library track needs the gate. Surrounding spaces are trimmed from the title, and a title left empty is refused with invalidValue before the audio is touched, so the same upload can be tried again with a name. Refused with unknownUpload for an upload that was never made, has already become a track, or was not claimed in time.",
+      "description": "Make a new track, stored on the server for good: its audio moves into the library's folder and the track is written to the manifest, so it survives a restart. It arrives on every client as a tracks patch, at the level every new track starts at (50), and the panel does not offer it — a library track needs the gate. Surrounding spaces are trimmed from the title, and a title left empty is refused with invalidValue before the audio is touched, so the same upload can be tried again with a name. Refused with unknownUpload for an upload that was never made, has already become a track, or was not claimed in time. From YouTube the server fetches the audio itself, one video at a time: trackFetch says so to every client while it runs, and the command answers when it ends. Refused with invalidValue for an address that is not YouTube's, fetchBusy while another fetch runs, tooLarge past 300MB, and fetchFailed for a video that cannot be had — gone, private, blocked, or not done within ten minutes.",
       "permission": "admin",
       "args": {
         "title": { "type": "string", "description": "What to call it. Always given — never taken from the file." },

@@ -5,6 +5,7 @@ import type AdminSessionManager from './auth/AdminSessionManager.ts';
 import type MixerConsole from './console/MixerConsole.ts';
 import type TrackLibrary from './tracks/TrackLibrary.ts';
 import type Uploads from './tracks/Uploads.ts';
+import type Fetcher from './tracks/Fetcher.ts';
 import type FlowRunner from './flow/FlowRunner.ts';
 import type Schedule from './schedule/Schedule.ts';
 import type AutoStarter from './schedule/AutoStarter.ts';
@@ -29,6 +30,8 @@ export interface ServerDeps {
   trackLibrary: TrackLibrary;
   /** Audio sent to POST /uploads, waiting for addTrack */
   uploads: Uploads;
+  /** Fetches a YouTube video's audio for addTrack, one at a time */
+  fetcher: Fetcher;
   /** Runs the one flow this server may have in flight */
   flowRunner: FlowRunner;
   /** The weekly calendar: which flows exist and when they may run */

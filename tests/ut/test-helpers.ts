@@ -50,6 +50,8 @@ const TEST_ADMIN_CONTACT_PHONE = process.env.ADMIN_CONTACT_PHONE ?? '010-0000-00
 // so a test that reached it would fail fast instead of downloading a real APK.
 const TEST_FILESERVER_URL = process.env.FILESERVER_URL ?? 'http://localhost:1';
 const TEST_FILESERVER_PASSWORD = process.env.FILESERVER_PASSWORD ?? 'test';
+// Note(yoochan.kim): a stand-in, so no test reaches YouTube. The video id picks its answer.
+const TEST_YTDLP_PATH = path.resolve('./tests/fixtures/fake-yt-dlp.mjs');
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
@@ -108,6 +110,7 @@ export async function ensureServer(): Promise<void> {
   process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
   process.env.TRACKS_AUDIO_DIR = TEST_AUDIO_DIR;
+  process.env.YTDLP_PATH = TEST_YTDLP_PATH;
   process.env.SCHEDULE_FILE_PATH = TEST_SCHEDULE_FILE_PATH;
   process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;

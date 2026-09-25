@@ -8,7 +8,7 @@ before(() => ensureServer());
 after(() => stopServer());
 
 const EXPECTED_ATTRIBUTES = [
-  'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone', 'musicEndsAt', 'tracks',
+  'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone', 'musicEndsAt', 'tracks', 'trackFetch',
   'adminLock', 'adminHold', 'audioLock', 'isAdmin', 'flow', 'schedule', 'clockOffsetSec', 'console',
 ];
 

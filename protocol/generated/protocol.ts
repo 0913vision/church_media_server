@@ -74,6 +74,9 @@ export const RejectReason = {
   DECK_SONG: 'deckSong',
   TRACK_IN_USE: 'trackInUse',
   UNKNOWN_UPLOAD: 'unknownUpload',
+  TOO_LARGE: 'tooLarge',
+  FETCH_FAILED: 'fetchFailed',
+  FETCH_BUSY: 'fetchBusy',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -291,9 +294,50 @@ export const SchedulePartKind = {
 export type TrackSource =
   /** An mp3 already sent to POST /uploads */
   | { kind: 'upload'; upload: string }
+  /**
+   * A YouTube video, whose audio the server fetches itself as an mp3. One video, never
+   * a playlist.
+   */
+  | { kind: 'youtube'; url: string }
   ;
 export const TrackSourceKind = {
   UPLOAD: 'upload',
+  YOUTUBE: 'youtube',
+} as const;
+
+/**
+ * What the server is fetching from outside to make a track. Fetching takes minutes
+ * where an upload takes a moment, so it is state: every screen can say that a track is
+ * on its way.
+ */
+export type TrackFetch =
+  /** Nothing is being fetched */
+  | { kind: 'idle' }
+  /** A video's audio is on its way */
+  | { kind: 'fetching'; title: string; progress: FetchProgress }
+  ;
+export const TrackFetchKind = {
+  IDLE: 'idle',
+  FETCHING: 'fetching',
+} as const;
+
+/**
+ * How far a fetch has got. A stage rather than a bare percentage, because the last
+ * stage has none to give: the audio has all arrived and is being made into an mp3, and
+ * the converter says nothing about how far along it is. Sent at most once a second.
+ */
+export type FetchProgress =
+  /** Nothing has arrived yet: the video is being looked up */
+  | { stage: 'starting' }
+  /** The audio is arriving */
+  | { stage: 'downloading'; percent: number }
+  /** All of it has arrived and is being made into an mp3 */
+  | { stage: 'converting' }
+  ;
+export const FetchProgressKind = {
+  STARTING: 'starting',
+  DOWNLOADING: 'downloading',
+  CONVERTING: 'converting',
 } as const;
 
 /**
@@ -413,6 +457,12 @@ export const ATTRIBUTES = {
    * renameTrack and deleteTrack move it.
    */
   tracks: { access: 'ro' },
+  /**
+   * Whether a track is being fetched from YouTube right now. Changes in the same patch
+   * as the tracks it produced, so a screen never sees the fetch end before the track
+   * appears. Read-only — addTrack moves it.
+   */
+  trackFetch: { access: 'ro' },
   /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.
@@ -597,7 +647,12 @@ export const COMMANDS = {
    * gate. Surrounding spaces are trimmed from the title, and a title left empty is
    * refused with invalidValue before the audio is touched, so the same upload can be
    * tried again with a name. Refused with unknownUpload for an upload that was never
-   * made, has already become a track, or was not claimed in time.
+   * made, has already become a track, or was not claimed in time. From YouTube the
+   * server fetches the audio itself, one video at a time: trackFetch says so to every
+   * client while it runs, and the command answers when it ends. Refused with
+   * invalidValue for an address that is not YouTube's, fetchBusy while another fetch
+   * runs, tooLarge past 300MB, and fetchFailed for a video that cannot be had — gone,
+   * private, blocked, or not done within ten minutes.
    */
   addTrack: { permission: 'admin' },
   /**
@@ -678,6 +733,12 @@ export interface State {
    * renameTrack and deleteTrack move it.
    */
   tracks: Track[];
+  /**
+   * Whether a track is being fetched from YouTube right now. Changes in the same patch
+   * as the tracks it produced, so a screen never sees the fetch end before the track
+   * appears. Read-only — addTrack moves it.
+   */
+  trackFetch: TrackFetch;
   /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.

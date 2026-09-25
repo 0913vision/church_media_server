@@ -17,6 +17,7 @@ import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
 import Uploads from './tracks/Uploads.ts';
+import Fetcher from './tracks/Fetcher.ts';
 import { createUploadDoor } from './tracks/uploadDoor.ts';
 import { TRACK_CONFIG } from './constants/trackConfig.ts';
 import FlowRunner from './flow/FlowRunner.ts';
@@ -67,6 +68,7 @@ class MediaServer {
     const uploads = new Uploads(TRACK_CONFIG.UPLOAD_TTL_MS);
     this.uploads = uploads;
     const serveUploads = createUploadDoor(trackLibrary, uploads);
+    const fetcher = new Fetcher(requireEnv('YTDLP_PATH'));
 
     // Note(yoochan.kim): the plain-HTTP doors this server has, each moving a file and
     // nothing else: an outdated app downloads its update, the admin web sends an
@@ -148,6 +150,7 @@ class MediaServer {
       mixerConsole,
       trackLibrary,
       uploads,
+      fetcher,
       flowRunner,
       schedule,
       autoStarter,

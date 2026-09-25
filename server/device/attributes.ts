@@ -240,6 +240,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.trackLibrary.list(),
   },
 
+  trackFetch: {
+    read: (deps) => deps.fetcher.status(),
+  },
+
   schedule: {
     read: (deps) => deps.schedule.list(),
   },
