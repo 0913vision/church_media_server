@@ -19,6 +19,12 @@ export const DEVICE_CONFIG = {
   // position by a frame/block, so compare within a tolerance instead of exact
   PLAYBACK_TIME_TOLERANCE_SEC: 0.5,
 
+  // Note(yoochan.kim): how much of a track has to be missing before starting it counts as
+  // joining part-way through. A timer fires a millisecond or two late, which is
+  // inaudible — but measured against zero it is an offset, and the fade over it
+  // is three seconds long.
+  SEEK_AUDIBLE_SEC: 0.5,
+
   // Note(yoochan.kim): Play/pause volume fade: FADE_STEPS+1 steps, FADE_STEP_MS apart
   // (≈ (FADE_STEPS+1) * FADE_STEP_MS total), following a quarter sine/cosine
   // curve for an equal-power transition

@@ -276,9 +276,12 @@ class AudioDevice implements AudioOutput {
       }
     }
 
-    // Note(yoochan.kim): a seek means the run joined this song part-way through, so
-    // the fade covers a cut. From the top there is no cut to cover.
-    await this.resume(offsetSec > 0);
+    // Note(yoochan.kim): a seek means the run joined this song part-way through, so the
+    // fade covers a cut. Judged in tenths of a second rather than at zero: a
+    // timer due at 20:05:00.000 fires a millisecond or two after it, and that
+    // counts as an offset — so a track starting exactly on time still opened
+    // under a three-second fade.
+    await this.resume(offsetSec > DEVICE_CONFIG.SEEK_AUDIBLE_SEC);
   }
 }
 

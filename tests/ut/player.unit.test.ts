@@ -14,12 +14,15 @@ import type { PersistedState } from '../../server/state/StateStore.ts';
 /** Records every volume the Player pushes to the output. */
 class FakeAudioOutput implements AudioOutput {
   readonly volumeCalls: number[] = [];
+  pauseCalls = 0;
 
   setVolume(volume: number): void {
     this.volumeCalls.push(volume);
   }
   async resume(): Promise<void> {}
-  async pause(): Promise<void> {}
+  async pause(): Promise<void> {
+    this.pauseCalls++;
+  }
   captureSongTime(): void {}
   loadSong(): void {}
   async loadLastSongTime(): Promise<void> {}
@@ -124,5 +127,27 @@ describe('Player persistence (unit)', () => {
     assert.strictEqual(player.getCurrentSong(), FERVENT);
     assert.strictEqual(player.isMuted(), true);
     assert.strictEqual(device.lastVolume, 0, 'a muted restore must boot the device silent');
+  });
+});
+
+describe('Player handing the deck over (unit)', () => {
+  test('taking the deck fades out what is sounding, unless told not to', async () => {
+    const { device, player } = makePlayer();
+    await player.play();
+
+    // Note(yoochan.kim): a run moving to its own next track passes false. The fade there
+    // cost three seconds and the next track skipped exactly that much.
+    await player.takeDeck(false);
+    assert.strictEqual(device.pauseCalls, 0, 'no fade between a run\'s own tracks');
+
+    await player.play();
+    await player.takeDeck(true);
+    assert.strictEqual(device.pauseCalls, 1, 'something else on the deck is brought down first');
+  });
+
+  test('nothing sounding means nothing to fade either way', async () => {
+    const { device, player } = makePlayer();
+    await player.takeDeck(true);
+    assert.strictEqual(device.pauseCalls, 0);
   });
 });

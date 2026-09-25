@@ -265,8 +265,12 @@ class FlowRunner {
     total: number,
     endsAt: Date,
   ): Promise<boolean> {
+    // Note(yoochan.kim): no fade between this run's own tracks — and the fade is why. It
+    // took three seconds, and the offset below is read after it, so every track
+    // after the first skipped its own opening by exactly one fade.
+    const ownTrackPlaying = this.active?.playing !== undefined;
     const ran = await this.withAudio(async () => {
-      await this.player.takeDeck();
+      await this.player.takeDeck(!ownTrackPlaying);
       const offsetSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
       await this.player.playTrackAt(track, offsetSec, track.volume);
     });

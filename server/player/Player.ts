@@ -205,29 +205,20 @@ class Player {
   }
 
   /**
-   * Plays a library track from an offset (scheduled flows). The current
-   * song's position is captured once when the deck is first taken over, so
-   * restoreSong() can return exactly where the user left off.
-   */
-  /**
-   * Hands the deck to a scheduled flow: remembers where the user's song was,
-   * and fades out if it is sounding, the same way pausing does.
+   * Hands the deck over: remembers where the user's song was, and fades out
+   * what is sounding unless the caller says not to.
    *
-   * Kept separate from playTrackAt because the fade takes seconds, and a flow
-   * has to work out where its timeline is *after* that, not before — otherwise
-   * it seeks to where the music was when the fade began.
+   * Kept separate from playTrackAt because a fade takes seconds, and the caller
+   * has to work out where its timeline is after that, not before.
    */
-  async takeDeck(): Promise<void> {
-    // Note(yoochan.kim): the *position* is captured once, the first time the deck is taken —
-    // a track's position must never be written into a song's memory. The fade is
-    // not once: an admin's track already on the deck is still sounding, and it
-    // has to be brought down before the next thing starts, or the handover is a
-    // cut in the middle of the room.
+  async takeDeck(fade = true): Promise<void> {
+    // Note(yoochan.kim): the position is captured once — a track's position must never be
+    // written into a song's memory.
     if (!this.trackMode) {
       this.device.captureSongTime(this.state.currentSong);
       this.trackMode = true;
     }
-    if (this.isPlaying()) {
+    if (fade && this.isPlaying()) {
       try {
         await this.device.pause();
       } catch (error) {
