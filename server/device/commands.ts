@@ -217,6 +217,43 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
+  renameTrack: {
+    async run(args, deps) {
+      const { id, title } = argsObject(args);
+      if (typeof id !== 'string' || typeof title !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      const named = title.trim();
+      if (named.length === 0) return refuse(RejectReason.INVALID_VALUE);
+      if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
+      // Note(yoochan.kim): the panel's songs are named once, in ready.songs, and a panel
+      // installed by hand is not asked to notice a rename.
+      if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
+
+      deps.trackLibrary.rename(id, named);
+      deps.notifier.state({ tracks: deps.trackLibrary.list() });
+      return DONE;
+    },
+  },
+
+  deleteTrack: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
+      if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
+      if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
+
+      const deck = deps.player.getDeck();
+      const onDeck = deck.source === 'track' && deck.id === id;
+      if (deps.schedule.usedBy(id).length > 0 || deps.flowRunner.uses(id) || onDeck) {
+        return refuse(RejectReason.TRACK_IN_USE);
+      }
+
+      deps.trackLibrary.remove(id);
+      deps.notifier.state({ tracks: deps.trackLibrary.list() });
+      log.info('command', null, 'Track deleted', { id });
+      return DONE;
+    },
+  },
+
   selectTrack: {
     async run(args, deps) {
       const id = argsObject(args).id;

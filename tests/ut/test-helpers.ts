@@ -32,6 +32,12 @@ const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(
 // sets a level would edit the library this building plays from.
 const TEST_TRACKS_SOURCE = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
+// Note(yoochan.kim): deleting a track deletes its file from here, so it is a temp
+// folder: the manifest copy still names the real audio, which lives outside it.
+const TEST_AUDIO_DIR = path.join(os.tmpdir(), `cms-test-audio-${process.pid}`);
+/** The one track a test may delete: silent, and in the test's own folder. */
+export const SCRATCH_TRACK_ID = 'test-scratch';
+export const SCRATCH_TRACK_FILE = path.join(TEST_AUDIO_DIR, 'scratch.mp3');
 // Note(yoochan.kim): the calendar starts empty for the same reason — a test that saves a
 // flow must not write the one this building runs on.
 const TEST_SCHEDULE_FILE_PATH = path.join(os.tmpdir(), `cms-test-schedule-${process.pid}.json`);
@@ -49,12 +55,16 @@ const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
 /**
  * Copies the manifest somewhere the run may write to. File paths are resolved
- * on the way, since the copy no longer sits beside the audio it names.
+ * on the way, since the copy no longer sits beside the audio it names. The
+ * scratch track goes on the end, so the first track stays the manifest's own.
  */
 function copyManifest(): void {
   const dir = path.dirname(TEST_TRACKS_SOURCE);
   const entries = JSON.parse(fs.readFileSync(TEST_TRACKS_SOURCE, 'utf8')) as Record<string, unknown>[];
-  const resolved = entries.map((entry) => ({ ...entry, file: path.resolve(dir, String(entry.file)) }));
+  const resolved: Record<string, unknown>[] = entries.map((entry) => ({ ...entry, file: path.resolve(dir, String(entry.file)) }));
+  fs.mkdirSync(TEST_AUDIO_DIR, { recursive: true });
+  fs.copyFileSync(path.resolve('./tests/fixtures/silence.mp3'), SCRATCH_TRACK_FILE);
+  resolved.push({ id: SCRATCH_TRACK_ID, title: '테스트 곡', file: SCRATCH_TRACK_FILE, durationSec: 1.1, volume: 50 });
   fs.writeFileSync(TEST_TRACKS_MANIFEST_PATH, JSON.stringify(resolved), 'utf8');
 }
 
@@ -97,6 +107,7 @@ export async function ensureServer(): Promise<void> {
   process.env.MPV_LIBRARY_PATH = TEST_MPV_LIBRARY_PATH;
   process.env.STATE_FILE_PATH = TEST_STATE_FILE_PATH;
   process.env.TRACKS_MANIFEST_PATH = TEST_TRACKS_MANIFEST_PATH;
+  process.env.TRACKS_AUDIO_DIR = TEST_AUDIO_DIR;
   process.env.SCHEDULE_FILE_PATH = TEST_SCHEDULE_FILE_PATH;
   process.env.ADMIN_CONTACT_NAME = TEST_ADMIN_CONTACT_NAME;
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
@@ -126,6 +137,7 @@ export async function stopServer(): Promise<void> {
     startedServer = null;
     fs.rmSync(TEST_TRACKS_MANIFEST_PATH, { force: true });
     fs.rmSync(TEST_SCHEDULE_FILE_PATH, { force: true });
+    fs.rmSync(TEST_AUDIO_DIR, { recursive: true, force: true });
   }
 }
 

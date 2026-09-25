@@ -1,4 +1,4 @@
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -20,6 +20,12 @@ before(async () => {
 
 const AUDIO = path.resolve('./assets/audio/music_slow.mp3');
 const OTHER_AUDIO = path.resolve('./assets/audio/music_fast.mp3');
+const SILENCE = path.resolve('./tests/fixtures/silence.mp3');
+
+// Note(yoochan.kim): deleting a track deletes its file from here, so the library gets
+// a temp folder of its own. The real audio above lives outside it.
+const AUDIO_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-deck-audio-'));
+after(() => fs.rmSync(AUDIO_DIR, { recursive: true, force: true }));
 
 let written = 0;
 
@@ -28,7 +34,7 @@ function library(entries: unknown[]): Library {
   const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);
   fs.writeFileSync(file, JSON.stringify(entries));
   try {
-    return new TrackLibrary(file);
+    return new TrackLibrary(file, AUDIO_DIR);
   } finally {
     fs.rmSync(file, { force: true });
   }
@@ -38,7 +44,13 @@ function library(entries: unknown[]): Library {
 function onDisk(entries: unknown[]): { file: string; lib: Library } {
   const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);
   fs.writeFileSync(file, JSON.stringify(entries));
-  return { file, lib: new TrackLibrary(file) };
+  return { file, lib: new TrackLibrary(file, AUDIO_DIR) };
+}
+
+/** A silent copy at `file`, so a deletion can only ever remove a copy. */
+function silentCopy(file: string): string {
+  fs.copyFileSync(SILENCE, file);
+  return file;
 }
 
 function track(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -102,7 +114,7 @@ describe('Deck songs come from the manifest', () => {
 
       // Note(yoochan.kim): read back from disk rather than from the object that wrote it.
       // What the write is for is the boot after this one.
-      assert.strictEqual(new TrackLibrary(file).volumeOf('special'), 70);
+      assert.strictEqual(new TrackLibrary(file, AUDIO_DIR).volumeOf('special'), 70);
 
       const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>[];
       assert.deepStrictEqual(saved.map((entry) => entry.volume), [40, 70], 'only the one asked for moved');
@@ -121,9 +133,72 @@ describe('Deck songs come from the manifest', () => {
       lib.setVolume('song', 140);
       lib.setVolume('nobody', 60);
       assert.strictEqual(lib.volumeOf('song'), 40);
-      assert.strictEqual(new TrackLibrary(file).volumeOf('song'), 40);
+      assert.strictEqual(new TrackLibrary(file, AUDIO_DIR).volumeOf('song'), 40);
     } finally {
       fs.rmSync(file, { force: true });
+    }
+  });
+
+  test('a library without its audio folder does not boot', () => {
+    const missing = path.join(AUDIO_DIR, 'nowhere');
+    const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);
+    fs.writeFileSync(file, JSON.stringify([track('song', { userSelectable: true })]));
+    try {
+      assert.throws(() => new TrackLibrary(file, missing), /audio directory/);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+});
+
+describe('A track renamed or deleted', () => {
+  test('a new name is in the manifest the next boot reads', () => {
+    const { file, lib } = onDisk([track('song', { userSelectable: true }), track('extra')]);
+
+    try {
+      lib.rename('extra', '새 이름');
+      assert.strictEqual(new TrackLibrary(file, AUDIO_DIR).get('extra')?.title, '새 이름');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  test('a deleted track takes its own file with it', () => {
+    const owned = silentCopy(path.join(AUDIO_DIR, 'owned.mp3'));
+    const { file, lib } = onDisk([track('song', { userSelectable: true }), track('owned', { file: owned })]);
+
+    try {
+      lib.remove('owned');
+      assert.deepStrictEqual(lib.list().map((each) => each.id), ['song']);
+      assert.strictEqual(new TrackLibrary(file, AUDIO_DIR).get('owned'), undefined, 'gone for the next boot');
+      assert.strictEqual(fs.existsSync(owned), false);
+    } finally {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(owned, { force: true });
+    }
+  });
+
+  test('audio outside the folder, or another track still plays, stays', () => {
+    const outside = silentCopy(path.join(os.tmpdir(), `cms-deck-outside-${process.pid}.mp3`));
+    const shared = silentCopy(path.join(AUDIO_DIR, 'shared.mp3'));
+    const { file, lib } = onDisk([
+      track('song', { userSelectable: true }),
+      track('outside', { file: outside }),
+      track('first', { file: shared }),
+      track('second', { file: shared }),
+    ]);
+
+    try {
+      lib.remove('outside');
+      assert.ok(fs.existsSync(outside), 'the server did not put it there, so it is not the server\'s');
+      lib.remove('first');
+      assert.ok(fs.existsSync(shared), 'another track still plays it');
+      lib.remove('second');
+      assert.strictEqual(fs.existsSync(shared), false, 'the last track to name it takes it');
+    } finally {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(outside, { force: true });
+      fs.rmSync(shared, { force: true });
     }
   });
 });

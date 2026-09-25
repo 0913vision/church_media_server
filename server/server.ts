@@ -81,7 +81,7 @@ class MediaServer {
 
     // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
-    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'));
+    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'), requireEnv('TRACKS_AUDIO_DIR'));
     const schedule = new Schedule(requireEnv('SCHEDULE_FILE_PATH'));
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();

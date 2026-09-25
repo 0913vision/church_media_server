@@ -52,6 +52,8 @@
         "NO_FLOW": "noFlow",
         "WINDOW_PASSED": "windowPassed",
         "MUSIC_OUTSIDE_LOCK": "musicOutsideLock",
+        "DECK_SONG": "deckSong",
+        "TRACK_IN_USE": "trackInUse",
         "PROTOCOL_MISMATCH": "protocolMismatch"
       }
     }
@@ -305,7 +307,7 @@
       "permission": "admin"
     },
     "tracks": {
-      "description": "Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume moves it.",
+      "description": "Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume, renameTrack and deleteTrack move it.",
       "type": "Track[]",
       "access": "ro"
     },
@@ -443,6 +445,21 @@
       "args": {
         "id": { "type": "string", "description": "Track id from the tracks attribute" },
         "volume": { "type": "number", "description": "0-100" }
+      }
+    },
+    "renameTrack": {
+      "description": "Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.",
+      "permission": "admin",
+      "args": {
+        "id": { "type": "string", "description": "Track id from the tracks attribute" },
+        "title": { "type": "string", "description": "The new name" }
+      }
+    },
+    "deleteTrack": {
+      "description": "Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play.",
+      "permission": "admin",
+      "args": {
+        "id": { "type": "string", "description": "Track id from the tracks attribute" }
       }
     },
     "selectTrack": {

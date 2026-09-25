@@ -1,6 +1,7 @@
 node_modules/
 .env
 *.mp3
+!tests/fixtures/silence.mp3
 *claude*
 .DS_Store
 dist/

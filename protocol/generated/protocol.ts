@@ -71,6 +71,8 @@ export const RejectReason = {
   NO_FLOW: 'noFlow',
   WINDOW_PASSED: 'windowPassed',
   MUSIC_OUTSIDE_LOCK: 'musicOutsideLock',
+  DECK_SONG: 'deckSong',
+  TRACK_IN_USE: 'trackInUse',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -394,7 +396,8 @@ export const ATTRIBUTES = {
   /**
    * Every track the server can play, each with the level it sounds at, in the order to
    * show them. State rather than part of ready, because tracks are added, renamed and
-   * deleted while clients are connected. Read-only — setTrackVolume moves it.
+   * deleted while clients are connected. Read-only — setTrackVolume, renameTrack and
+   * deleteTrack move it.
    */
   tracks: { access: 'ro' },
   /**
@@ -574,6 +577,22 @@ export const COMMANDS = {
    */
   setTrackVolume: { permission: 'admin' },
   /**
+   * Change what a track is called. Its id and audio stay as they are, so every flow
+   * that names it still does. Surrounding spaces are trimmed, and a title left empty
+   * is refused with invalidValue. Refused with deckSong for a song the panel offers:
+   * those are named once, in ready.songs, and a panel installed by hand is not asked
+   * to notice a rename.
+   */
+  renameTrack: { permission: 'admin' },
+  /**
+   * Take a track out of the library and delete its audio file. Refused with deckSong
+   * for a song the panel offers, and with trackInUse while anything still needs it: a
+   * calendar entry that names it, the run in flight, or the deck it is on right now. A
+   * run copies its tracks when it starts, so the calendar alone would let a run lose a
+   * track it has yet to play.
+   */
+  deleteTrack: { permission: 'admin' },
+  /**
    * Put a library track on the deck, paused at its start, at its own level — the same
    * act as writing the song attribute, for the tracks that are not among ready.songs.
    * Playing it is a separate write to playback. Refused with adminUnlocked unless the
@@ -631,7 +650,8 @@ export interface State {
   /**
    * Every track the server can play, each with the level it sounds at, in the order to
    * show them. State rather than part of ready, because tracks are added, renamed and
-   * deleted while clients are connected. Read-only — setTrackVolume moves it.
+   * deleted while clients are connected. Read-only — setTrackVolume, renameTrack and
+   * deleteTrack move it.
    */
   tracks: Track[];
   /**
@@ -755,6 +775,8 @@ export type InvokeRequest =
   | { command: 'startScheduledFlow'; args: { id: string } }
   | { command: 'skipFlow'; args: { id: string } }
   | { command: 'setTrackVolume'; args: { id: string; volume: number } }
+  | { command: 'renameTrack'; args: { id: string; title: string } }
+  | { command: 'deleteTrack'; args: { id: string } }
   | { command: 'selectTrack'; args: { id: string } }
   ;
 

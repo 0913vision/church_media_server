@@ -39,7 +39,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `volume` | `number` (0–100) | 읽기/쓰기 | any | Output volume, 0-100, whole numbers — a value with a fraction is rounded rather than refused, since a dragged fader sends the ratio of a pixel to a width. Reports what is *sounding*: while a run plays, this is the level that run was written with, not the one the panel was left at, and the panel's own level comes back with its song. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then. |
 | `mute` | `MuteState` | 읽기/쓰기 | any | Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then. |
 | `loop` | `boolean` | 읽기/쓰기 | admin | Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state. |
-| `tracks` | `Track[]` | 읽기 전용 | — | Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume moves it. |
+| `tracks` | `Track[]` | 읽기 전용 | — | Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume, renameTrack and deleteTrack move it. |
 | `deck` | `DeckSource` | 읽기 전용 | — | What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it. |
 | `unlockWhenDone` | `boolean` | 읽기/쓰기 | admin | Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens. |
 | `musicEndsAt` | `MusicEnd` | 읽기/쓰기 | admin | When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens. |
@@ -163,6 +163,27 @@ Set the level a track sounds at, kept across restarts. Applies from the next tim
 | `id` | `string` | Track id from the tracks attribute |
 | `volume` | `number` | 0-100 |
 
+### `renameTrack`
+
+권한: admin
+
+Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Track id from the tracks attribute |
+| `title` | `string` | The new name |
+
+### `deleteTrack`
+
+권한: admin
+
+Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Track id from the tracks attribute |
+
 ### `selectTrack`
 
 권한: admin
@@ -203,7 +224,7 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"protocolMismatch"`
 
 ## 객체
 

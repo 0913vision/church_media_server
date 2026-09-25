@@ -150,6 +150,16 @@ class FlowRunner {
     return this.active?.playing !== undefined;
   }
 
+  /**
+   * Whether the run in flight names this track.
+   *
+   * Note(yoochan.kim): a run copied its tracks when it was accepted, so a calendar edited
+   * since then no longer says what the run is about to play.
+   */
+  uses(trackId: string): boolean {
+    return this.active?.plan.parts.some((part) => part.tracks.some((track) => track.id === trackId)) ?? false;
+  }
+
   /** Accepts a flow and starts running it. */
   async start(args: unknown): Promise<{ ok: true } | { ok: false; reason: RejectReason }> {
     if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };

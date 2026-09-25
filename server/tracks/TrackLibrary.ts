@@ -27,14 +27,26 @@ export interface LibraryEntry extends Track {
  * songs. So the deck's size, order, names, files and levels are all data.
  *
  * Note(yoochan.kim): the manifest is the server's file, not a checked-in one — it is
- * kept out of git and rewritten here when a level changes. A level is the one
+ * kept out of git and rewritten here when a track is renamed or deleted or its
+ * level changes. A level is the one
  * thing about a track somebody adjusts by ear, and putting it anywhere else
  * would leave two answers to "how loud is this song" free to disagree.
  */
 class TrackLibrary {
   private readonly tracks = new Map<string, LibraryEntry>();
+  private readonly audioDir: string;
 
-  constructor(private readonly manifestPath: string) {
+  /**
+   * @param audioDir - Where the server keeps audio it owns. Deleting a track
+   *   deletes its file only from here: a manifest may name audio anywhere, and
+   *   what the server did not put there is not the server's to remove.
+   */
+  constructor(private readonly manifestPath: string, audioDir: string) {
+    this.audioDir = path.resolve(audioDir);
+    if (!fs.statSync(this.audioDir, { throwIfNoEntry: false })?.isDirectory()) {
+      throw new Error(`Track audio directory not found: ${this.audioDir}`);
+    }
+
     const manifestDir = path.dirname(manifestPath);
     const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     if (!Array.isArray(parsed)) {
@@ -116,6 +128,34 @@ class TrackLibrary {
     this.persist();
   }
 
+  /** Renames a track. The caller checks the id exists and is not a deck song. */
+  rename(id: string, title: string): void {
+    const entry = this.tracks.get(id);
+    if (!entry) return;
+    entry.title = title;
+    this.persist();
+  }
+
+  /**
+   * Takes a track out of the library, then deletes its audio. The caller checks
+   * that nothing still needs it.
+   */
+  remove(id: string): void {
+    const entry = this.tracks.get(id);
+    if (!entry) return;
+    this.tracks.delete(id);
+
+    // Note(yoochan.kim): a manifest that failed to save still names the file, and the
+    // next boot refuses a track whose file is gone
+    if (!this.persist()) return;
+    if (!this.owns(entry.file)) return;
+    try {
+      fs.unlinkSync(entry.file);
+    } catch (error) {
+      log.warn('trackLibrary', null, 'Failed to delete track audio', { file: entry.file, error: errorMessage(error) });
+    }
+  }
+
   /** The client-facing slice: everything but where the audio lives. */
   list(): Track[] {
     return [...this.tracks.values()].map(({ id, title, durationSec, volume }) => ({ id, title, durationSec, volume }));
@@ -129,12 +169,20 @@ class TrackLibrary {
     return [...this.tracks.values()].filter((entry) => entry.userSelectable);
   }
 
+  /** Whether a file is the server's to delete: in its audio directory, and named by no other track. */
+  private owns(file: string): boolean {
+    const inside = path.relative(this.audioDir, file);
+    if (inside.startsWith('..') || path.isAbsolute(inside)) return false;
+    return ![...this.tracks.values()].some((entry) => entry.file === file);
+  }
+
   /**
    * Writes the manifest back: temp file then rename, the way the state file is
    * written, so a crash mid-write cannot leave a manifest that refuses the next
    * boot. Best-effort like that one — a level that failed to save still sounds.
+   * Says whether it was written, for a change that must not outrun the disk.
    */
-  private persist(): void {
+  private persist(): boolean {
     const entries = [...this.tracks.values()].map((entry) => ({
       id: entry.id,
       title: entry.title,
@@ -147,8 +195,10 @@ class TrackLibrary {
       const tmp = `${this.manifestPath}.tmp`;
       fs.writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
       fs.renameSync(tmp, this.manifestPath);
+      return true;
     } catch (error) {
       log.error('trackLibrary', null, 'Failed to write track manifest', { error: errorMessage(error) });
+      return false;
     }
   }
 }
