@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { SongId } from '../constants/songs.ts';
+import { TRACK_CONFIG } from '../constants/trackConfig.ts';
 import type { Song, Track } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -14,6 +16,9 @@ export interface LibraryEntry extends Track {
   /** Whether a person may pick this one at the panel */
   userSelectable: boolean;
 }
+
+/** How a file still arriving in the audio folder is named, so a boot can tell it apart */
+const STAGING = /^\.incoming-[0-9a-f]+\.part$/;
 
 /**
  * Track library: loads a JSON manifest at boot
@@ -45,6 +50,10 @@ class TrackLibrary {
     this.audioDir = path.resolve(audioDir);
     if (!fs.statSync(this.audioDir, { throwIfNoEntry: false })?.isDirectory()) {
       throw new Error(`Track audio directory not found: ${this.audioDir}`);
+    }
+    // Note(yoochan.kim): a file still arriving when the server stopped never became a track
+    for (const name of fs.readdirSync(this.audioDir)) {
+      if (STAGING.test(name)) fs.rmSync(path.join(this.audioDir, name), { force: true });
     }
 
     const manifestDir = path.dirname(manifestPath);
@@ -128,6 +137,32 @@ class TrackLibrary {
     this.persist();
   }
 
+  /** A fresh path in the audio folder for a file on its way in. */
+  stagingPath(): string {
+    return path.join(this.audioDir, `.incoming-${randomBytes(6).toString('hex')}.part`);
+  }
+
+  /**
+   * Makes a new track of a file waiting at a staging path: the file moves into
+   * the audio folder under the track's id, and the manifest is written, so the
+   * next boot has it too. Starts at the level every new track starts at.
+   */
+  add(staged: string, title: string, durationSec: number): LibraryEntry {
+    const id = this.freshId();
+    const file = path.join(this.audioDir, `${id}.mp3`);
+    fs.renameSync(staged, file);
+
+    const entry: LibraryEntry = {
+      id, title, file, durationSec,
+      declaredFile: `./${path.relative(path.dirname(this.manifestPath), file)}`,
+      volume: TRACK_CONFIG.NEW_TRACK_VOLUME,
+      userSelectable: false,
+    };
+    this.tracks.set(id, entry);
+    this.persist();
+    return entry;
+  }
+
   /** Renames a track. The caller checks the id exists and is not a deck song. */
   rename(id: string, title: string): void {
     const entry = this.tracks.get(id);
@@ -167,6 +202,14 @@ class TrackLibrary {
 
   private songs(): LibraryEntry[] {
     return [...this.tracks.values()].filter((entry) => entry.userSelectable);
+  }
+
+  /** An id nothing uses yet, which also names its file. */
+  private freshId(): string {
+    for (;;) {
+      const id = `track-${randomBytes(4).toString('hex')}`;
+      if (!this.tracks.has(id) && !fs.existsSync(path.join(this.audioDir, `${id}.mp3`))) return id;
+    }
   }
 
   /** Whether a file is the server's to delete: in its audio directory, and named by no other track. */

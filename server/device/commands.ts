@@ -217,6 +217,25 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
+  addTrack: {
+    async run(args, deps) {
+      const { title, source } = argsObject(args);
+      // Note(yoochan.kim): the title is checked before the upload is claimed, so a refusal
+      // here leaves the same upload to try again with a name.
+      if (typeof title !== 'string' || title.trim().length === 0) return refuse(RejectReason.INVALID_VALUE);
+      const from = argsObject(source);
+      if (from.kind !== 'upload' || typeof from.upload !== 'string') return refuse(RejectReason.INVALID_VALUE);
+
+      const upload = deps.uploads.take(from.upload);
+      if (!upload) return refuse(RejectReason.UNKNOWN_UPLOAD);
+
+      const track = deps.trackLibrary.add(upload.file, title.trim(), upload.durationSec);
+      deps.notifier.state({ tracks: deps.trackLibrary.list() });
+      log.info('command', null, 'Track added', { id: track.id, title: track.title, durationSec: track.durationSec });
+      return DONE;
+    },
+  },
+
   renameTrack: {
     async run(args, deps) {
       const { id, title } = argsObject(args);

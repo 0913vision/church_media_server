@@ -139,6 +139,21 @@ describe('Deck songs come from the manifest', () => {
     }
   });
 
+  test('a boot clears uploads that never became tracks, and nothing else', () => {
+    const leftover = path.join(AUDIO_DIR, '.incoming-0123abcd.part');
+    const kept = silentCopy(path.join(AUDIO_DIR, 'kept.mp3'));
+    fs.writeFileSync(leftover, 'half an upload');
+
+    try {
+      library([track('song', { userSelectable: true })]);
+      assert.strictEqual(fs.existsSync(leftover), false);
+      assert.ok(fs.existsSync(kept));
+    } finally {
+      fs.rmSync(leftover, { force: true });
+      fs.rmSync(kept, { force: true });
+    }
+  });
+
   test('a library without its audio folder does not boot', () => {
     const missing = path.join(AUDIO_DIR, 'nowhere');
     const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);

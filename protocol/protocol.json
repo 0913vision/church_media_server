@@ -16,7 +16,8 @@
     "The server's state is always authoritative. A write or invoke expresses intent; the result arrives as a state patch.",
     "Every time is written in exactly one shape: YYYY-MM-DDTHH:MM:SS.sss (2026-08-05T19:30:00.000) — a date and a time of day, milliseconds always, no zone marker. Anything else is refused rather than interpreted. One shape rather than 'any valid ISO 8601' because the panel app is installed by hand on mounted devices: a client that parses the one documented form cannot be broken later by a server that writes the same instant a different way. No zone because everything here — server, admin web, panels — stands in one building on one clock, and church time is that wall clock rather than a point pinned to UTC: the digits on the wire are the digits on the wall, and every machine reads them in its own zone, which is the same zone. The date is required: the server never works out which day a bare clock time belongs to, since that inference belongs to the caller's calendar.",
     "Every instant on this wire is church time, not standard time. The service follows the clock on the sanctuary wall, so the server does too: clockOffsetSec says how far ahead of standard time that clock runs, and the server converts to standard time only when it arms a timer. A client never applies the offset itself — it sends and prints instants as they are, and reads ping.at rather than its own clock to know where 'now' is. The one thing not on church time is the server's log, which records when things actually happened.",
-    "Nothing here is transport-specific: an event name plus an object payload maps cleanly onto Socket.IO today, or topics later."
+    "Nothing here is transport-specific: an event name plus an object payload maps cleanly onto Socket.IO today, or topics later.",
+    "Files are the one thing this protocol does not carry: a socket message is no place for a hundred megabytes of audio. Where a file has to move, a plain HTTP door moves it and does nothing else — GET /apk/phone and /apk/tablet hand an app its update, and POST /uploads takes in an mp3 (the admin password in an x-admin-password header; 201 with { upload } on success, 401 for a wrong password, 413 past 300MB, 415 for anything that is not an mp3). A door never changes the device. What an upload becomes is decided by invoke like everything else: addTrack turns it into a track, and an upload nobody claims is deleted after ten minutes."
   ],
   "enums": {
     "PlaybackState": {
@@ -54,6 +55,7 @@
         "MUSIC_OUTSIDE_LOCK": "musicOutsideLock",
         "DECK_SONG": "deckSong",
         "TRACK_IN_USE": "trackInUse",
+        "UNKNOWN_UPLOAD": "unknownUpload",
         "PROTOCOL_MISMATCH": "protocolMismatch"
       }
     }
@@ -198,6 +200,18 @@
         }
       }
     },
+    "TrackSource": {
+      "description": "Where the audio for a new track comes from. A new way of bringing audio in is a new kind here rather than a new command.",
+      "discriminator": "kind",
+      "variants": {
+        "upload": {
+          "description": "An mp3 already sent to POST /uploads",
+          "fields": {
+            "upload": { "type": "string", "description": "The id POST /uploads answered with. Good once, and for ten minutes." }
+          }
+        }
+      }
+    },
     "FlowPart": {
       "description": "One thing a flow does on top of holding the gate. The lock is not among these: every flow holds it, so it is a field of the flow rather than a part that could be left out. A new capability later is a new kind here rather than a new command.",
       "discriminator": "kind",
@@ -307,7 +321,7 @@
       "permission": "admin"
     },
     "tracks": {
-      "description": "Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume, renameTrack and deleteTrack move it.",
+      "description": "Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — addTrack, setTrackVolume, renameTrack and deleteTrack move it.",
       "type": "Track[]",
       "access": "ro"
     },
@@ -445,6 +459,14 @@
       "args": {
         "id": { "type": "string", "description": "Track id from the tracks attribute" },
         "volume": { "type": "number", "description": "0-100" }
+      }
+    },
+    "addTrack": {
+      "description": "Make a new track, stored on the server for good: its audio moves into the library's folder and the track is written to the manifest, so it survives a restart. It arrives on every client as a tracks patch, at the level every new track starts at (50), and the panel does not offer it — a library track needs the gate. Surrounding spaces are trimmed from the title, and a title left empty is refused with invalidValue before the audio is touched, so the same upload can be tried again with a name. Refused with unknownUpload for an upload that was never made, has already become a track, or was not claimed in time.",
+      "permission": "admin",
+      "args": {
+        "title": { "type": "string", "description": "What to call it. Always given — never taken from the file." },
+        "source": { "type": "TrackSource", "description": "Where the audio comes from" }
       }
     },
     "renameTrack": {

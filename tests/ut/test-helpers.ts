@@ -31,10 +31,10 @@ const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(
 // changes, so tests run against a copy. Pointed at the real one, a test that
 // sets a level would edit the library this building plays from.
 const TEST_TRACKS_SOURCE = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
-const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
+export const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
 // Note(yoochan.kim): deleting a track deletes its file from here, so it is a temp
 // folder: the manifest copy still names the real audio, which lives outside it.
-const TEST_AUDIO_DIR = path.join(os.tmpdir(), `cms-test-audio-${process.pid}`);
+export const TEST_AUDIO_DIR = path.join(os.tmpdir(), `cms-test-audio-${process.pid}`);
 /** The one track a test may delete: silent, and in the test's own folder. */
 export const SCRATCH_TRACK_ID = 'test-scratch';
 export const SCRATCH_TRACK_FILE = path.join(TEST_AUDIO_DIR, 'scratch.mp3');
@@ -128,6 +128,14 @@ export async function ensureServer(): Promise<void> {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`Test server failed to start on port ${TEST_PORT}`);
+}
+
+/**
+ * Whether the server under test is the in-process one, whose files are the
+ * ones named above. A server started elsewhere keeps its own.
+ */
+export function ownsServer(): boolean {
+  return startedServer !== null;
 }
 
 /** Stops the server only if ensureServer() started it in-process. */

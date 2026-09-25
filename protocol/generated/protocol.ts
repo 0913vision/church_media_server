@@ -73,6 +73,7 @@ export const RejectReason = {
   MUSIC_OUTSIDE_LOCK: 'musicOutsideLock',
   DECK_SONG: 'deckSong',
   TRACK_IN_USE: 'trackInUse',
+  UNKNOWN_UPLOAD: 'unknownUpload',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -284,6 +285,18 @@ export const SchedulePartKind = {
 } as const;
 
 /**
+ * Where the audio for a new track comes from. A new way of bringing audio in is a new
+ * kind here rather than a new command.
+ */
+export type TrackSource =
+  /** An mp3 already sent to POST /uploads */
+  | { kind: 'upload'; upload: string }
+  ;
+export const TrackSourceKind = {
+  UPLOAD: 'upload',
+} as const;
+
+/**
  * One thing a flow does on top of holding the gate. The lock is not among these: every
  * flow holds it, so it is a field of the flow rather than a part that could be left
  * out. A new capability later is a new kind here rather than a new command.
@@ -396,8 +409,8 @@ export const ATTRIBUTES = {
   /**
    * Every track the server can play, each with the level it sounds at, in the order to
    * show them. State rather than part of ready, because tracks are added, renamed and
-   * deleted while clients are connected. Read-only — setTrackVolume, renameTrack and
-   * deleteTrack move it.
+   * deleted while clients are connected. Read-only — addTrack, setTrackVolume,
+   * renameTrack and deleteTrack move it.
    */
   tracks: { access: 'ro' },
   /**
@@ -577,6 +590,17 @@ export const COMMANDS = {
    */
   setTrackVolume: { permission: 'admin' },
   /**
+   * Make a new track, stored on the server for good: its audio moves into the
+   * library's folder and the track is written to the manifest, so it survives a
+   * restart. It arrives on every client as a tracks patch, at the level every new
+   * track starts at (50), and the panel does not offer it — a library track needs the
+   * gate. Surrounding spaces are trimmed from the title, and a title left empty is
+   * refused with invalidValue before the audio is touched, so the same upload can be
+   * tried again with a name. Refused with unknownUpload for an upload that was never
+   * made, has already become a track, or was not claimed in time.
+   */
+  addTrack: { permission: 'admin' },
+  /**
    * Change what a track is called. Its id and audio stay as they are, so every flow
    * that names it still does. Surrounding spaces are trimmed, and a title left empty
    * is refused with invalidValue. Refused with deckSong for a song the panel offers:
@@ -650,8 +674,8 @@ export interface State {
   /**
    * Every track the server can play, each with the level it sounds at, in the order to
    * show them. State rather than part of ready, because tracks are added, renamed and
-   * deleted while clients are connected. Read-only — setTrackVolume, renameTrack and
-   * deleteTrack move it.
+   * deleted while clients are connected. Read-only — addTrack, setTrackVolume,
+   * renameTrack and deleteTrack move it.
    */
   tracks: Track[];
   /**
@@ -775,6 +799,7 @@ export type InvokeRequest =
   | { command: 'startScheduledFlow'; args: { id: string } }
   | { command: 'skipFlow'; args: { id: string } }
   | { command: 'setTrackVolume'; args: { id: string; volume: number } }
+  | { command: 'addTrack'; args: { title: string; source: TrackSource } }
   | { command: 'renameTrack'; args: { id: string; title: string } }
   | { command: 'deleteTrack'; args: { id: string } }
   | { command: 'selectTrack'; args: { id: string } }

@@ -16,6 +16,9 @@ import MixerConsole from './console/MixerConsole.ts';
 import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
+import Uploads from './tracks/Uploads.ts';
+import { createUploadDoor } from './tracks/uploadDoor.ts';
+import { TRACK_CONFIG } from './constants/trackConfig.ts';
 import FlowRunner from './flow/FlowRunner.ts';
 import Schedule from './schedule/Schedule.ts';
 import AutoStarter from './schedule/AutoStarter.ts';
@@ -46,6 +49,7 @@ class MediaServer {
   private flowRunner: FlowRunner | null = null;
   private autoStarter: AutoStarter | null = null;
   private adminSession: AdminSession | null = null;
+  private uploads: Uploads | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -57,11 +61,20 @@ class MediaServer {
     const consoleDevice: ConsoleDevice = mockConsole ?? new X32Console();
     const serveMockDesk = mockConsole ? createMockView(mockConsole) : null;
 
-    // Note(yoochan.kim): the plain-HTTP doors this server has: an outdated app
-    // downloads its update here, and in mock mode the fake desk shows its face.
-    // Everything else speaks the socket protocol.
+    // Note(yoochan.kim): built before the HTTP server, because an upload lands in the
+    // library's folder and the door has to exist from the first request.
+    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'), requireEnv('TRACKS_AUDIO_DIR'));
+    const uploads = new Uploads(TRACK_CONFIG.UPLOAD_TTL_MS);
+    this.uploads = uploads;
+    const serveUploads = createUploadDoor(trackLibrary, uploads);
+
+    // Note(yoochan.kim): the plain-HTTP doors this server has, each moving a file and
+    // nothing else: an outdated app downloads its update, the admin web sends an
+    // mp3, and in mock mode the fake desk shows its face. Everything that changes
+    // the device speaks the socket protocol.
     const httpServer = createServer((req, res) => {
       if (serveMockDesk?.(req, res)) return;
+      if (serveUploads(req, res)) return;
       void serveApk(req, res);
     });
     const io: TypedServer = new Server<
@@ -81,7 +94,6 @@ class MediaServer {
 
     // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
     // reboots, but always boot PAUSED — a reboot must never auto-start audio.
-    const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'), requireEnv('TRACKS_AUDIO_DIR'));
     const schedule = new Schedule(requireEnv('SCHEDULE_FILE_PATH'));
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();
@@ -135,6 +147,7 @@ class MediaServer {
       adminSessionManager,
       mixerConsole,
       trackLibrary,
+      uploads,
       flowRunner,
       schedule,
       autoStarter,
@@ -188,6 +201,10 @@ class MediaServer {
     if (this.adminSession) {
       this.adminSession.dispose();
       this.adminSession = null;
+    }
+    if (this.uploads) {
+      this.uploads.dispose();
+      this.uploads = null;
     }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
