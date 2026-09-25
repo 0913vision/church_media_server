@@ -236,8 +236,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     ),
   },
 
-  trackVolumes: {
-    read: (deps) => deps.trackLibrary.volumes(),
+  tracks: {
+    read: (deps) => deps.trackLibrary.list(),
   },
 
   schedule: {

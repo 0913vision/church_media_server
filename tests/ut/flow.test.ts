@@ -21,8 +21,8 @@ before(async () => {
   await ensureServer();
   const probe = new SocketTestHelper();
   try {
-    const { ready } = await probe.open('flow-probe');
-    firstTrackId = ready.tracks[0]!.id;
+    const { state } = await probe.open('flow-probe');
+    firstTrackId = state.tracks![0]!.id;
   } finally {
     probe.disconnect();
   }

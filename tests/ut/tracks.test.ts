@@ -6,19 +6,22 @@ import { RejectReason } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): The track library is fixed at boot, so it rides along with the handshake
-// rather than needing a request of its own.
+// Note(yoochan.kim): tracks are added and deleted while clients are connected, so the
+// library is state rather than part of the handshake.
 describe('Track Library Tests', () => {
-  test('ready carries the manifest entries', async () => {
+  test('the tracks attribute carries the manifest entries', async () => {
     const sock = new SocketTestHelper();
     try {
-      const { ready } = await sock.open();
+      const { ready, state } = await sock.open();
 
-      assert.ok(ready.tracks.length > 0, 'manifest should list at least one track');
-      for (const track of ready.tracks) {
+      assert.ok(ready.attributes.includes('tracks'));
+      assert.ok(!('tracks' in ready), 'the library is no longer fixed at boot');
+      assert.ok(state.tracks!.length > 0, 'manifest should list at least one track');
+      for (const track of state.tracks!) {
         assert.strictEqual(typeof track.id, 'string');
         assert.strictEqual(typeof track.title, 'string');
         assert.ok(Number.isFinite(track.durationSec) && track.durationSec > 0);
+        assert.ok(Number.isInteger(track.volume) && track.volume >= 0 && track.volume <= 100);
       }
     } finally {
       sock.disconnect();
@@ -28,11 +31,10 @@ describe('Track Library Tests', () => {
   test('file paths never reach a client', async () => {
     const sock = new SocketTestHelper();
     try {
-      const { ready } = await sock.open();
+      const { state } = await sock.open();
 
-      for (const track of ready.tracks) {
-        // Note(yoochan.kim): no level here — that is state, and rides the trackVolumes attribute.
-        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title']);
+      for (const track of state.tracks!) {
+        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title', 'volume']);
       }
     } finally {
       sock.disconnect();

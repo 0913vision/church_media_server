@@ -8,7 +8,7 @@ before(() => ensureServer());
 after(() => stopServer());
 
 const EXPECTED_ATTRIBUTES = [
-  'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone', 'musicEndsAt', 'trackVolumes',
+  'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone', 'musicEndsAt', 'tracks',
   'adminLock', 'adminHold', 'audioLock', 'isAdmin', 'flow', 'schedule', 'clockOffsetSec', 'console',
 ];
 
@@ -47,7 +47,6 @@ describe('Handshake and Read Tests', () => {
         assert.strictEqual(typeof song.id, 'string');
         assert.ok(song.title.length > 0, 'every song carries a name to show');
       }
-      assert.ok(Array.isArray(ready.tracks));
 
       // Note(yoochan.kim): Clients print this on their error screens, so it has to be there
       // before anything goes wrong.

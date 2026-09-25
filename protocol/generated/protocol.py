@@ -95,17 +95,12 @@ class FlowLock(TypedDict):
     until: str  # Instant to release it. Must be after at, and must cover every part.
 
 
-class TrackVolume(TypedDict):
-    """One track's level"""
-    id: str  # Track id from ready.tracks
-    volume: float  # 0-100
-
-
 class Track(TypedDict):
     """A playable library entry. File paths never leave the server."""
     id: str  # Stable identifier used by startFlow
     title: str  # Human-readable name
     durationSec: float  # Length in seconds, measured from the file
+    volume: float  # The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
 
 
 class ScheduledTrack(TypedDict):
@@ -116,7 +111,7 @@ class ScheduledTrack(TypedDict):
     decided when it is written rather than inherited from whatever the panel
     was left at.
     """
-    id: str  # Track id from ready.tracks
+    id: str  # Track id from the tracks attribute
     volume: float  # Level for this track in this flow, 0-100
 
 
@@ -285,7 +280,7 @@ class DeckSourceSong(TypedDict):
 class DeckSourceTrack(TypedDict):
     """A library track, which only an admin holding the gate can put on"""
     source: Literal["track"]
-    id: str  # Track id from ready.tracks
+    id: str  # Track id from the tracks attribute
 
 
 """
@@ -361,7 +356,7 @@ class State(TypedDict):
     volume: float  # Output volume, 0-100, whole numbers — a value with a fraction is rounded rather than refused, since a dragged fader sends the ratio of a pixel to a width. Reports what is *sounding*: while a run plays, this is the level that run was written with, not the one the panel was left at, and the panel's own level comes back with its song. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state.
-    trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
+    tracks: list[Track]  # Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume moves it.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens.
     musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens.
@@ -382,7 +377,7 @@ class StatePatch(TypedDict, total=False):
     volume: float  # Output volume, 0-100, whole numbers — a value with a fraction is rounded rather than refused, since a dragged fader sends the ratio of a pixel to a width. Reports what is *sounding*: while a run plays, this is the level that run was written with, not the one the panel was left at, and the panel's own level comes back with its song. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     mute: MuteState  # Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then.
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state.
-    trackVolumes: list[TrackVolume]  # The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
+    tracks: list[Track]  # Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume moves it.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens.
     musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens.
@@ -522,7 +517,7 @@ class SetTrackVolumeArgs(TypedDict):
     next time the track is chosen — it does not move a level that is already
     playing, which is what the volume attribute is for.
     """
-    id: str  # Track id from ready.tracks
+    id: str  # Track id from the tracks attribute
     volume: float  # 0-100
 
 
@@ -541,7 +536,7 @@ class SelectTrackArgs(TypedDict):
     somebody put on during its quiet half. Releasing the gate takes the track
     off and puts the user's song back.
     """
-    id: str  # Track id from ready.tracks
+    id: str  # Track id from the tracks attribute
 
 
 class InvokeRequest(TypedDict):
@@ -555,7 +550,7 @@ ATTRIBUTES: dict[str, dict] = {
     "volume": {"access": "rw", "permission": "any", "range": (0, 100)},
     "mute": {"access": "rw", "permission": "any"},
     "loop": {"access": "rw", "permission": "admin"},
-    "trackVolumes": {"access": "ro"},
+    "tracks": {"access": "ro"},
     "deck": {"access": "ro"},
     "unlockWhenDone": {"access": "rw", "permission": "admin"},
     "musicEndsAt": {"access": "rw", "permission": "admin"},
@@ -623,17 +618,16 @@ class ReadPayload(TypedDict):
 
 class ReadyPayload(TypedDict):
     """
-    Answer to hello: what this server speaks, what it supports, and the fixed
-    track library. When accepted is false the client is on an incompatible
-    protocol version — it should tell the user to update. State still arrives,
-    but writes and invokes are refused with protocolMismatch.
+    Answer to hello: what this server speaks and what it supports. When
+    accepted is false the client is on an incompatible protocol version — it
+    should tell the user to update. State still arrives, but writes and
+    invokes are refused with protocolMismatch.
     """
     protocolVersion: float  # Version this server speaks
     accepted: bool
     attributes: list[str]  # Attributes this server implements. Hide controls for anything absent.
     commands: list[str]  # Commands this server implements. Hide controls for anything absent.
     songs: list[Song]  # Songs a user may select, with the names to show, in the order to show them. How many there are is the server's to say, so a client draws one control per entry rather than assuming a count — adding a song is then a server change alone. Fixed at boot.
-    tracks: list[Track]  # Track library for flows, fixed at boot
     contact: Contact  # Who a client should tell the user to call when something is broken. Fixed at boot.
 
 

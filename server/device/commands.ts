@@ -212,7 +212,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
 
       deps.trackLibrary.setVolume(id, volume);
-      deps.notifier.state({ trackVolumes: deps.trackLibrary.volumes() });
+      deps.notifier.state({ tracks: deps.trackLibrary.list() });
       return DONE;
     },
   },

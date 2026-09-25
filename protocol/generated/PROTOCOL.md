@@ -39,7 +39,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `volume` | `number` (0–100) | 읽기/쓰기 | any | Output volume, 0-100, whole numbers — a value with a fraction is rounded rather than refused, since a dragged fader sends the ratio of a pixel to a width. Reports what is *sounding*: while a run plays, this is the level that run was written with, not the one the panel was left at, and the panel's own level comes back with its song. Applies immediately, so it is safe to write continuously while dragging a fader. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then. |
 | `mute` | `MuteState` | 읽기/쓰기 | any | Whether output is muted. Refused with flowActive while a flow's music is sounding: the run was handed the deck and puts it back itself. A flow that only holds the gate is keeping the panel out, not using the deck, so this stays writable then. |
 | `loop` | `boolean` | 읽기/쓰기 | admin | Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state. |
-| `trackVolumes` | `TrackVolume[]` | 읽기 전용 | — | The level each track sounds at, keyed by track id, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. State rather than part of ready.tracks, because somebody adjusts it while clients are connected. Read-only — setTrackVolume moves it. A flow carries its own level for every track it plays, so changing this never rewrites a service already written. |
+| `tracks` | `Track[]` | 읽기 전용 | — | Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — setTrackVolume moves it. |
 | `deck` | `DeckSource` | 읽기 전용 | — | What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it. |
 | `unlockWhenDone` | `boolean` | 읽기/쓰기 | admin | Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens. |
 | `musicEndsAt` | `MusicEnd` | 읽기/쓰기 | admin | When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens. |
@@ -160,7 +160,7 @@ Set the level a track sounds at, kept across restarts. Applies from the next tim
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | `string` | Track id from ready.tracks |
+| `id` | `string` | Track id from the tracks attribute |
 | `volume` | `number` | 0-100 |
 
 ### `selectTrack`
@@ -171,7 +171,7 @@ Put a library track on the deck, paused at its start, at its own level — the s
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | `string` | Track id from ready.tracks |
+| `id` | `string` | Track id from the tracks attribute |
 
 ## 열거형
 
@@ -234,15 +234,6 @@ The window a flow holds the admin gate for. Every flow has one: a run that plays
 | `at` | `string` | Instant to engage the lock. Already past means immediately. |
 | `until` | `string` | Instant to release it. Must be after at, and must cover every part. |
 
-### TrackVolume
-
-One track's level
-
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `id` | `string` | Track id from ready.tracks |
-| `volume` | `number` | 0-100 |
-
 ### Track
 
 A playable library entry. File paths never leave the server.
@@ -252,6 +243,7 @@ A playable library entry. File paths never leave the server.
 | `id` | `string` | Stable identifier used by startFlow |
 | `title` | `string` | Human-readable name |
 | `durationSec` | `number` | Length in seconds, measured from the file |
+| `volume` | `number` | The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written. |
 
 ### ScheduledTrack
 
@@ -259,7 +251,7 @@ One track in a flow's music sequence, with the level it plays at. The level is a
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | `string` | Track id from ready.tracks |
+| `id` | `string` | Track id from the tracks attribute |
 | `volume` | `number` | Level for this track in this flow, 0-100 |
 
 ### ScheduleLock
@@ -344,7 +336,7 @@ Run one command. Refused when it is unknown, the caller lacks permission, or its
 
 ### `ready` _(요청한 클라이언트에게만)_
 
-Answer to hello: what this server speaks, what it supports, and the fixed track library. When accepted is false the client is on an incompatible protocol version — it should tell the user to update. State still arrives, but writes and invokes are refused with protocolMismatch.
+Answer to hello: what this server speaks and what it supports. When accepted is false the client is on an incompatible protocol version — it should tell the user to update. State still arrives, but writes and invokes are refused with protocolMismatch.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -353,7 +345,6 @@ Answer to hello: what this server speaks, what it supports, and the fixed track 
 | `attributes` | `string[]` | Attributes this server implements. Hide controls for anything absent. |
 | `commands` | `string[]` | Commands this server implements. Hide controls for anything absent. |
 | `songs` | `Song[]` | Songs a user may select, with the names to show, in the order to show them. How many there are is the server's to say, so a client draws one control per entry rather than assuming a count — adding a song is then a server change alone. Fixed at boot. |
-| `tracks` | `Track[]` | Track library for flows, fixed at boot |
 | `contact` | `Contact` | Who a client should tell the user to call when something is broken. Fixed at boot. |
 
 ### `state` _(전체 브로드캐스트)_

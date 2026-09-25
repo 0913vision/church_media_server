@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SongId } from '../constants/songs.ts';
-import type { Song, Track, TrackVolume } from '../protocol.ts';
+import type { Song, Track } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
@@ -11,8 +11,6 @@ export interface LibraryEntry extends Track {
   file: string;
   /** The path exactly as the manifest states it, so a rewrite says what was read */
   declaredFile: string;
-  /** The level this audio sits at when nobody says otherwise */
-  volume: number;
   /** Whether a person may pick this one at the panel */
   userSelectable: boolean;
 }
@@ -108,11 +106,6 @@ class TrackLibrary {
     return entry.volume;
   }
 
-  /** Every track's level, in manifest order */
-  volumes(): TrackVolume[] {
-    return [...this.tracks.values()].map(({ id, volume }) => ({ id, volume }));
-  }
-
   /** Sets the level a track sounds at, from now on. The caller checks the id exists. */
   setVolume(id: string, volume: number): void {
     const entry = this.tracks.get(id);
@@ -123,12 +116,9 @@ class TrackLibrary {
     this.persist();
   }
 
-  /**
-   * The client-facing slice: file paths stay here, and so does the level —
-   * somebody adjusts that while clients are connected, so it travels as state.
-   */
+  /** The client-facing slice: everything but where the audio lives. */
   list(): Track[] {
-    return [...this.tracks.values()].map(({ id, title, durationSec }) => ({ id, title, durationSec }));
+    return [...this.tracks.values()].map(({ id, title, durationSec, volume }) => ({ id, title, durationSec, volume }));
   }
 
   get(id: string): LibraryEntry | undefined {

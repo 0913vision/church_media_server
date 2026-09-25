@@ -73,7 +73,7 @@ describe('Write Tests', () => {
       const target = current === 'calm' ? 'fervent' : 'calm';
 
       const admin = await connectAuthedAdmin();
-      const levelled = admin.waitForState((patch) => patch.trackVolumes !== undefined);
+      const levelled = admin.waitForState((patch) => patch.tracks !== undefined);
       admin.invoke('setTrackVolume', { id: target, volume: TEST_LEVEL });
       await levelled;
       admin.disconnect();

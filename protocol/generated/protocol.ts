@@ -113,14 +113,6 @@ export interface FlowLock {
   until: string;
 }
 
-/** One track's level */
-export interface TrackVolume {
-  /** Track id from ready.tracks */
-  id: string;
-  /** 0-100 */
-  volume: number;
-}
-
 /** A playable library entry. File paths never leave the server. */
 export interface Track {
   /** Stable identifier used by startFlow */
@@ -129,6 +121,13 @@ export interface Track {
   title: string;
   /** Length in seconds, measured from the file */
   durationSec: number;
+  /**
+   * The level it sounds at, 0-100. One setting serving three uses: what a song returns
+   * to when it is chosen, what a library track is put on at, and what a flow editor
+   * offers when this track joins a service. A flow carries its own level for every
+   * track it plays, so changing this never rewrites a service already written.
+   */
+  volume: number;
 }
 
 /**
@@ -138,7 +137,7 @@ export interface Track {
  * rather than inherited from whatever the panel was left at.
  */
 export interface ScheduledTrack {
-  /** Track id from ready.tracks */
+  /** Track id from the tracks attribute */
   id: string;
   /** Level for this track in this flow, 0-100 */
   volume: number;
@@ -393,14 +392,11 @@ export const ATTRIBUTES = {
    */
   loop: { access: 'rw', permission: 'admin' },
   /**
-   * The level each track sounds at, keyed by track id, 0-100. One setting serving
-   * three uses: what a song returns to when it is chosen, what a library track is put
-   * on at, and what a flow editor offers when this track joins a service. State rather
-   * than part of ready.tracks, because somebody adjusts it while clients are
-   * connected. Read-only — setTrackVolume moves it. A flow carries its own level for
-   * every track it plays, so changing this never rewrites a service already written.
+   * Every track the server can play, each with the level it sounds at, in the order to
+   * show them. State rather than part of ready, because tracks are added, renamed and
+   * deleted while clients are connected. Read-only — setTrackVolume moves it.
    */
-  trackVolumes: { access: 'ro' },
+  tracks: { access: 'ro' },
   /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.
@@ -633,14 +629,11 @@ export interface State {
    */
   loop: boolean;
   /**
-   * The level each track sounds at, keyed by track id, 0-100. One setting serving
-   * three uses: what a song returns to when it is chosen, what a library track is put
-   * on at, and what a flow editor offers when this track joins a service. State rather
-   * than part of ready.tracks, because somebody adjusts it while clients are
-   * connected. Read-only — setTrackVolume moves it. A flow carries its own level for
-   * every track it plays, so changing this never rewrites a service already written.
+   * Every track the server can play, each with the level it sounds at, in the order to
+   * show them. State rather than part of ready, because tracks are added, renamed and
+   * deleted while clients are connected. Read-only — setTrackVolume moves it.
    */
-  trackVolumes: TrackVolume[];
+  tracks: Track[];
   /**
    * What is on the deck: the panel's own song, or a library track an admin put on.
    * Read-only — song and playTrack are what move it.
@@ -815,10 +808,10 @@ export type S2CEvent = (typeof S2C)[keyof typeof S2C];
 /** Payload carried by each S2C event */
 export interface S2CPayloads {
   /**
-   * Answer to hello: what this server speaks, what it supports, and the fixed track
-   * library. When accepted is false the client is on an incompatible protocol version
-   * — it should tell the user to update. State still arrives, but writes and invokes
-   * are refused with protocolMismatch.
+   * Answer to hello: what this server speaks and what it supports. When accepted is
+   * false the client is on an incompatible protocol version — it should tell the user
+   * to update. State still arrives, but writes and invokes are refused with
+   * protocolMismatch.
    */
   ready: {
     /** Version this server speaks */
@@ -835,8 +828,6 @@ export interface S2CPayloads {
      * Fixed at boot.
      */
     songs: Song[];
-    /** Track library for flows, fixed at boot */
-    tracks: Track[];
     /**
      * Who a client should tell the user to call when something is broken. Fixed at
      * boot.

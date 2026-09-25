@@ -65,7 +65,7 @@ describe('Deck songs come from the manifest', () => {
     const lib = library([track('only', { volume: 60, userSelectable: true })]);
 
     assert.strictEqual(lib.deckSongs().length, 1);
-    assert.deepStrictEqual(lib.volumes(), [{ id: 'only', volume: 60 }]);
+    assert.deepStrictEqual(lib.list().map(({ id, volume }) => ({ id, volume })), [{ id: 'only', volume: 60 }]);
   });
 
   test('a track nobody can select is schedulable, and still has a level of its own', () => {

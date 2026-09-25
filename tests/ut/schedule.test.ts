@@ -24,13 +24,13 @@ function entry(id: string, extra: Record<string, unknown> = {}): Record<string, 
   };
 }
 
-/** A track this server actually has, learned from ready rather than assumed. */
+/** A track this server actually has, learned from state rather than assumed. */
 let someTrackId = '';
 
 async function connectAuthedAdmin(): Promise<SocketTestHelper> {
   const admin = new SocketTestHelper();
-  const { ready } = await admin.open('schedule-admin');
-  someTrackId = ready.tracks[0]!.id;
+  const { state } = await admin.open('schedule-admin');
+  someTrackId = state.tracks![0]!.id;
   const authed = admin.waitForState((patch) => patch.isAdmin !== undefined);
   admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
   await authed;
