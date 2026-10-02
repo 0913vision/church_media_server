@@ -59,6 +59,21 @@ describe('Church clock', () => {
     }
   });
 
+  // Note(yoochan.kim): a correction set on the wall clock's flip is rarely whole seconds,
+  // and rounded to one it could be half a second off.
+  test('the offset is kept to the millisecond', async () => {
+    const admin = await connectAuthedAdmin();
+    try {
+      const heard = admin.waitForState((patch) => patch.clockOffsetSec !== undefined && patch.clockOffsetSec !== 0);
+      admin.write('clockOffsetSec', 12.34567);
+      assert.strictEqual((await heard).clockOffsetSec, 12.346);
+    } finally {
+      admin.write('clockOffsetSec', 0);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      admin.disconnect();
+    }
+  });
+
   // Note(yoochan.kim): The offset is not decoration: scheduling is judged against it. A window
   // still half an hour away by the wall clock is already gone once the church
   // clock runs an hour ahead of it.

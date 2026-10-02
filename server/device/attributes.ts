@@ -367,7 +367,9 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         // music that is already playing. The music timeline is derived from
         // instants; shifting the reference would drag the next track with it.
         if (deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_LOCKED);
-        return accept(Math.round(value));
+        // Note(yoochan.kim): kept to the millisecond. Rounded to whole seconds it could be
+        // half a second off the wall clock it was set against.
+        return accept(Math.round(value * 1000) / 1000);
       },
       async (clockOffsetSec, deps) => {
         deps.clock.setOffset(clockOffsetSec);

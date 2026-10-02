@@ -432,7 +432,7 @@
       "access": "ro"
     },
     "clockOffsetSec": {
-      "description": "How far ahead of standard time the church clock runs, in seconds. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.",
+      "description": "How far ahead of standard time the church clock runs, in seconds, kept to the millisecond — a correction set by pressing a key on the wall clock's flip is rarely a whole second. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.",
       "type": "number",
       "access": "rw",
       "permission": "admin",
