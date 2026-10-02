@@ -65,6 +65,7 @@ class RejectReason(str, Enum):
     DECK_SONG = "deckSong"
     TRACK_IN_USE = "trackInUse"
     UNKNOWN_UPLOAD = "unknownUpload"
+    TITLE_TAKEN = "titleTaken"
     TOO_LARGE = "tooLarge"
     FETCH_FAILED = "fetchFailed"
     FETCH_BUSY = "fetchBusy"
@@ -605,13 +606,16 @@ class AddTrackArgs(TypedDict):
     library track needs the gate. Surrounding spaces are trimmed from the
     title, and a title left empty is refused with invalidValue before the
     audio is touched, so the same upload can be tried again with a name.
-    Refused with unknownUpload for an upload that was never made, has already
-    become a track, or was not claimed in time. From YouTube the server
-    fetches the audio itself, one video at a time: trackFetch says so to every
-    client while it runs, and the command answers when it ends. Refused with
-    invalidValue for an address that is not YouTube's, fetchBusy while another
-    fetch runs, tooLarge past 300MB, and fetchFailed for a video that cannot
-    be had — gone, private, blocked, or not done within ten minutes.
+    Titles are unique: one another track already has, or that a fetch in
+    flight is about to take, is refused with titleTaken — also before the
+    audio is touched. Refused with unknownUpload for an upload that was never
+    made, has already become a track, or was not claimed in time. From YouTube
+    the server fetches the audio itself, one video at a time: trackFetch says
+    so to every client while it runs, and the command answers when it ends.
+    Refused with invalidValue for an address that is not YouTube's, fetchBusy
+    while another fetch runs, tooLarge past 300MB, and fetchFailed for a video
+    that cannot be had — gone, private, blocked, or not done within ten
+    minutes.
     """
     title: str  # What to call it. Always given — never taken from the file.
     source: TrackSource  # Where the audio comes from
@@ -621,9 +625,10 @@ class RenameTrackArgs(TypedDict):
     """
     Change what a track is called. Its id and audio stay as they are, so every
     flow that names it still does. Surrounding spaces are trimmed, and a title
-    left empty is refused with invalidValue. Refused with deckSong for a song
-    the panel offers: those are named once, in ready.songs, and a panel
-    installed by hand is not asked to notice a rename.
+    left empty is refused with invalidValue, one another track already has
+    with titleTaken. Refused with deckSong for a song the panel offers: those
+    are named once, in ready.songs, and a panel installed by hand is not asked
+    to notice a rename.
     """
     id: str  # Track id from the tracks attribute
     title: str  # The new name

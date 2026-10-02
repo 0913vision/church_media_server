@@ -140,10 +140,12 @@ describe('Renaming and deleting tracks', () => {
   test('what does not check out is refused before anything moves', async () => {
     const admin = await connectAuthedAdmin('tracks-admin');
     try {
+      const taken = (await admin.read()).tracks![0]!.title;
       const cases: [string, Record<string, unknown>, RejectReason][] = [
         ['renameTrack', { id: 'no-such-track', title: '이름' }, RejectReason.UNKNOWN_TRACK],
         ['renameTrack', { id: SCRATCH_TRACK_ID, title: '   ' }, RejectReason.INVALID_VALUE],
         ['renameTrack', { id: SCRATCH_TRACK_ID }, RejectReason.INVALID_VALUE],
+        ['renameTrack', { id: SCRATCH_TRACK_ID, title: ` ${taken} ` }, RejectReason.TITLE_TAKEN],
         ['deleteTrack', { id: 'no-such-track' }, RejectReason.UNKNOWN_TRACK],
         ['deleteTrack', {}, RejectReason.INVALID_VALUE],
       ];

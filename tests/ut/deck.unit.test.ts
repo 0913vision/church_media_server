@@ -139,6 +139,13 @@ describe('Deck songs come from the manifest', () => {
     }
   });
 
+  test('two tracks with one title do not boot', () => {
+    assert.throws(
+      () => library([track('song', { userSelectable: true }), track('again', { title: 'song 곡' })]),
+      /Duplicate track title/,
+    );
+  });
+
   test('a boot clears uploads that never became tracks, and nothing else', () => {
     const leftover = path.join(AUDIO_DIR, '.incoming-0123abcd.part');
     const kept = silentCopy(path.join(AUDIO_DIR, 'kept.mp3'));

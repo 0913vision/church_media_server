@@ -107,7 +107,9 @@ describe('Fetching a track from YouTube', () => {
     if (!ownServer(t)) return;
     const admin = await connectAuthedAdmin('fetch-admin');
     try {
+      const taken = (await admin.read()).tracks![0]!.title;
       const cases: [Record<string, unknown>, RejectReason][] = [
+        [fromYoutube(taken, 'https://youtu.be/ok'), RejectReason.TITLE_TAKEN],
         [fromYoutube('곡', 'https://example.com/watch?v=ok'), RejectReason.INVALID_VALUE],
         [fromYoutube('곡', 'not an address'), RejectReason.INVALID_VALUE],
         [fromYoutube('   ', 'https://youtu.be/ok'), RejectReason.INVALID_VALUE],

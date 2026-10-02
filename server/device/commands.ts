@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { RejectReason } from '../protocol.ts';
 import type { CommandName, StatePatch } from '../protocol.ts';
 import { ADMIN_CONFIG } from '../constants/authConfig.ts';
@@ -53,6 +54,12 @@ function tracksNamedBy(entry: unknown): string[] {
     if (!Array.isArray(tracks)) return [];
     return tracks.map((track) => argsObject(track).id).filter((id): id is string => typeof id === 'string');
   });
+}
+
+/** Whether a title belongs to another track already, or to the one a fetch is bringing. */
+function titleInUse(deps: ServerDeps, title: string, except?: string): boolean {
+  const fetching = deps.fetcher.status();
+  return deps.trackLibrary.titleTaken(title, except) || (fetching.kind === 'fetching' && fetching.title === title);
 }
 
 /** Makes a track of audio that has arrived, and tells every client in one patch. */
@@ -233,6 +240,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // here leaves the same upload to try again with a name.
       if (typeof title !== 'string' || title.trim().length === 0) return refuse(RejectReason.INVALID_VALUE);
       const named = title.trim();
+      if (titleInUse(deps, named)) return refuse(RejectReason.TITLE_TAKEN);
       const from = argsObject(source);
 
       if (from.kind === 'upload') {
@@ -256,6 +264,12 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
           deps.notifier.state({ trackFetch: deps.fetcher.status() });
           return refuse(fetched.reason);
         }
+        // Note(yoochan.kim): minutes have passed, and a rename meanwhile may have taken the title.
+        if (deps.trackLibrary.titleTaken(named)) {
+          fs.rmSync(fetched.file, { force: true });
+          deps.notifier.state({ trackFetch: deps.fetcher.status() });
+          return refuse(RejectReason.TITLE_TAKEN);
+        }
         // Note(yoochan.kim): the fetch ends in the same patch the track arrives in, so no
         // screen sees it finished with nothing to show for it.
         return addFrom(deps, fetched.file, named, fetched.durationSec, { trackFetch: deps.fetcher.status() });
@@ -275,6 +289,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // Note(yoochan.kim): the panel's songs are named once, in ready.songs, and a panel
       // installed by hand is not asked to notice a rename.
       if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
+      if (titleInUse(deps, named, id)) return refuse(RejectReason.TITLE_TAKEN);
 
       deps.trackLibrary.rename(id, named);
       deps.notifier.state({ tracks: deps.trackLibrary.list() });

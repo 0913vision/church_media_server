@@ -82,6 +82,9 @@ class TrackLibrary {
       if (this.tracks.has(id)) {
         throw new Error(`Duplicate track id in manifest: ${id}`);
       }
+      if (this.titleTaken(title)) {
+        throw new Error(`Duplicate track title in manifest: ${title}`);
+      }
       const resolvedFile = path.resolve(manifestDir, file);
       if (!fs.existsSync(resolvedFile)) {
         throw new Error(`Track file not found: ${resolvedFile} (track ${id})`);
@@ -167,6 +170,14 @@ class TrackLibrary {
     this.tracks.set(id, entry);
     this.persist();
     return entry;
+  }
+
+  /**
+   * Whether another track is already called this. A title is how a person picks a
+   * track out of a list, so two the same would be two rows nobody can tell apart.
+   */
+  titleTaken(title: string, except?: string): boolean {
+    return [...this.tracks.values()].some((entry) => entry.title === title && entry.id !== except);
   }
 
   /** Renames a track. The caller checks the id exists and is not a deck song. */

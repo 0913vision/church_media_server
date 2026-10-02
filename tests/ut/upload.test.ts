@@ -160,8 +160,10 @@ describe('Uploading a track', () => {
       anyone.invoke('addTrack', { title: '누구나', source: { kind: 'upload', upload } });
       assert.strictEqual(await notAdmin, RejectReason.NOT_ADMIN);
 
+      const taken = (await admin.read()).tracks![0]!.title;
       const cases: [Record<string, unknown>, RejectReason][] = [
         [{ title: '   ', source: { kind: 'upload', upload } }, RejectReason.INVALID_VALUE],
+        [{ title: taken, source: { kind: 'upload', upload } }, RejectReason.TITLE_TAKEN],
         [{ source: { kind: 'upload', upload } }, RejectReason.INVALID_VALUE],
         [{ title: '곡', source: { kind: 'somewhere', upload } }, RejectReason.INVALID_VALUE],
         [{ title: '곡', source: { kind: 'upload', upload: 'u-0000' } }, RejectReason.UNKNOWN_UPLOAD],

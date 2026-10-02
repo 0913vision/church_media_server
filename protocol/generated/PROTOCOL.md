@@ -169,7 +169,7 @@ Set the level a track sounds at, kept across restarts. Applies from the next tim
 
 권한: admin
 
-Make a new track, stored on the server for good: its audio moves into the library's folder and the track is written to the manifest, so it survives a restart. It arrives on every client as a tracks patch, at the level every new track starts at (50), and the panel does not offer it — a library track needs the gate. Surrounding spaces are trimmed from the title, and a title left empty is refused with invalidValue before the audio is touched, so the same upload can be tried again with a name. Refused with unknownUpload for an upload that was never made, has already become a track, or was not claimed in time. From YouTube the server fetches the audio itself, one video at a time: trackFetch says so to every client while it runs, and the command answers when it ends. Refused with invalidValue for an address that is not YouTube's, fetchBusy while another fetch runs, tooLarge past 300MB, and fetchFailed for a video that cannot be had — gone, private, blocked, or not done within ten minutes.
+Make a new track, stored on the server for good: its audio moves into the library's folder and the track is written to the manifest, so it survives a restart. It arrives on every client as a tracks patch, at the level every new track starts at (50), and the panel does not offer it — a library track needs the gate. Surrounding spaces are trimmed from the title, and a title left empty is refused with invalidValue before the audio is touched, so the same upload can be tried again with a name. Titles are unique: one another track already has, or that a fetch in flight is about to take, is refused with titleTaken — also before the audio is touched. Refused with unknownUpload for an upload that was never made, has already become a track, or was not claimed in time. From YouTube the server fetches the audio itself, one video at a time: trackFetch says so to every client while it runs, and the command answers when it ends. Refused with invalidValue for an address that is not YouTube's, fetchBusy while another fetch runs, tooLarge past 300MB, and fetchFailed for a video that cannot be had — gone, private, blocked, or not done within ten minutes.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -180,7 +180,7 @@ Make a new track, stored on the server for good: its audio moves into the librar
 
 권한: admin
 
-Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.
+Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue, one another track already has with titleTaken. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -237,7 +237,7 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"titleTaken"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"protocolMismatch"`
 
 ## 객체
 
