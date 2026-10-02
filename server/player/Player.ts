@@ -239,7 +239,10 @@ class Player {
    */
   async playTrackAt(track: { id: string; file: string }, offsetSec: number, volume: number, loop = false): Promise<void> {
     try {
-      await this.takeDeck();
+      // Note(yoochan.kim): the caller has already taken the deck, fading or not as it
+      // chose. Taking it again with a fade put three seconds between a run's own
+      // tracks, the last of the one before faded away under it.
+      await this.takeDeck(false);
       this.device.setVolume(this.isMuted() ? 0 : volume);
       this.liveVolume = volume;
       await this.device.playFileAt(track.file, offsetSec, loop);

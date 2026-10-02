@@ -267,7 +267,11 @@ class AudioDevice implements AudioOutput {
       throw error;
     }
 
-    if (offsetSec > 0) {
+    // Note(yoochan.kim): joined part-way only past SEEK_AUDIBLE_SEC. A timer due at
+    // 20:05:00.000 fires a millisecond or two after it; that is a start on time,
+    // which neither seeks — the retries cost tens of milliseconds — nor fades.
+    const joined = offsetSec > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
+    if (joined) {
       try {
         await this.setPlaybackTime(offsetSec);
       } catch (error) {
@@ -277,11 +281,8 @@ class AudioDevice implements AudioOutput {
     }
 
     // Note(yoochan.kim): a seek means the run joined this song part-way through, so the
-    // fade covers a cut. Judged in tenths of a second rather than at zero: a
-    // timer due at 20:05:00.000 fires a millisecond or two after it, and that
-    // counts as an offset — so a track starting exactly on time still opened
-    // under a three-second fade.
-    await this.resume(offsetSec > DEVICE_CONFIG.SEEK_AUDIBLE_SEC);
+    // fade covers a cut.
+    await this.resume(joined);
   }
 }
 

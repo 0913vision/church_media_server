@@ -275,14 +275,14 @@ class FlowRunner {
     total: number,
     endsAt: Date,
   ): Promise<boolean> {
-    // Note(yoochan.kim): no fade between this run's own tracks — and the fade is why. It
-    // took three seconds, and the offset below is read after it, so every track
-    // after the first skipped its own opening by exactly one fade.
+    // Note(yoochan.kim): no fade between this run's own tracks. A fade there takes three
+    // seconds, and each track after the first started that much late.
     const ownTrackPlaying = this.active?.playing !== undefined;
+    let seekSec = 0;
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck(!ownTrackPlaying);
-      const offsetSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
-      await this.player.playTrackAt(track, offsetSec, track.volume);
+      seekSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
+      await this.player.playTrackAt(track, seekSec, track.volume);
     });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
@@ -292,10 +292,14 @@ class FlowRunner {
     if (this.active) {
       this.active.playing = { track: { title: track.title, index: index + 1, total }, endsAt };
     }
+    // Note(yoochan.kim): where the track was started, and how long after that point was
+    // due the sound began — the plan, and what the room heard.
+    const lagSec = (this.clock.now().getTime() - startedAt.getTime()) / 1000 - seekSec;
     log.info('flow', null, 'Track started', {
       track: `${index + 1}/${total}`,
       title: track.title,
-      offset: `${offsetOf(this.clock, startedAt)}s`,
+      seek: `${seekSec.toFixed(1)}s`,
+      lag: `${lagSec.toFixed(2)}s`,
     });
     this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
     return true;
@@ -478,11 +482,6 @@ class FlowRunner {
 
     return { ok: true, value: { kind: 'music', tracks, startsAt, endsAt } };
   }
-}
-
-/** How far into a track the deck actually landed, for the log */
-function offsetOf(clock: Clock, startedAt: Date): string {
-  return (Math.max(0, (clock.now().getTime() - startedAt.getTime()) / 1000)).toFixed(1);
 }
 
 /** Absolute instant each track of a music part begins */
