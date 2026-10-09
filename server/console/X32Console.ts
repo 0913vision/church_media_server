@@ -39,7 +39,8 @@ class X32Console implements ConsoleDevice {
       localAddress: CONSOLE_CONFIG.NETWORK.LOCAL_ADDRESS,
       localPort: CONSOLE_CONFIG.NETWORK.LOCAL_PORT,
       remoteAddress: CONSOLE_CONFIG.NETWORK.REMOTE_ADDRESS,
-      remotePort: CONSOLE_CONFIG.NETWORK.REMOTE_PORT
+      remotePort: CONSOLE_CONFIG.NETWORK.REMOTE_PORT,
+      metadata: true
     });
 
     this.openPort();
@@ -62,7 +63,7 @@ class X32Console implements ConsoleDevice {
       log.warn('x32Console', null, 'Console unreachable', { error: error.message });
     });
     this.client.on("message", (message) => {
-      const value = message.args[0];
+      const value = message.args[0]?.value;
       if (typeof value !== 'number' || !POLLED.includes(message.address)) return;
       this.heard.set(message.address, { value, at: Date.now() });
       this.announceIfChanged();
@@ -113,12 +114,14 @@ class X32Console implements ConsoleDevice {
     for (const listener of this.listeners) listener();
   }
 
-  // Note(yoochan.kim): every value this project sends (mute, fader) is a number
+  // Note(yoochan.kim): every value this project sends (mute, fader) is a number,
+  // and these go as floats — what osc.js chose for a bare number before the port
+  // carried types, kept so the desk keeps receiving exactly what it always has.
   private sendOscCommand(address: string, args: number): Promise<void> {
     return new Promise((resolve) => {
       this.client.send({
         address: address,
-        args: args
+        args: [{ type: 'f', value: args }]
       });
       resolve();
     });
