@@ -83,5 +83,15 @@ export const CONSOLE_CONFIG = {
     MUTE_GROUP_RELEASED: 0,
     MATRIX: { ADDRESS: "/mtx/01/mix/fader", ON_ADDRESS: "/mtx/01/mix/on", DB: -9.0 },
     MAIN: { ADDRESS: "/main/st/mix/fader", ON_ADDRESS: "/main/st/mix/on", DB: 0.7, DELAY_MS: 500 }
+  },
+
+  // Note(yoochan.kim): setting part of the desk aside and putting it back
+  // (console/DeskHolds.ts). A change counts only once the desk reads it back, and
+  // a desk that does not take its old values back is asked again until it does —
+  // it may simply be switched off until the next service.
+  HOLD: {
+    CONFIRM_ATTEMPTS: 3,
+    CONFIRM_GAP_MS: 50,
+    RESTORE_RETRY_MS: 5000
   }
 } as const;

@@ -5,6 +5,7 @@ import { faderFromDb, dbFromFader } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
+import type { DeskValue } from './desk.ts';
 
 const { UDPPort } = osc;
 
@@ -17,6 +18,10 @@ const STALE_MS = 7000;
 const XREMOTE_RENEW_MS = 5000;
 // Note(yoochan.kim): when this server is the one changing something
 const ECHO_POLL_MS = [120, 400];
+// Note(yoochan.kim): a question is UDP over Wi-Fi, so one lost packet is asked
+// again rather than taken as a desk that has gone.
+const QUERY_WAIT_MS = 250;
+const QUERY_ASKS = 3;
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
 // Note(yoochan.kim): the reading follows each input's first channel; the rest
@@ -31,6 +36,8 @@ class X32Console implements ConsoleDevice {
   private readonly client: InstanceType<typeof UDPPort>;
   private readonly heard = new Map<string, { value: number; at: number }>();
   private readonly listeners: (() => void)[] = [];
+  private readonly wireListeners: ((address: string, value: DeskValue) => void)[] = [];
+  private readonly waiting = new Map<string, ((value: DeskValue) => void)[]>();
   private lastAnnounced = '';
   private lastNetworkError = '';
 
@@ -63,8 +70,11 @@ class X32Console implements ConsoleDevice {
       log.warn('x32Console', null, 'Console unreachable', { error: error.message });
     });
     this.client.on("message", (message) => {
-      const value = message.args[0]?.value;
-      if (typeof value !== 'number' || !POLLED.includes(message.address)) return;
+      const arg = message.args[0];
+      const value = arg?.value;
+      if (typeof value !== 'number') return;
+      if (arg?.type === 'i' || arg?.type === 'f') this.hear(message.address, { type: arg.type, value });
+      if (!POLLED.includes(message.address)) return;
       this.heard.set(message.address, { value, at: Date.now() });
       this.announceIfChanged();
     });
@@ -90,6 +100,48 @@ class X32Console implements ConsoleDevice {
 
   onChange(listener: () => void): void {
     this.listeners.push(listener);
+  }
+
+  query(address: string): Promise<DeskValue> {
+    return new Promise((resolve, reject) => {
+      let asks = 0;
+      let timer: NodeJS.Timeout;
+      const answered = (value: DeskValue): void => {
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const ask = (): void => {
+        if (asks === QUERY_ASKS) {
+          const rest = (this.waiting.get(address) ?? []).filter((waiter) => waiter !== answered);
+          if (rest.length > 0) this.waiting.set(address, rest);
+          else this.waiting.delete(address);
+          reject(new Error(`The desk did not answer for ${address}`));
+          return;
+        }
+        asks += 1;
+        this.client.send({ address });
+        timer = setTimeout(ask, QUERY_WAIT_MS);
+      };
+      this.waiting.set(address, [...(this.waiting.get(address) ?? []), answered]);
+      ask();
+    });
+  }
+
+  async send(address: string, value: DeskValue): Promise<void> {
+    this.client.send({ address, args: [{ type: value.type, value: value.value }] });
+  }
+
+  onWire(listener: (address: string, value: DeskValue) => void): void {
+    this.wireListeners.push(listener);
+  }
+
+  private hear(address: string, value: DeskValue): void {
+    const waiters = this.waiting.get(address);
+    if (waiters) {
+      this.waiting.delete(address);
+      for (const waiter of waiters) waiter(value);
+    }
+    for (const listener of this.wireListeners) listener(address, value);
   }
 
   private freshValue(address: string): number | undefined {

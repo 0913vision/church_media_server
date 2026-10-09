@@ -78,6 +78,7 @@ export const RejectReason = {
   TOO_LARGE: 'tooLarge',
   FETCH_FAILED: 'fetchFailed',
   FETCH_BUSY: 'fetchBusy',
+  CONSOLE_HELD: 'consoleHeld',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -571,7 +572,10 @@ export const COMMANDS = {
   /**
    * Switch a mixing console input on. Not subject to the audio lock, and open to
    * anyone the admin lock is not holding back — the console keeps no protected state.
-   * It reports nothing back, so there is no attribute to read.
+   * It reports nothing back, so there is no attribute to read. Refused with
+   * consoleHeld while the server has set part of the desk aside and this input is in
+   * it: the server puts it back itself when it is done, and the input can be switched
+   * on again then.
    */
   enableConsoleInput: { permission: 'any' },
   /**
@@ -581,7 +585,9 @@ export const COMMANDS = {
    * the room hear everything at once. Like enableConsoleInput it takes no audio lock
    * and reports nothing back — the desk's own answers arrive through the console
    * attribute. Takes a few hundred milliseconds to finish, so a client should not
-   * expect the reading to have changed by the time the call returns.
+   * expect the reading to have changed by the time the call returns. Refused with
+   * consoleHeld, before anything is sent, while the server has set aside any part of
+   * the desk it would write.
    */
   initializeConsole: { permission: 'any' },
   /**

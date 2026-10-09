@@ -15,6 +15,9 @@ import AdminSessionManager from './auth/AdminSessionManager.ts';
 import MixerConsole from './console/MixerConsole.ts';
 import X32Console from './console/X32Console.ts';
 import MockConsole from './console/MockConsole.ts';
+import DeskHolds from './console/DeskHolds.ts';
+import type { DeskJournalEntry } from './console/DeskHolds.ts';
+import { CONSOLE_CONFIG } from './constants/consoleConfig.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
 import Uploads from './tracks/Uploads.ts';
 import Fetcher from './tracks/Fetcher.ts';
@@ -51,6 +54,7 @@ class MediaServer {
   private autoStarter: AutoStarter | null = null;
   private adminSession: AdminSession | null = null;
   private uploads: Uploads | null = null;
+  private deskHolds: DeskHolds | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -117,7 +121,8 @@ class MediaServer {
       muted: initialConfig.muted,
       currentSong: initialConfig.currentSong,
     };
-    const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset() });
+    let deskJournal: readonly DeskJournalEntry[] = restored?.deskJournal ?? [];
+    const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset(), deskJournal });
     clock.onChange(persist);
 
     const player = new Player(
@@ -132,7 +137,14 @@ class MediaServer {
 
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
-    const mixerConsole = new MixerConsole(consoleDevice);
+    // Note(yoochan.kim): whatever a hold left set aside before a stop is handed back
+    // here, and put back as soon as the desk answers.
+    const deskHolds = new DeskHolds(consoleDevice, CONSOLE_CONFIG.HOLD, (entries) => {
+      deskJournal = entries;
+      persist();
+    }, deskJournal);
+    this.deskHolds = deskHolds;
+    const mixerConsole = new MixerConsole(consoleDevice, deskHolds);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
@@ -208,6 +220,10 @@ class MediaServer {
     if (this.uploads) {
       this.uploads.dispose();
       this.uploads = null;
+    }
+    if (this.deskHolds) {
+      this.deskHolds.dispose();
+      this.deskHolds = null;
     }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

@@ -3,6 +3,8 @@ import { faderFromDb, dbFromFader } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
+import { float, int } from './desk.ts';
+import type { DeskValue } from './desk.ts';
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
 const { MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
@@ -93,6 +95,7 @@ class MockConsole implements ConsoleDevice {
   private readonly wire = new Map<string, number>();
   private journal: MockMessage[] = [];
   private readonly listeners: (() => void)[] = [];
+  private readonly wireListeners: ((address: string, value: DeskValue) => void)[] = [];
 
   constructor() {
     this.boot();
@@ -165,7 +168,30 @@ class MockConsole implements ConsoleDevice {
     if (!this.wire.has(address) || !Number.isFinite(value)) return false;
     this.write(address, value, 'desk');
     this.announce();
+    // Note(yoochan.kim): a real desk pushes a hand's move to every subscriber
+    for (const listener of this.wireListeners) listener(address, this.typed(address, value));
     return true;
+  }
+
+  async query(address: string): Promise<DeskValue> {
+    const value = this.wire.get(address);
+    if (value === undefined) throw new Error(`No ${address} on this desk`);
+    return this.typed(address, value);
+  }
+
+  async send(address: string, value: DeskValue): Promise<void> {
+    if (!this.wire.has(address)) throw new Error(`No ${address} on this desk`);
+    this.write(address, value.value, 'server');
+    this.announce();
+  }
+
+  onWire(listener: (address: string, value: DeskValue) => void): void {
+    this.wireListeners.push(listener);
+  }
+
+  /** A value as the X32 would type it: a level is a float, a switch an int. */
+  private typed(address: string, value: number): DeskValue {
+    return FADER_ADDRESSES.has(address) ? float(value) : int(value);
   }
 
   async enable(inputId: string): Promise<void> {

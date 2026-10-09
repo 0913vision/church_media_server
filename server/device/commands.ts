@@ -7,6 +7,7 @@ import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
 import { runsOn } from '../schedule/Schedule.ts';
 import { isYoutube } from '../tracks/Fetcher.ts';
+import { DeskHeldError } from '../console/DeskHolds.ts';
 import { log } from '../utils/logger.ts';
 
 /**
@@ -104,13 +105,18 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // Note(yoochan.kim): The console holds no protected state and its OSC bursts are
       // instantaneous, so this takes no audio lock — only the admin gate.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
-      const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
-        await deps.mixerConsole.enable(input);
-      });
-
-      if (!allowed) {
-        log.warn('command', socket, 'Console input blocked (admin lock)', { input });
-        return refuse(RejectReason.ADMIN_LOCKED);
+      try {
+        const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
+          await deps.mixerConsole.enable(input);
+        });
+        if (!allowed) {
+          log.warn('command', socket, 'Console input blocked (admin lock)', { input });
+          return refuse(RejectReason.ADMIN_LOCKED);
+        }
+      } catch (error) {
+        if (!(error instanceof DeskHeldError)) throw error;
+        log.warn('command', socket, 'Console input blocked (desk held)', { input, address: error.address });
+        return refuse(RejectReason.CONSOLE_HELD);
       }
       return DONE;
     },
@@ -122,13 +128,18 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // no protected state, so the admin gate is the only thing in the way. The
       // pacing between steps belongs to the console, not here.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
-      const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
-        await deps.mixerConsole.initialize();
-      });
-
-      if (!allowed) {
-        log.warn('command', socket, 'Console initialize blocked (admin lock)');
-        return refuse(RejectReason.ADMIN_LOCKED);
+      try {
+        const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
+          await deps.mixerConsole.initialize();
+        });
+        if (!allowed) {
+          log.warn('command', socket, 'Console initialize blocked (admin lock)');
+          return refuse(RejectReason.ADMIN_LOCKED);
+        }
+      } catch (error) {
+        if (!(error instanceof DeskHeldError)) throw error;
+        log.warn('command', socket, 'Console initialize blocked (desk held)', { address: error.address });
+        return refuse(RejectReason.CONSOLE_HELD);
       }
       return DONE;
     },

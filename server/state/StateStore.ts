@@ -1,4 +1,5 @@
 import type { PlayerConfig } from '../constants/playerConfig.ts';
+import type { DeskJournalEntry } from '../console/DeskHolds.ts';
 
 /**
  * The slice of player state that survives a process restart / reboot.
@@ -7,8 +8,14 @@ import type { PlayerConfig } from '../constants/playerConfig.ts';
  */
 export type PersistedState = Pick<PlayerConfig, 'serverVolume' | 'muted' | 'currentSong'>;
 
-/** Everything the file holds: the player's preferences plus the church clock. */
-export type PersistedAll = PersistedState & { clockOffsetSec: number };
+/**
+ * Everything the file holds: the player's preferences, the church clock, and
+ * whatever part of the desk a hold still has to put back.
+ */
+export type PersistedAll = PersistedState & {
+  clockOffsetSec: number;
+  deskJournal: readonly DeskJournalEntry[];
+};
 
 /** Persists the player's preferences across process restarts / reboots. */
 export interface StateStore {
