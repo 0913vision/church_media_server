@@ -69,6 +69,7 @@ class RejectReason(str, Enum):
     TOO_LARGE = "tooLarge"
     FETCH_FAILED = "fetchFailed"
     FETCH_BUSY = "fetchBusy"
+    CONSOLE_HELD = "consoleHeld"
     PROTOCOL_MISMATCH = "protocolMismatch"
 
 
@@ -487,7 +488,9 @@ class EnableConsoleInputArgs(TypedDict):
     Switch a mixing console input on. Not subject to the audio lock, and open
     to anyone the admin lock is not holding back — the console keeps no
     protected state. It reports nothing back, so there is no attribute to
-    read.
+    read. Refused with consoleHeld while the server has set part of the desk
+    aside and this input is in it: the server puts it back itself when it is
+    done, and the input can be switched on again then.
     """
     input: str  # An id from the console attribute
 
@@ -501,7 +504,9 @@ class InitializeConsoleArgs(TypedDict):
     enableConsoleInput it takes no audio lock and reports nothing back — the
     desk's own answers arrive through the console attribute. Takes a few
     hundred milliseconds to finish, so a client should not expect the reading
-    to have changed by the time the call returns.
+    to have changed by the time the call returns. Refused with consoleHeld,
+    before anything is sent, while the server has set aside any part of the
+    desk it would write.
     """
     pass
 

@@ -4,6 +4,7 @@ import { isMuteState } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { StateStore, PersistedState, PersistedAll } from './StateStore.ts';
+import type { DeskJournalEntry } from '../console/DeskHolds.ts';
 
 /**
  * File-backed StateStore: a small JSON document written atomically
@@ -35,6 +36,7 @@ class FileStateStore implements StateStore {
         // Note(yoochan.kim): A file written before the clock existed simply declares no
         // correction, which is what no correction means.
         clockOffsetSec: typeof offset === 'number' && Number.isFinite(offset) ? offset : 0,
+        deskJournal: this.deskJournal((parsed as Record<string, unknown>).deskJournal),
       };
     } catch (error) {
       log.error('stateStore', null, 'Failed to read persisted state', { error: errorMessage(error) });
@@ -52,6 +54,27 @@ class FileStateStore implements StateStore {
       // Note(yoochan.kim): Persistence is best-effort: a write failure must never break playback.
       log.error('stateStore', null, 'Failed to persist state', { error: errorMessage(error) });
     }
+  }
+
+  /**
+   * What a hold left to put back. A file written before holds existed has none,
+   * which is what having none means. A damaged one cannot be put back, so it is
+   * reported and dropped rather than costing the preferences beside it.
+   */
+  private deskJournal(value: unknown): DeskJournalEntry[] {
+    if (value === undefined) return [];
+    const isEntry = (entry: unknown): entry is DeskJournalEntry => {
+      const e = entry as Record<string, unknown> | null;
+      const original = e?.original as Record<string, unknown> | undefined;
+      return typeof e?.address === 'string'
+        && e.address.startsWith('/')
+        && (original?.type === 'i' || original?.type === 'f')
+        && typeof original.value === 'number'
+        && Number.isFinite(original.value);
+    };
+    if (Array.isArray(value) && value.every(isEntry)) return value;
+    log.error('stateStore', null, 'Desk journal unreadable; the desk may not be where it was', { filePath: this.filePath });
+    return [];
   }
 
   private isValid(value: unknown): value is PersistedState {

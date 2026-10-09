@@ -17,7 +17,8 @@ server.ts  (composition root — builds the object graph by constructor injectio
   │                            hardware/AudioDevice ── hardware/MpvClient (libmpv FFI)
   ├─ console/MixerConsole   mixer service over the ConsoleDevice interface:
   │                            console/X32Console (OSC) | console/MockConsole
-  ├─ state/FileStateStore   persists player preferences (StateStore interface)
+  │                            console/DeskHolds sets part of the desk aside and puts it back
+  ├─ state/FileStateStore   persists player preferences and the desk journal (StateStore interface)
   └─ auth/AdminSessionManager
 ```
 
