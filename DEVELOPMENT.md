@@ -18,6 +18,7 @@ server.ts  (composition root — builds the object graph by constructor injectio
   ├─ console/MixerConsole   mixer service over the ConsoleDevice interface:
   │                            console/X32Console (OSC) | console/MockConsole
   │                            console/DeskHolds sets part of the desk aside and puts it back
+  ├─ level/LevelMatcher     measures a track on the desk meter and moves its level onto a target
   ├─ state/FileStateStore   persists player preferences and the desk journal (StateStore interface)
   └─ auth/AdminSessionManager
 ```

@@ -189,6 +189,12 @@ class MockConsole implements ConsoleDevice {
     this.wireListeners.push(listener);
   }
 
+  // Note(yoochan.kim): this desk has no audio behind it, so it never shows a meter
+  // frame — and whatever waits for one before playing never plays here.
+  watchMeters(): () => void {
+    return () => {};
+  }
+
   /** A value as the X32 would type it: a level is a float, a switch an int. */
   private typed(address: string, value: number): DeskValue {
     return FADER_ADDRESSES.has(address) ? float(value) : int(value);

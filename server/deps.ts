@@ -11,6 +11,7 @@ import type Schedule from './schedule/Schedule.ts';
 import type AutoStarter from './schedule/AutoStarter.ts';
 import type AdminSession from './lock/AdminSession.ts';
 import type Clock from './clock/Clock.ts';
+import type LevelMatcher from './level/LevelMatcher.ts';
 
 /**
  * Shared dependency context built once by the composition root (server.ts) and
@@ -42,4 +43,6 @@ export interface ServerDeps {
   adminSession: AdminSession;
   /** Church time — every instant on the wire is read against it */
   clock: Clock;
+  /** Measures a track on the desk and moves its level onto a target */
+  levelMatcher: LevelMatcher;
 }

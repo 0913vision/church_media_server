@@ -9,6 +9,11 @@ export interface ConsoleDevice {
   send(address: string, value: DeskValue): Promise<void>;
   /** Every value the desk reports, for any address and whoever moved it — answers to questions included. */
   onWire(listener: (address: string, value: DeskValue) => void): void;
+  /**
+   * Listens to the music player's input meters (CONSOLE_CONFIG.METER) until the
+   * returned function is called. Each frame is the linear readings, 1 = full scale.
+   */
+  watchMeters(listener: (levels: readonly number[]) => void): () => void;
   /** Switches one input on, by an id from read(). Unknown ids are the caller's bug. */
   enable(inputId: string): Promise<void>;
   /**

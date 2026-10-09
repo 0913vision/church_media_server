@@ -2,6 +2,7 @@ import type Player from '../player/Player.ts';
 import type LockCoordinator from './LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Clock from '../clock/Clock.ts';
+import type LevelMatcher from '../level/LevelMatcher.ts';
 import { PlaybackState } from '../protocol.ts';
 import type { Deadline, MusicEnd, StatePatch } from '../protocol.ts';
 import { formatInstant } from '../utils/instant.ts';
@@ -41,6 +42,7 @@ class AdminSession {
     private readonly lockCoordinator: LockCoordinator,
     private readonly notifier: Notifier,
     private readonly clock: Clock,
+    private readonly levelMatcher: Pick<LevelMatcher, 'ownsDeck'>,
   ) {}
 
   isArmed(): boolean {
@@ -134,6 +136,11 @@ class AdminSession {
       }
       return;
     }
+
+    // Note(yoochan.kim): a level measurement has the deck. The track on it is not the
+    // person's music, so nothing here applies to it, and the lapse waits for it the
+    // way it waits for any music with an end.
+    if (this.levelMatcher.ownsDeck()) return;
 
     const now = this.clock.now();
 

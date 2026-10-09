@@ -24,6 +24,7 @@ const QUERY_WAIT_MS = 250;
 const QUERY_ASKS = 3;
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
+const METER = CONSOLE_CONFIG.METER;
 // Note(yoochan.kim): the reading follows each input's first channel; the rest
 // are driven together but do not answer for it.
 const POLLED: readonly string[] = INPUTS.flatMap((input) => [
@@ -38,6 +39,8 @@ class X32Console implements ConsoleDevice {
   private readonly listeners: (() => void)[] = [];
   private readonly wireListeners: ((address: string, value: DeskValue) => void)[] = [];
   private readonly waiting = new Map<string, ((value: DeskValue) => void)[]>();
+  private readonly meterListeners = new Set<(levels: readonly number[]) => void>();
+  private meterRenew: NodeJS.Timeout | null = null;
   private lastAnnounced = '';
   private lastNetworkError = '';
 
@@ -72,6 +75,10 @@ class X32Console implements ConsoleDevice {
     this.client.on("message", (message) => {
       const arg = message.args[0];
       const value = arg?.value;
+      if (arg?.type === 'b' && value instanceof Uint8Array && message.address === METER.REQUEST) {
+        this.hearMeters(value);
+        return;
+      }
       if (typeof value !== 'number') return;
       if (arg?.type === 'i' || arg?.type === 'f') this.hear(message.address, { type: arg.type, value });
       if (!POLLED.includes(message.address)) return;
@@ -133,6 +140,38 @@ class X32Console implements ConsoleDevice {
 
   onWire(listener: (address: string, value: DeskValue) => void): void {
     this.wireListeners.push(listener);
+  }
+
+  watchMeters(listener: (levels: readonly number[]) => void): () => void {
+    this.meterListeners.add(listener);
+    if (!this.meterRenew) {
+      this.askForMeters();
+      this.meterRenew = setInterval(() => this.askForMeters(), METER.RENEW_MS);
+    }
+    return () => {
+      this.meterListeners.delete(listener);
+      if (this.meterListeners.size > 0 || !this.meterRenew) return;
+      clearInterval(this.meterRenew);
+      this.meterRenew = null;
+    };
+  }
+
+  private askForMeters(): void {
+    this.client.send({ address: '/meters', args: [{ type: 's', value: METER.REQUEST }] });
+  }
+
+  // Note(yoochan.kim): a meter frame is a blob of little-endian numbers — a count,
+  // then that many floats — unlike the rest of OSC, which is big-endian.
+  private hearMeters(blob: Uint8Array): void {
+    const data = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+    if (data.byteLength < 4) return;
+    const count = data.getInt32(0, true);
+    const levels: number[] = [];
+    for (const index of METER.CHANNELS) {
+      if (index >= count || 4 + (index + 1) * 4 > data.byteLength) return;
+      levels.push(data.getFloat32(4 + index * 4, true));
+    }
+    for (const listener of this.meterListeners) listener(levels);
   }
 
   private hear(address: string, value: DeskValue): void {

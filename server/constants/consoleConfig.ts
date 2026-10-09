@@ -93,5 +93,15 @@ export const CONSOLE_CONFIG = {
     CONFIRM_ATTEMPTS: 3,
     CONFIRM_GAP_MS: 50,
     RESTORE_RETRY_MS: 5000
+  },
+
+  // Note(yoochan.kim): where the music player's input shows on the desk's meters —
+  // aux in 5 and 6, a linked pair. /meters/0 is the meter page: 32 channels, then
+  // the 8 aux inputs. The desk sends frames for 10 seconds per request, so it is
+  // asked again before that runs out. Not yet checked against the desk itself.
+  METER: {
+    REQUEST: "/meters/0",
+    CHANNELS: [36, 37],
+    RENEW_MS: 5000
   }
 } as const;

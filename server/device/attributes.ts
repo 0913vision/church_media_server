@@ -84,6 +84,16 @@ function deckIsFlows(deps: ServerDeps): boolean {
 }
 
 /**
+ * Who has the deck when the panel does not: a run's music, or a level
+ * measurement — each was handed the deck and puts it back itself.
+ */
+function deckTakenBy(deps: ServerDeps): Checked<never> | null {
+  if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+  if (deps.levelMatcher.ownsDeck()) return reject(RejectReason.LEVEL_MATCHING);
+  return null;
+}
+
+/**
  * Whether the gate belongs to a run rather than to a person.
  *
  * Note(yoochan.kim): "the gate is held" and "it is yours to act on" are different
@@ -133,7 +143,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       true,
       (value, deps) => {
-        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        const taken = deckTakenBy(deps);
+        if (taken) return taken;
         return isPlaybackState(value) ? accept(value) : BAD_VALUE;
       },
       async (playback, deps) => {
@@ -164,7 +175,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
-        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        const taken = deckTakenBy(deps);
+        if (taken) return taken;
         if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
         return checkVolume(value);
       },
@@ -180,7 +192,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
-        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        const taken = deckTakenBy(deps);
+        if (taken) return taken;
         if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
         return isMuteState(value) ? accept(value) : BAD_VALUE;
       },
@@ -199,7 +212,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       // Note(yoochan.kim): the manifest decides which ids are songs, so only it
       // can say whether this one is
       (value, deps) => {
-        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        const taken = deckTakenBy(deps);
+        if (taken) return taken;
         return deps.trackLibrary.isDeckSong(value) ? accept(value) : BAD_VALUE;
       },
       async (song, deps) => {
@@ -233,7 +247,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
         // Note(yoochan.kim): this moves what is on the deck, so it follows the deck. Set
         // during a run's music it would make that run's track repeat, and a
         // track that never ends is a timeline that never finishes.
-        if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
+        const taken = deckTakenBy(deps);
+        if (taken) return taken;
         return accept(value);
       },
       async (loop, deps) => {
@@ -250,6 +265,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   trackFetch: {
     read: (deps) => deps.fetcher.status(),
+  },
+
+  levelMatch: {
+    read: (deps) => deps.levelMatcher.current(),
   },
 
   schedule: {

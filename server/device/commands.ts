@@ -339,6 +339,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // and a run holds the gate — so the one check above passes during a service
       // and this was the one door left open onto music that is already sounding.
       if (deps.flowRunner.ownsDeck()) return refuse(RejectReason.FLOW_ACTIVE);
+      if (deps.levelMatcher.ownsDeck()) return refuse(RejectReason.LEVEL_MATCHING);
 
       const track = deps.trackLibrary.get(id);
       if (!track) return refuse(RejectReason.UNKNOWN_TRACK);
@@ -360,6 +361,20 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
         loop: deps.player.getLoop(),
       });
       return DONE;
+    },
+  },
+
+  // Note(yoochan.kim): answers once accepted; a measurement runs for minutes, and
+  // how it goes is the levelMatch attribute's to say.
+  matchTrackLevel: {
+    async run(args, deps) {
+      return deps.levelMatcher.start(args);
+    },
+  },
+
+  stopLevelMatch: {
+    async run(_args, deps) {
+      return deps.levelMatcher.stop();
     },
   },
 };
