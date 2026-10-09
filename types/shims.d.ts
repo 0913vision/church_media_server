@@ -7,12 +7,19 @@ declare module 'osc' {
     localPort: number;
     remoteAddress: string;
     remotePort: number;
+    /** Arguments travel as { type, value } both ways, so an int stays an int */
+    metadata: true;
   }
 
-  /** An incoming OSC message with plain (non-annotated) argument values */
+  /** One argument with its OSC type tag ('i', 'f', 's', …) */
+  export interface OscArgument {
+    type: string;
+    value: unknown;
+  }
+
   export interface OscMessage {
     address: string;
-    args: (number | string)[];
+    args: OscArgument[];
   }
 
   export class UDPPort {
@@ -21,7 +28,7 @@ declare module 'osc' {
     on(event: 'ready', callback: () => void): void;
     on(event: 'message', callback: (message: OscMessage) => void): void;
     on(event: 'error', callback: (error: Error) => void): void;
-    send(message: { address: string; args?: number }): void;
+    send(message: { address: string; args?: OscArgument[] }): void;
   }
 
   const osc: { UDPPort: typeof UDPPort };
