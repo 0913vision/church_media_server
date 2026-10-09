@@ -18,6 +18,8 @@ import MockConsole from './console/MockConsole.ts';
 import DeskHolds from './console/DeskHolds.ts';
 import type { DeskJournalEntry } from './console/DeskHolds.ts';
 import { CONSOLE_CONFIG } from './constants/consoleConfig.ts';
+import LevelMatcher from './level/LevelMatcher.ts';
+import { LEVEL_CONFIG } from './constants/levelConfig.ts';
 import TrackLibrary from './tracks/TrackLibrary.ts';
 import Uploads from './tracks/Uploads.ts';
 import Fetcher from './tracks/Fetcher.ts';
@@ -55,6 +57,7 @@ class MediaServer {
   private adminSession: AdminSession | null = null;
   private uploads: Uploads | null = null;
   private deskHolds: DeskHolds | null = null;
+  private levelMatcher: LevelMatcher | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -148,7 +151,11 @@ class MediaServer {
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
     const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
     this.flowRunner = flowRunner;
-    const adminSession = new AdminSession(player, lockCoordinator, notifier, clock);
+    const levelMatcher = new LevelMatcher(
+      player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner, LEVEL_CONFIG.TIMING,
+    );
+    this.levelMatcher = levelMatcher;
+    const adminSession = new AdminSession(player, lockCoordinator, notifier, clock, levelMatcher);
     this.adminSession = adminSession;
     const autoStarter = new AutoStarter(schedule, clock, flowRunner);
     this.autoStarter = autoStarter;
@@ -168,6 +175,7 @@ class MediaServer {
       autoStarter,
       adminSession,
       clock,
+      levelMatcher,
     };
 
     this.pingInterval = setInterval(() => {
@@ -220,6 +228,10 @@ class MediaServer {
     if (this.uploads) {
       this.uploads.dispose();
       this.uploads = null;
+    }
+    if (this.levelMatcher) {
+      this.levelMatcher.dispose();
+      this.levelMatcher = null;
     }
     if (this.deskHolds) {
       this.deskHolds.dispose();

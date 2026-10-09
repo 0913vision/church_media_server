@@ -73,6 +73,7 @@ class FakeDesk implements ConsoleDevice {
   async initialize(): Promise<void> {}
   read(): [] { return []; }
   onChange(): void {}
+  watchMeters(): () => void { return () => {}; }
 }
 
 const UNTOUCHED = { [AUX_ON]: int(1), [AUX_FADER]: float(0.75), [CH1_ON]: int(1) };

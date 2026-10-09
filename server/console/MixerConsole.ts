@@ -62,6 +62,11 @@ class MixerConsole {
     return this.holds.holding(changes, body);
   }
 
+  /** The music player's input meters until the returned function is called — see ConsoleDevice. */
+  watchMeters(listener: (levels: readonly number[]) => void): () => void {
+    return this.console.watchMeters(listener);
+  }
+
   /** Whether this id is one of the inputs the desk offers */
   has(inputId: unknown): inputId is string {
     return typeof inputId === 'string' && this.read().some((input) => input.id === inputId);
