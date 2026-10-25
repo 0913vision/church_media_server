@@ -12,11 +12,12 @@ export interface AudioOutput {
   /**
    * Start and stop. Both fade by default; pass false where there is no cut to
    * cover — a song beginning at its beginning, or one that has just reached its
-   * own end. A fade there is only a delay. onSounding runs the moment the sound
-   * starts, before a fade in has finished.
+   * own end. A fade there is only a delay. A fade takes durationMs, any length
+   * (FADE_MS unless given). onSounding runs the moment the sound starts, before a
+   * fade in has finished.
    */
-  resume(fade?: boolean, onSounding?: () => void): Promise<void>;
-  pause(fade?: boolean): Promise<void>;
+  resume(fade?: boolean, onSounding?: () => void, durationMs?: number): Promise<void>;
+  pause(fade?: boolean, durationMs?: number): Promise<void>;
   /** Whether the deck is past the opening of what it holds, so starting it is a cut */
   isPartWay(): boolean;
   /** Saves the song's live playback position into its time memory */

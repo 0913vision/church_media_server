@@ -7,6 +7,7 @@
     "clean": "rm -rf dist",
     "gen-protocol": "node protocol/generate.mjs",
     "scan-tracks": "node scripts/scan-tracks.mjs",
+    "rescale-volumes": "npm run build && node dist/scripts/rescale-volumes.js",
     "build": "npm run clean && npm run gen-protocol && tsc",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",

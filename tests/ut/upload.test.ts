@@ -125,7 +125,7 @@ describe('Uploading a track', () => {
       assert.strictEqual(added.length, 1, 'another screen sees the new track without asking');
       const track: Track = added[0]!;
       assert.strictEqual(track.title, '새 곡');
-      assert.strictEqual(track.volume, 50, 'every new track starts at the same level');
+      assert.strictEqual(track.volume, 53, 'every new track starts at the same level');
       assert.ok(track.durationSec > 1 && track.durationSec < 1.2, `measured from the file: ${track.durationSec}`);
 
       // Note(yoochan.kim): what the next boot reads, not what this process remembers.

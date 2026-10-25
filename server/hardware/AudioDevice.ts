@@ -4,12 +4,15 @@ import type { SongId } from '../constants/songs.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import type { AudioOutput } from './AudioOutput.ts';
+import { dbFromLevel, fadeInDb, fadeOutDb, mpvVolumeFromDb } from './loudness.ts';
 
 /**
  * High-level device controller that manages audio playback operations
  */
 class AudioDevice implements AudioOutput {
   private readonly playlist: Record<SongId, string>;
+  /** The level last set, 0–100; fades move around it. mpv's own 100 until someone sets one. */
+  private level = 100;
   private readonly currentSongTimes: Record<SongId, number>;
 
   /**
@@ -122,35 +125,38 @@ class AudioDevice implements AudioOutput {
     return at !== null && at > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
   }
 
-  /**
-   * Note(yoochan.kim): mpv's volume is cubic — halving it is 18 dB, not 6 (measured).
-   * The quarter sine is meant for the sound, so the volume follows its cube root;
-   * applied to the volume as it stands, the first second of a fade in was all but
-   * silent and a press of play seemed to take that long to land.
-   */
-  private fadeLevel(currentVolume: number, gain: number): number {
-    return currentVolume * Math.cbrt(gain);
+  /** Puts mpv at some decibels under the file's own level. */
+  private setDb(db: number): void {
+    this.mpv.setProperty("volume", mpvVolumeFromDb(db).toString());
   }
 
   /**
-   * Pauses playback, fading out unless told otherwise. See `resume` for when a
-   * fade is wanted and when it is only a delay.
+   * Walks a fade, a step every FADE_STEP_MS, with the level it moves around taken
+   * as it stands each step — so a level moved during a fade is the one it lands on.
    */
-  async pause(fade = true): Promise<void> {
-    const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
+  private async fadeAlong(curve: (t: number, durationMs: number) => number, durationMs: number): Promise<void> {
+    const step = DEVICE_CONFIG.FADE_STEP_MS;
+    let t = 0;
+    while (t + step < durationMs) {
+      t += step;
+      await this.delay(step);
+      this.setDb(dbFromLevel(this.level) + curve(t, durationMs));
+    }
+    await this.delay(durationMs - t);
+  }
+
+  /**
+   * Pauses playback, fading out unless told otherwise — over `durationMs`, any
+   * length. See `resume` for when a fade is wanted and when it is only a delay.
+   */
+  async pause(fade = true, durationMs: number = DEVICE_CONFIG.FADE_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "yes");
       return;
     }
-    const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
-    for (let i = 0; i <= FADE_STEPS; ++i) {
-      const t = i / FADE_STEPS;
-      const volume = this.fadeLevel(currentVolume, Math.cos((Math.PI / 2) * t));
-      this.mpv.setProperty("volume", volume.toString());
-      await this.delay(FADE_STEP_MS);
-    }
+    await this.fadeAlong(fadeOutDb, durationMs);
     this.mpv.setProperty("pause", "yes");
-    this.mpv.setProperty("volume", currentVolume.toString());
+    this.setDb(dbFromLevel(this.level));
   }
 
   /**
@@ -160,31 +166,25 @@ class AudioDevice implements AudioOutput {
    * before it is over. A song that begins at its own beginning has nothing to
    * cover, and fading it in only mutes the opening the arranger wrote.
    */
-  async resume(fade = true, onSounding?: () => void): Promise<void> {
-    const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
+  async resume(fade = true, onSounding?: () => void, durationMs: number = DEVICE_CONFIG.FADE_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "no");
       onSounding?.();
       return;
     }
-    this.mpv.setProperty("volume", "0");
+    this.setDb(dbFromLevel(this.level) + fadeInDb(0, durationMs));
     this.mpv.setProperty("pause", "no");
     onSounding?.();
-    const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
-    for (let i = 0; i <= FADE_STEPS; ++i) {
-      const t = i / FADE_STEPS;
-      const volume = this.fadeLevel(currentVolume, Math.sin((Math.PI / 2) * t));
-      this.mpv.setProperty("volume", volume.toString());
-      await this.delay(FADE_STEP_MS);
-    }
+    await this.fadeAlong(fadeInDb, durationMs);
+    this.setDb(dbFromLevel(this.level));
   }
 
   /**
-   * Sets the volume level
-   * @param volume - Volume level (0-100)
+   * Sets the level, 0–100 on the X32 fader's shape (see loudness.ts); 0 is silence.
    */
   setVolume(volume: number): void {
-    this.mpv.setProperty("volume", volume.toString());
+    this.level = volume;
+    this.setDb(dbFromLevel(volume));
   }
 
   /**

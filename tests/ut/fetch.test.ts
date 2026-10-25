@@ -86,7 +86,7 @@ describe('Fetching a track from YouTube', () => {
       const added = patch.tracks!.filter((track) => !before.has(track.id));
       assert.strictEqual(added.length, 1);
       assert.strictEqual(added[0]!.title, '유튜브 곡');
-      assert.strictEqual(added[0]!.volume, 50);
+      assert.strictEqual(added[0]!.volume, 53);
 
       const manifest = JSON.parse(fs.readFileSync(TEST_TRACKS_MANIFEST_PATH, 'utf8')) as { id: string; file: string }[];
       const saved = manifest.find((entry) => entry.id === added[0]!.id);

@@ -4,7 +4,7 @@
     "title": "피아노 찬송가",
     "file": "./audio/music_slow.mp3",
     "durationSec": 3684.6,
-    "volume": 50,
+    "volume": 53,
     "userSelectable": true
   },
   {
@@ -12,7 +12,7 @@
     "title": "통성기도",
     "file": "./audio/music_fast.mp3",
     "durationSec": 10404.5,
-    "volume": 35,
+    "volume": 38,
     "userSelectable": true
   },
   {
@@ -20,41 +20,41 @@
     "title": "예수 피를 힘입어",
     "file": "./audio/only-by-your-blood.mp3",
     "durationSec": 307.6,
-    "volume": 50
+    "volume": 53
   },
   {
     "id": "love-is-calling-me",
     "title": "사랑이 나를 부르네",
     "file": "./audio/love-is-calling-me.mp3",
     "durationSec": 361.6,
-    "volume": 50
+    "volume": 53
   },
   {
     "id": "toward-the-goal",
     "title": "푯대를 향하여",
     "file": "./audio/toward-the-goal.mp3",
     "durationSec": 372.6,
-    "volume": 50
+    "volume": 53
   },
   {
     "id": "magnificent",
     "title": "주 광대하시네",
     "file": "./audio/magnificent.mp3",
     "durationSec": 435,
-    "volume": 50
+    "volume": 53
   },
   {
     "id": "reflection-of-christ",
     "title": "예수가 보이네",
     "file": "./audio/reflection-of-christ.mp3",
     "durationSec": 540,
-    "volume": 50
+    "volume": 53
   },
   {
     "id": "his-love-toward-us",
     "title": "우리에게 향하신",
     "file": "./audio/his-love-toward-us.mp3",
     "durationSec": 178.7,
-    "volume": 50
+    "volume": 53
   }
 ]

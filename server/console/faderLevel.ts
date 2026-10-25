@@ -23,24 +23,29 @@ const MAX_DB = 10;
  *   0 … 0.0625  ->  -90 … -60 dB
  */
 export function faderFromDb(db: number): number {
-  const clamped = Math.min(MAX_DB, Math.max(MIN_DB, db));
-  const level =
-    clamped >= -10 ? (clamped + 30) / 40 :
-    clamped >= -30 ? (clamped + 50) / 80 :
-    clamped >= -60 ? (clamped + 70) / 160 :
-    (clamped + 90) / 480;
   // Note(yoochan.kim): rounded the way the desk reports levels back, so a value
   // sent and a value read compare equal instead of differing in the sixth place.
-  return Math.round(level * 10000) / 10000;
+  return Math.round(x32Fader(db) * 10000) / 10000;
 }
 
 /** The same curve read backwards, for saying what a level the desk reported means. */
 export function dbFromFader(level: number): number {
+  return Math.round(x32Db(level) * 10) / 10;
+}
+
+/** The curve itself, unrounded — for the music player's own scale, which takes its shape. */
+export function x32Fader(db: number): number {
+  const clamped = Math.min(MAX_DB, Math.max(MIN_DB, db));
+  return clamped >= -10 ? (clamped + 30) / 40 :
+    clamped >= -30 ? (clamped + 50) / 80 :
+    clamped >= -60 ? (clamped + 70) / 160 :
+    (clamped + 90) / 480;
+}
+
+export function x32Db(level: number): number {
   const clamped = Math.min(1, Math.max(0, level));
-  const db =
-    clamped >= 0.5 ? clamped * 40 - 30 :
+  return clamped >= 0.5 ? clamped * 40 - 30 :
     clamped >= 0.25 ? clamped * 80 - 50 :
     clamped >= 0.0625 ? clamped * 160 - 70 :
     clamped * 480 - 90;
-  return Math.round(db * 10) / 10;
 }

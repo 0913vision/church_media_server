@@ -2,6 +2,7 @@ import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { MuteState, PlaybackState } from '../../server/protocol.ts';
 import type MpvClient from '../../server/hardware/MpvClient.ts';
+import { dbFromLevel, fadeInDb, fadeOutDb, mpvVolumeFromDb } from '../../server/hardware/loudness.ts';
 
 // Note(yoochan.kim): a stand-in for mpv that only writes down what it was told, so
 // nothing here can make a sound. The device and player read env-backed config
@@ -10,6 +11,8 @@ type PlayerCtor = typeof import('../../server/player/Player.ts').default;
 type DeviceCtor = typeof import('../../server/hardware/AudioDevice.ts').default;
 let Player: PlayerCtor;
 let AudioDevice: DeviceCtor;
+let FADE_MS: number;
+let STEP_MS: number;
 
 before(async () => {
   process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
@@ -17,7 +20,11 @@ before(async () => {
   process.env.MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
   Player = (await import('../../server/player/Player.ts')).default;
   AudioDevice = (await import('../../server/hardware/AudioDevice.ts')).default;
+  ({ FADE_MS, FADE_STEP_MS: STEP_MS } = (await import('../../server/constants/deviceConfig.ts')).DEVICE_CONFIG);
 });
+
+/** The deck's level in deck(), 0–100. */
+const LEVEL = 40;
 
 class FakeMpv {
   calls: string[] = [];
@@ -37,16 +44,16 @@ class FakeMpv {
   }
 }
 
-function deck(): { mpv: FakeMpv; player: InstanceType<PlayerCtor> } {
+function deck(): { mpv: FakeMpv; device: InstanceType<DeviceCtor>; player: InstanceType<PlayerCtor> } {
   const mpv = new FakeMpv();
   const device = new AudioDevice(mpv as unknown as MpvClient, 'calm', { calm: '/audio/calm.mp3' });
   const player = new Player(
     device,
-    { serverVolume: 40, muted: MuteState.UNMUTED, state: PlaybackState.PAUSED, currentSong: 'calm' },
+    { serverVolume: LEVEL, muted: MuteState.UNMUTED, state: PlaybackState.PAUSED, currentSong: 'calm' },
     () => 50,
     () => {},
   );
-  return { mpv, player };
+  return { mpv, device, player };
 }
 
 describe('A run moving from one of its tracks to the next', () => {
@@ -65,7 +72,7 @@ describe('A run moving from one of its tracks to the next', () => {
 
     assert.ok(took < 100, `the next track sounded ${took}ms after its boundary`);
     assert.ok(!mpv.calls.some((call) => call.startsWith('playback-time=')), 'a start on time does not seek');
-    assert.deepStrictEqual(mpv.calls.filter((call) => call.startsWith('volume=')), ['volume=60'],
+    assert.deepStrictEqual(mpv.calls.filter((call) => call.startsWith('volume=')), [`volume=${mpvVolumeFromDb(dbFromLevel(60))}`],
       'the level is set once, with no fade out or in');
     assert.ok(mpv.calls.includes('loadfile /audio/second.mp3'));
     assert.strictEqual(mpv.calls.at(-1), 'pause=no');
@@ -82,11 +89,15 @@ describe('A run moving from one of its tracks to the next', () => {
   });
 });
 
-/** The volumes a fade set after it started from silence, as numbers. */
-function fadeLevels(calls: string[]): number[] {
-  const volumes = calls.filter((call) => call.startsWith('volume=')).map((call) => Number(call.slice('volume='.length)));
-  return volumes.slice(volumes.indexOf(0) + 1);
+/** Each volume mpv was told, read back as decibels under the deck's level. */
+function fadeDb(calls: string[]): number[] {
+  return calls.filter((call) => call.startsWith('volume='))
+    .map((call) => 60 * Math.log10(Number(call.slice('volume='.length)) / 100) - dbFromLevel(LEVEL));
 }
+
+const near = (actual: number, expected: number, what: string): void => {
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${what}: ${actual.toFixed(2)} dB, want ${expected.toFixed(2)}`);
+};
 
 describe('Pressing play', () => {
   test('a song at its beginning sounds at once, with no fade', async () => {
@@ -102,7 +113,7 @@ describe('Pressing play', () => {
     assert.deepStrictEqual(mpv.calls, ['pause=no']);
   });
 
-  test('picked up part-way it fades in, the sound rising on the quarter sine from the press', async () => {
+  test('picked up part-way it fades in: up through the silent bottom quickly, then the same dB every moment', async () => {
     const { mpv, player } = deck();
     mpv.props['playback-time'] = '42';
     mpv.calls = [];
@@ -112,34 +123,40 @@ describe('Pressing play', () => {
     const done = Date.now() - pressed;
 
     assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms, not when the fade ended`);
-    assert.ok(done > 2500, `the fade still ran (${done}ms)`);
-    const levels = fadeLevels(mpv.calls);
-    const full = levels.at(-1)!;
-    // mpv's volume is cubic: the sound is the cube of the volume's share of full.
-    levels.forEach((level, i) => {
-      const sound = (level / full) ** 3;
-      const want = Math.sin((Math.PI / 2) * (i / (levels.length - 1)));
-      assert.ok(Math.abs(sound - want) < 1e-6, `step ${i}: sound ${sound.toFixed(4)}, want ${want.toFixed(4)}`);
-    });
-    // 300ms after the press the music is 16 dB under full, where it used to be 48 dB under.
-    assert.ok(20 * Math.log10((levels[3]! / full) ** 3) > -17);
+    assert.ok(done > FADE_MS - 200, `the fade still ran (${done}ms)`);
+    assert.strictEqual(mpv.calls[1], 'pause=no', 'set quiet before it is let go');
+    const curve = fadeDb(mpv.calls);
+    assert.strictEqual(curve.length, FADE_MS / STEP_MS + 1);
+    curve.forEach((db, i) => near(db, fadeInDb(i * STEP_MS, FADE_MS), `${i * STEP_MS}ms`));
+    // Heard 300ms after the press; on the old curve it was all but silent for half a second.
+    near(curve[300 / STEP_MS]!, -40, 'at 300ms');
   });
 
-  test('pausing fades the sound out on the quarter cosine', async () => {
+  test('a fade can be any length, the curve stretched to it', async () => {
+    const { mpv, device } = deck();
+    mpv.props['playback-time'] = '42';
+    mpv.calls = [];
+    const pressed = Date.now();
+    await device.resume(true, undefined, 1000);
+    const done = Date.now() - pressed;
+
+    assert.ok(done >= 950 && done < 1500, `a one-second fade took ${done}ms`);
+    const curve = fadeDb(mpv.calls);
+    curve.forEach((db, i) => near(db, fadeInDb(i * STEP_MS, 1000), `${i * STEP_MS}ms`));
+    near(curve[100 / STEP_MS]!, -40, 'heard after a tenth of it');
+  });
+
+  test('pausing fades out the same way backwards, then puts the level back for the next play', async () => {
     const { mpv, player } = deck();
     mpv.props['playback-time'] = '42';
     await player.play();
     mpv.calls = [];
     await player.pause();
 
-    const volumes = mpv.calls.filter((call) => call.startsWith('volume=')).map((call) => Number(call.slice('volume='.length)));
-    const steps = volumes.slice(0, -1);
-    const full = steps[0]!;
-    steps.forEach((level, i) => {
-      const sound = (level / full) ** 3;
-      const want = Math.cos((Math.PI / 2) * (i / (steps.length - 1)));
-      assert.ok(Math.abs(sound - want) < 1e-6, `step ${i}: sound ${sound.toFixed(4)}, want ${want.toFixed(4)}`);
-    });
-    assert.ok(mpv.calls.includes('pause=yes'));
+    const paused = mpv.calls.indexOf('pause=yes');
+    const curve = fadeDb(mpv.calls.slice(0, paused));
+    curve.forEach((db, i) => near(db, fadeOutDb((i + 1) * STEP_MS, FADE_MS), `${(i + 1) * STEP_MS}ms`));
+    assert.ok(curve.at(-1)! < -70, `out of hearing before it stops (${curve.at(-1)!.toFixed(1)} dB)`);
+    near(fadeDb(mpv.calls.slice(paused))[0]!, 0, 'the level after');
   });
 });

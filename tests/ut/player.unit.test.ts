@@ -71,7 +71,7 @@ function makePlayer(initial: PlayerConfig = BASE_CONFIG) {
 describe('Player muted behavior (unit)', () => {
   test('volume change while muted stays silent but remembers the level', () => {
     const { device, player } = makePlayer();
-    assert.strictEqual(device.lastVolume, 50, 'constructor applies initial volume');
+    assert.strictEqual(device.lastVolume, 53, 'constructor applies initial volume');
 
     player.setMute(MuteState.MUTED);
     assert.strictEqual(device.lastVolume, 0, 'muting drops device to 0');

@@ -25,10 +25,9 @@ export const DEVICE_CONFIG = {
   // is three seconds long.
   SEEK_AUDIBLE_SEC: 0.5,
 
-  // Note(yoochan.kim): Play/pause volume fade: FADE_STEPS+1 steps, FADE_STEP_MS apart
-  // (≈ (FADE_STEPS+1) * FADE_STEP_MS total), the sound following a quarter
-  // sine/cosine curve for an equal-power transition (AudioDevice turns that into
-  // mpv's cubic volume)
-  FADE_STEPS: 30,
-  FADE_STEP_MS: 100
+  // Note(yoochan.kim): Play/pause fade: how long one takes unless a caller says otherwise
+  // (any length works — the curve is in loudness.ts), and how often the level moves
+  // during it. At 50ms an even 3s rise moves 0.7 dB a step, too little to hear as stairs.
+  FADE_MS: 3100,
+  FADE_STEP_MS: 50
 } as const;
