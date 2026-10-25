@@ -13,7 +13,8 @@ process.env.LOG_LEVEL ??= 'warn';
 const { default: DeskHolds, DeskHeldError, DeskRestoreError } = await import('../../server/console/DeskHolds.ts');
 const { default: MixerConsole } = await import('../../server/console/MixerConsole.ts');
 const { default: MockConsole } = await import('../../server/console/MockConsole.ts');
-const { auxin, ch, fader, float, int, off } = await import('../../server/console/desk.ts');
+const { auxin, bus, ch, fader, float, int, off, sameValue, sendLevel, sendOff } = await import('../../server/console/desk.ts');
+const { faderFromDb } = await import('../../server/console/faderLevel.ts');
 
 const TIMING: HoldTiming = { CONFIRM_ATTEMPTS: 2, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 };
 
@@ -262,6 +263,31 @@ describe('Holding the mock desk', () => {
       .filter((message) => message.address === AUX_ON)
       .map((message) => `${message.from}:${message.value}`);
     assert.deepEqual(sent, ['server:0', 'server:1']);
+    holds.dispose();
+  });
+
+  test('a send is set aside and comes back, at a level between the steps a send has', async () => {
+    const desk = new MockConsole();
+    const holds = new DeskHolds(desk, TIMING, () => {}, []);
+    const mixer = new MixerConsole(desk, holds);
+    const SEND_ON = '/auxin/05/mix/03/on';
+    const SEND_LEVEL = '/auxin/05/mix/03/level';
+    desk.set(SEND_ON, 1);
+    desk.set(SEND_LEVEL, 0.5);
+
+    // Note(yoochan.kim): the desk rounds onto its own steps, so a send given a fader's
+    // number reads back as another one and would never count as landed.
+    await desk.send(SEND_LEVEL, float(faderFromDb(0.7)));
+    assert.equal(sameValue(await desk.query(SEND_LEVEL), float(faderFromDb(0.7))), false);
+    desk.set(SEND_LEVEL, 0.5);
+
+    await mixer.holding([sendOff(auxin(5), bus(3)), sendLevel(auxin(5), bus(3), 0.7)], async () => {
+      assert.deepEqual(await desk.query(SEND_ON), int(0));
+      assert.deepEqual(await desk.query(SEND_LEVEL), float(123 / 160));
+    });
+
+    assert.deepEqual(await desk.query(SEND_ON), int(1));
+    assert.deepEqual(await desk.query(SEND_LEVEL), float(0.5));
     holds.dispose();
   });
 });

@@ -3,7 +3,7 @@ import { faderFromDb, dbFromFader } from './faderLevel.ts';
 import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
-import { float, int } from './desk.ts';
+import { deskAddress, float, int } from './desk.ts';
 import type { DeskValue } from './desk.ts';
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
@@ -30,17 +30,16 @@ const JOURNAL_LIMIT = 200;
 const DRAG_MS = 900;
 
 /**
- * Every address on this desk whose number is a level rather than a switch.
+ * The steps a level address has, or null for a switch.
  *
- * Note(yoochan.kim): kept here so that what a value means is decided once, by
- * the side that owns the curve. A log saying `0.525` and a log saying `-9.0 dB`
+ * Note(yoochan.kim): what an address holds is desk.ts's to say, the same words the
+ * server builds its changes from. A log saying `0.525` and a log saying `-9.0 dB`
  * are the same log, but only one of them can be checked against the desk.
  */
-const FADER_ADDRESSES = new Set<string>([
-  ...INPUTS.flatMap((input) => input.CHANNELS.map((channel) => channel.FADER_ADDRESS)),
-  MATRIX.ADDRESS,
-  MAIN.ADDRESS,
-]);
+const levelSteps = (address: string): number | null => {
+  const held = deskAddress(address);
+  return held?.kind === 'level' ? held.steps : null;
+};
 
 /** One value arriving at the desk, and who moved it. */
 export interface MockMessage {
@@ -90,6 +89,8 @@ export interface MockSnapshot {
  * reads back, like the mute group and the two masters.
  *
  * Being its own desk, it always knows its state and so never answers `unknown`.
+ * It has every address desk.ts can build, as an X32 does; one nobody has set
+ * yet reads 0. A level lands on the nearest of its steps, as the X32 rounds it.
  */
 class MockConsole implements ConsoleDevice {
   private readonly wire = new Map<string, number>();
@@ -108,12 +109,14 @@ class MockConsole implements ConsoleDevice {
 
   /** Records one value at one address. Announcing is the caller's, so a run announces once per step. */
   private write(address: string, value: number, from: MockMessage['from']): void {
-    this.wire.set(address, value);
+    // Note(yoochan.kim): the log keeps what was sent; the desk keeps where it landed.
+    const steps = levelSteps(address);
+    this.wire.set(address, steps === null ? value : Math.round(value * (steps - 1)) / (steps - 1));
     const entry: MockMessage = {
       at: Date.now(),
       address,
       value,
-      db: FADER_ADDRESSES.has(address) ? dbFromFader(value) : null,
+      db: steps === null ? null : dbFromFader(value),
       from,
     };
 
@@ -165,22 +168,21 @@ class MockConsole implements ConsoleDevice {
    * invented, so a typo in the view cannot grow the desk a channel.
    */
   set(address: string, value: number): boolean {
-    if (!this.wire.has(address) || !Number.isFinite(value)) return false;
+    if (deskAddress(address) === null || !Number.isFinite(value)) return false;
     this.write(address, value, 'desk');
     this.announce();
     // Note(yoochan.kim): a real desk pushes a hand's move to every subscriber
-    for (const listener of this.wireListeners) listener(address, this.typed(address, value));
+    for (const listener of this.wireListeners) listener(address, this.typed(address, this.wire.get(address)!));
     return true;
   }
 
   async query(address: string): Promise<DeskValue> {
-    const value = this.wire.get(address);
-    if (value === undefined) throw new Error(`No ${address} on this desk`);
-    return this.typed(address, value);
+    if (deskAddress(address) === null) throw new Error(`No ${address} on this desk`);
+    return this.typed(address, this.wire.get(address) ?? 0);
   }
 
   async send(address: string, value: DeskValue): Promise<void> {
-    if (!this.wire.has(address)) throw new Error(`No ${address} on this desk`);
+    if (deskAddress(address) === null) throw new Error(`No ${address} on this desk`);
     this.write(address, value.value, 'server');
     this.announce();
   }
@@ -197,7 +199,7 @@ class MockConsole implements ConsoleDevice {
 
   /** A value as the X32 would type it: a level is a float, a switch an int. */
   private typed(address: string, value: number): DeskValue {
-    return FADER_ADDRESSES.has(address) ? float(value) : int(value);
+    return levelSteps(address) === null ? int(value) : float(value);
   }
 
   async enable(inputId: string): Promise<void> {

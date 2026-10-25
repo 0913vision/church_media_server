@@ -28,6 +28,22 @@ export function faderFromDb(db: number): number {
   return Math.round(x32Fader(db) * 10000) / 10000;
 }
 
+/** How many values the desk knows between 0 and 1 (unofficial X32 OSC protocol v4.09). */
+export const FADER_STEPS = 1024;
+export const SEND_STEPS = 161;
+
+/**
+ * A send's level: the fader's curve, on the 161 steps a send has rather than a
+ * fader's 1024.
+ *
+ * Note(yoochan.kim): the desk rounds a value between its steps to the nearest one, so a
+ * level sent off a step reads back as another number and never counts as landed.
+ * Sent on a step, it reads back as itself.
+ */
+export function sendLevelFromDb(db: number): number {
+  return Math.round(x32Fader(db) * (SEND_STEPS - 1)) / (SEND_STEPS - 1);
+}
+
 /** The same curve read backwards, for saying what a level the desk reported means. */
 export function dbFromFader(level: number): number {
   return Math.round(x32Db(level) * 10) / 10;
