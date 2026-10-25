@@ -19,9 +19,14 @@ class FakeAudioOutput implements AudioOutput {
   setVolume(volume: number): void {
     this.volumeCalls.push(volume);
   }
-  async resume(): Promise<void> {}
+  async resume(_fade?: boolean, onSounding?: () => void): Promise<void> {
+    onSounding?.();
+  }
   async pause(): Promise<void> {
     this.pauseCalls++;
+  }
+  isPartWay(): boolean {
+    return false;
   }
   captureSongTime(): void {}
   loadSong(): void {}

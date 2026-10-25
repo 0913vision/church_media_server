@@ -139,10 +139,13 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       async (playback, deps) => {
         if (playback === deps.player.getState()) return {};
         if (playback === PlaybackState.PLAYING) {
-          await deps.player.play();
-        } else {
-          await deps.player.pause();
+          // Note(yoochan.kim): told the moment it sounds, not when its fade is done — every
+          // screen sat on 일시정지 for three seconds after a press. The fade still
+          // holds the audio lock until it ends.
+          await deps.player.play(() => deps.notifier.state({ playback }));
+          return {};
         }
+        await deps.player.pause();
         return { playback };
       },
     ),

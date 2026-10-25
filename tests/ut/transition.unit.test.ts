@@ -21,7 +21,7 @@ before(async () => {
 
 class FakeMpv {
   calls: string[] = [];
-  private readonly props: Record<string, string> = { volume: '50', 'playback-time': '0', 'idle-active': 'no', pause: 'yes' };
+  readonly props: Record<string, string> = { volume: '50', 'playback-time': '0', 'idle-active': 'no', pause: 'yes' };
 
   setProperty(property: string, value: string): void {
     this.calls.push(`${property}=${value}`);
@@ -79,5 +79,67 @@ describe('A run moving from one of its tracks to the next', () => {
     assert.ok(mpv.calls.includes('playback-time=12'));
     const levels = mpv.calls.filter((call) => call.startsWith('volume='));
     assert.ok(levels.length > 10, `faded in over ${levels.length} steps`);
+  });
+});
+
+/** The volumes a fade set after it started from silence, as numbers. */
+function fadeLevels(calls: string[]): number[] {
+  const volumes = calls.filter((call) => call.startsWith('volume=')).map((call) => Number(call.slice('volume='.length)));
+  return volumes.slice(volumes.indexOf(0) + 1);
+}
+
+describe('Pressing play', () => {
+  test('a song at its beginning sounds at once, with no fade', async () => {
+    const { mpv, player } = deck();
+    mpv.calls = [];
+    let soundingAt = -1;
+    const pressed = Date.now();
+    await player.play(() => { soundingAt = Date.now() - pressed; });
+
+    assert.ok(Date.now() - pressed < 100, 'play returned without waiting on a fade');
+    assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms`);
+    assert.ok(!mpv.calls.some((call) => call.startsWith('volume=')), 'nothing faded');
+    assert.deepStrictEqual(mpv.calls, ['pause=no']);
+  });
+
+  test('picked up part-way it fades in, the sound rising on the quarter sine from the press', async () => {
+    const { mpv, player } = deck();
+    mpv.props['playback-time'] = '42';
+    mpv.calls = [];
+    let soundingAt = -1;
+    const pressed = Date.now();
+    await player.play(() => { soundingAt = Date.now() - pressed; });
+    const done = Date.now() - pressed;
+
+    assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms, not when the fade ended`);
+    assert.ok(done > 2500, `the fade still ran (${done}ms)`);
+    const levels = fadeLevels(mpv.calls);
+    const full = levels.at(-1)!;
+    // mpv's volume is cubic: the sound is the cube of the volume's share of full.
+    levels.forEach((level, i) => {
+      const sound = (level / full) ** 3;
+      const want = Math.sin((Math.PI / 2) * (i / (levels.length - 1)));
+      assert.ok(Math.abs(sound - want) < 1e-6, `step ${i}: sound ${sound.toFixed(4)}, want ${want.toFixed(4)}`);
+    });
+    // 300ms after the press the music is 16 dB under full, where it used to be 48 dB under.
+    assert.ok(20 * Math.log10((levels[3]! / full) ** 3) > -17);
+  });
+
+  test('pausing fades the sound out on the quarter cosine', async () => {
+    const { mpv, player } = deck();
+    mpv.props['playback-time'] = '42';
+    await player.play();
+    mpv.calls = [];
+    await player.pause();
+
+    const volumes = mpv.calls.filter((call) => call.startsWith('volume=')).map((call) => Number(call.slice('volume='.length)));
+    const steps = volumes.slice(0, -1);
+    const full = steps[0]!;
+    steps.forEach((level, i) => {
+      const sound = (level / full) ** 3;
+      const want = Math.cos((Math.PI / 2) * (i / (steps.length - 1)));
+      assert.ok(Math.abs(sound - want) < 1e-6, `step ${i}: sound ${sound.toFixed(4)}, want ${want.toFixed(4)}`);
+    });
+    assert.ok(mpv.calls.includes('pause=yes'));
   });
 });

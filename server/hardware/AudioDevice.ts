@@ -112,6 +112,27 @@ class AudioDevice implements AudioOutput {
   }
 
   /**
+   * Whether the deck is past the opening of what it holds — only then is starting
+   * it a cut a fade should cover. Past SEEK_AUDIBLE_SEC, the line a run uses for
+   * the same question. A position mpv cannot give yet is a file still opening,
+   * which is at its start.
+   */
+  isPartWay(): boolean {
+    const at = this.getCurrentSongTime();
+    return at !== null && at > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
+  }
+
+  /**
+   * Note(yoochan.kim): mpv's volume is cubic — halving it is 18 dB, not 6 (measured).
+   * The quarter sine is meant for the sound, so the volume follows its cube root;
+   * applied to the volume as it stands, the first second of a fade in was all but
+   * silent and a press of play seemed to take that long to land.
+   */
+  private fadeLevel(currentVolume: number, gain: number): number {
+    return currentVolume * Math.cbrt(gain);
+  }
+
+  /**
    * Pauses playback, fading out unless told otherwise. See `resume` for when a
    * fade is wanted and when it is only a delay.
    */
@@ -124,7 +145,7 @@ class AudioDevice implements AudioOutput {
     const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
     for (let i = 0; i <= FADE_STEPS; ++i) {
       const t = i / FADE_STEPS;
-      const volume = currentVolume * Math.cos((Math.PI / 2) * t);
+      const volume = this.fadeLevel(currentVolume, Math.cos((Math.PI / 2) * t));
       this.mpv.setProperty("volume", volume.toString());
       await this.delay(FADE_STEP_MS);
     }
@@ -139,18 +160,20 @@ class AudioDevice implements AudioOutput {
    * before it is over. A song that begins at its own beginning has nothing to
    * cover, and fading it in only mutes the opening the arranger wrote.
    */
-  async resume(fade = true): Promise<void> {
+  async resume(fade = true, onSounding?: () => void): Promise<void> {
     const currentVolume = parseFloat(this.mpv.getProperty("volume") ?? '');
     if (!fade) {
       this.mpv.setProperty("pause", "no");
+      onSounding?.();
       return;
     }
     this.mpv.setProperty("volume", "0");
     this.mpv.setProperty("pause", "no");
+    onSounding?.();
     const { FADE_STEPS, FADE_STEP_MS } = DEVICE_CONFIG;
     for (let i = 0; i <= FADE_STEPS; ++i) {
       const t = i / FADE_STEPS;
-      const volume = currentVolume * Math.sin((Math.PI / 2) * t);
+      const volume = this.fadeLevel(currentVolume, Math.sin((Math.PI / 2) * t));
       this.mpv.setProperty("volume", volume.toString());
       await this.delay(FADE_STEP_MS);
     }

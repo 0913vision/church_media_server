@@ -92,11 +92,17 @@ class Player {
   }
 
   /**
-   * Plays the audio and updates state
+   * Plays the audio and updates state. Fades in only when it picks up part-way:
+   * a song or track at its beginning has no cut to cover, and a fade there only
+   * held back its opening. onSounding runs as the sound starts, so whoever asked
+   * hears about it then rather than when the fade is done.
    */
-  async play(): Promise<void> {
+  async play(onSounding?: () => void): Promise<void> {
     try {
-      await this.device.resume();
+      await this.device.resume(this.device.isPartWay(), () => {
+        this.state.state = PlaybackState.PLAYING;
+        onSounding?.();
+      });
     } catch (error) {
       log.error('player', null, 'Failed to play audio', { error: errorMessage(error) });
       throw error;

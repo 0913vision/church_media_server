@@ -26,8 +26,9 @@ export const DEVICE_CONFIG = {
   SEEK_AUDIBLE_SEC: 0.5,
 
   // Note(yoochan.kim): Play/pause volume fade: FADE_STEPS+1 steps, FADE_STEP_MS apart
-  // (≈ (FADE_STEPS+1) * FADE_STEP_MS total), following a quarter sine/cosine
-  // curve for an equal-power transition
+  // (≈ (FADE_STEPS+1) * FADE_STEP_MS total), the sound following a quarter
+  // sine/cosine curve for an equal-power transition (AudioDevice turns that into
+  // mpv's cubic volume)
   FADE_STEPS: 30,
   FADE_STEP_MS: 100
 } as const;
