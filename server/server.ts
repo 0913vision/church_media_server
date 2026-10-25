@@ -26,6 +26,7 @@ import Fetcher from './tracks/Fetcher.ts';
 import { createUploadDoor } from './tracks/uploadDoor.ts';
 import { TRACK_CONFIG } from './constants/trackConfig.ts';
 import FlowRunner from './flow/FlowRunner.ts';
+import { FLOW_CONFIG } from './constants/flowConfig.ts';
 import Schedule from './schedule/Schedule.ts';
 import AutoStarter from './schedule/AutoStarter.ts';
 import AdminSession from './lock/AdminSession.ts';
@@ -161,7 +162,7 @@ class MediaServer {
     this.deskHolds = deskHolds;
     const mixerConsole = new MixerConsole(consoleDevice, deskHolds);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
-    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock);
+    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock, FLOW_CONFIG.TIMING);
     this.flowRunner = flowRunner;
     const levelMatcher = new LevelMatcher(
       player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner, LEVEL_CONFIG.TIMING,

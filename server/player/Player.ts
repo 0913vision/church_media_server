@@ -293,6 +293,24 @@ class Player {
   }
 
   /**
+   * Puts a run's cue on the deck at its level, paused at its start, so starting
+   * it on its second is only an unpause. The caller has taken the deck.
+   */
+  async cueTrack(track: { id: string; file: string }, volume: number): Promise<void> {
+    try {
+      await this.takeDeck(false);
+      this.device.setVolume(this.isMuted() ? 0 : volume);
+      this.liveVolume = volume;
+      this.device.loadFile(track.file, false);
+    } catch (error) {
+      log.error('player', null, 'Failed to cue track', { track: track.id, volume, error: errorMessage(error) });
+      throw error;
+    }
+    this.trackId = track.id;
+    this.state.state = PlaybackState.PAUSED;
+  }
+
+  /**
    * Puts a library track on the deck, paused at its start.
    *
    * Note(yoochan.kim): chosen, not started — the same as picking one of the panel's

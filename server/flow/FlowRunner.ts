@@ -7,6 +7,7 @@ import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Clock from '../clock/Clock.ts';
+import type { FlowTiming } from '../constants/flowConfig.ts';
 import { log } from '../utils/logger.ts';
 import { formatInstant, isWireInstant } from '../utils/instant.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -21,11 +22,22 @@ type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 const AUDIO_LOCK_ATTEMPTS = 12;
 const AUDIO_LOCK_RETRY_MS = 300;
 
-/** A part of a validated plan, mirroring the protocol's FlowPart */
 /** A library track as one flow scheduled it: same audio, that flow's level */
 type ScheduledEntry = LibraryEntry;
 
-type PartPlan = { kind: 'music'; tracks: ScheduledEntry[]; startsAt: Date; endsAt: Date };
+/**
+ * Something a run plays on its own second, in a quiet the plan keeps clear for
+ * it: an announcement, a countdown. Not on the wire yet.
+ */
+export interface CuePlan {
+  track: ScheduledEntry;
+  at: Date;
+}
+
+type MusicPlan = { kind: 'music'; tracks: ScheduledEntry[]; startsAt: Date; endsAt: Date };
+type CuesPlan = { kind: 'cues'; cues: CuePlan[] };
+/** A part of a validated plan: the protocol's FlowPart, and cues, which it does not carry yet */
+export type PartPlan = MusicPlan | CuesPlan;
 
 /** The window this run holds the admin gate for. Every run has one. */
 interface LockPlan {
@@ -33,7 +45,7 @@ interface LockPlan {
   until: Date;
 }
 
-interface Plan {
+export interface Plan {
   /** The caller's own identifier, handed straight back on every status. */
   id: string;
   name: string;
@@ -63,6 +75,13 @@ interface ActiveRun {
    * putting a track on during the quiet half must not decide what plays after.
    */
   restorePoint: { song: SongId; volume: number };
+  /**
+   * Whether the run has the deck: from its first sound until its last has ended,
+   * the quiet between them included, so nothing else plays in a gap it keeps.
+   */
+  deckHeld: boolean;
+  /** Parts still to finish sounding; the one that brings this to none puts the deck back. */
+  partsLeft: number;
 }
 
 /**
@@ -115,6 +134,7 @@ class FlowRunner {
     // Note(yoochan.kim): Every instant in a plan is church time, so the runner never reads the
     // system clock directly.
     private readonly clock: Clock,
+    private readonly timing: FlowTiming,
   ) {}
 
   /**
@@ -143,11 +163,12 @@ class FlowRunner {
   /**
    * Whether a run has the deck right now.
    *
-   * Note(yoochan.kim): sounding music, not merely holding the gate. A flow that only
-   * holds the gate is keeping the panel out; the deck is still free.
+   * Note(yoochan.kim): from its first sound until its last has ended, not merely while
+   * the gate is held. A flow that only holds the gate is keeping the panel out;
+   * the deck is still free until the run's own sound begins.
    */
   ownsDeck(): boolean {
-    return this.active?.playing !== undefined;
+    return this.active?.deckHeld ?? false;
   }
 
   /**
@@ -157,7 +178,7 @@ class FlowRunner {
    * since then no longer says what the run is about to play.
    */
   uses(trackId: string): boolean {
-    return this.active?.plan.parts.some((part) => part.tracks.some((track) => track.id === trackId)) ?? false;
+    return this.active?.plan.parts.some((part) => tracksOf(part).some((track) => track.id === trackId)) ?? false;
   }
 
   /** Accepts a flow and starts running it. */
@@ -166,8 +187,27 @@ class FlowRunner {
 
     const planned = this.planOf(args);
     if (!planned.ok) return planned;
+    this.begin(planned.value);
+    return { ok: true };
+  }
 
-    const plan = planned.value;
+  /**
+   * Runs a plan built inside the server, cues included — the door cues come in
+   * by until the protocol carries them. Refused like start, and for a timeline
+   * whose sounds would overlap or fall outside the gate.
+   */
+  startPlan(plan: Plan): { ok: true } | { ok: false; reason: RejectReason | TimelineConflict } {
+    if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };
+    if (plan.lock.until.getTime() <= this.clock.now().getTime()) return { ok: false, reason: RejectReason.WINDOW_PASSED };
+
+    const ordered = { ...plan, parts: plan.parts.map(inTimeOrder) };
+    const conflict = timelineConflict(ordered);
+    if (conflict) return { ok: false, reason: conflict };
+    this.begin(ordered);
+    return { ok: true };
+  }
+
+  private begin(plan: Plan): void {
     this.active = {
       plan,
       // Note(yoochan.kim): nothing sounds before the gate engages, so the run
@@ -177,6 +217,8 @@ class FlowRunner {
       playing: undefined,
       finished: Promise.resolve(),
       restorePoint: { song: this.player.getCurrentSong(), volume: this.player.getUserVolume() },
+      deckHeld: false,
+      partsLeft: plan.parts.length,
     };
     this.active.finished = this.run(plan);
     this.publish();
@@ -186,7 +228,6 @@ class FlowRunner {
       lock: `${formatInstant(plan.lock.at)} → ${formatInstant(plan.lock.until)}`,
       parts: plan.parts.map((part) => part.kind).join(',') || 'none',
     });
-    return { ok: true };
   }
 
   /** Ends the running flow now, and waits for its cleanup to finish. */
@@ -209,7 +250,10 @@ class FlowRunner {
 
   private async run(plan: Plan): Promise<void> {
     try {
-      await Promise.all([this.runLock(plan.lock), ...plan.parts.map((part) => this.runMusic(part, plan.lock))]);
+      await Promise.all([
+        this.runLock(plan.lock),
+        ...plan.parts.map((part) => (part.kind === 'music' ? this.runMusic(part, plan.lock) : this.runCues(part, plan))),
+      ]);
     } catch (error) {
       if (!(error instanceof FlowAborted)) {
         log.error('flow', null, 'Flow failed, cleaning up', { name: plan.name, error: errorMessage(error) });
@@ -229,9 +273,10 @@ class FlowRunner {
     // Note(yoochan.kim): Releasing is left to cleanup, so every way out of a run releases it once.
   }
 
-  private async runMusic(part: Extract<PartPlan, { kind: 'music' }>, lock: LockPlan): Promise<void> {
+  private async runMusic(part: MusicPlan, lock: LockPlan): Promise<void> {
     if (this.clock.hasPassed(part.endsAt)) {
       log.warn('flow', null, 'Music window already over, skipping playback');
+      await this.partDone();
       return;
     }
     // Note(yoochan.kim): sound never precedes the gate. A timeline that begins
@@ -244,7 +289,10 @@ class FlowRunner {
     const starts = boundariesOf(part);
     const now = this.clock.now().getTime();
     const first = starts.findIndex((start, index) => now < start.getTime() + part.tracks[index]!.durationSec * 1000);
-    if (first < 0) return;
+    if (first < 0) {
+      await this.partDone();
+      return;
+    }
 
     for (let index = first; index < part.tracks.length; index++) {
       if (index > first) await this.sleepUntil(starts[index]!);
@@ -255,11 +303,88 @@ class FlowRunner {
     }
 
     await this.sleepUntil(part.endsAt);
-    // Note(yoochan.kim): the music reached its own end here, so there is nothing to
-    // fade. A run cut short goes out through cleanup instead, which does fade.
-    await this.restoreDeck(false);
-    if (this.active) this.active.playing = undefined;
+    await this.partDone();
+  }
+
+  /**
+   * Plays each cue on its own second. It goes on the deck paused a little ahead
+   * — never before the gate, never under the music before it — so starting it is
+   * only an unpause.
+   */
+  private async runCues(part: CuesPlan, plan: Plan): Promise<void> {
+    const { CUE_PRELOAD_MS, CUE_GRACE_MS } = this.timing;
+    const musicEnds = plan.parts.flatMap((other) => (other.kind === 'music' ? [other.endsAt.getTime()] : []));
+
+    for (let index = 0; index < part.cues.length; index++) {
+      const cue = part.cues[index]!;
+      // Note(yoochan.kim): a cue is words true at their moment — 1분 남았습니다 said with
+      // twenty seconds to go is wrong — so one whose second has gone by is skipped
+      // rather than joined part-way like music.
+      if (this.clock.now().getTime() > cue.at.getTime() + CUE_GRACE_MS) {
+        log.warn('flow', null, 'Cue time already passed, skipping', { title: cue.track.title });
+        continue;
+      }
+      const clearFrom = Math.max(plan.lock.at.getTime(), ...musicEnds.filter((end) => end <= cue.at.getTime()));
+      await this.sleepUntil(new Date(Math.max(clearFrom, cue.at.getTime() - CUE_PRELOAD_MS)));
+
+      const loaded = await this.withAudio(async () => {
+        await this.player.takeDeck(!this.holdsDeck());
+        this.holdDeck();
+        await this.player.cueTrack(cue.track, cue.track.volume);
+      });
+      if (!loaded) {
+        log.error('flow', null, 'Could not take the audio device for a cue', { track: cue.track.id });
+        return;
+      }
+
+      await this.sleepUntil(cue.at);
+      const started = await this.withAudio(() => this.player.play());
+      if (!started) {
+        log.error('flow', null, 'Could not take the audio device to start a cue', { track: cue.track.id });
+        return;
+      }
+      const endsAt = new Date(endOf(cue));
+      if (this.active) {
+        this.active.playing = { track: { title: cue.track.title, index: index + 1, total: part.cues.length }, endsAt };
+      }
+      log.info('flow', null, 'Cue started', {
+        cue: `${index + 1}/${part.cues.length}`,
+        title: cue.track.title,
+        lag: `${((this.clock.now().getTime() - cue.at.getTime()) / 1000).toFixed(2)}s`,
+      });
+      this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
+
+      await this.sleepUntil(endsAt);
+      if (this.active) this.active.playing = undefined;
+      this.publish();
+    }
+    await this.partDone();
+  }
+
+  /**
+   * A part has played its last. The deck goes back only when no part has more to
+   * play — music then cues is one stretch the run holds, not two.
+   */
+  private async partDone(): Promise<void> {
+    const run = this.active;
+    if (!run) return;
+    run.playing = undefined;
+    run.partsLeft -= 1;
+    if (run.partsLeft === 0 && run.deckHeld) {
+      // Note(yoochan.kim): the last sound reached its own end here, so there is nothing to
+      // fade. A run cut short goes out through cleanup instead, which does fade.
+      await this.restoreDeck(false);
+      run.deckHeld = false;
+    }
     this.publish();
+  }
+
+  private holdsDeck(): boolean {
+    return this.active?.deckHeld ?? false;
+  }
+
+  private holdDeck(): void {
+    if (this.active) this.active.deckHeld = true;
   }
 
   /**
@@ -275,12 +400,12 @@ class FlowRunner {
     total: number,
     endsAt: Date,
   ): Promise<boolean> {
-    // Note(yoochan.kim): no fade between this run's own tracks. A fade there takes three
-    // seconds, and each track after the first started that much late.
-    const ownTrackPlaying = this.active?.playing !== undefined;
+    // Note(yoochan.kim): no fade once the run has the deck. A fade between its own tracks
+    // takes three seconds, and each track after the first started that much late.
     let seekSec = 0;
     const ran = await this.withAudio(async () => {
-      await this.player.takeDeck(!ownTrackPlaying);
+      await this.player.takeDeck(!this.holdsDeck());
+      this.holdDeck();
       seekSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
       await this.player.playTrackAt(track, seekSec, track.volume);
     });
@@ -485,8 +610,47 @@ class FlowRunner {
   }
 }
 
+/** Why a timeline cannot be played as written. Internal until the protocol carries cues. */
+export type TimelineConflict = 'cueOutsideLock' | 'cuesOverlap' | 'cueOverlapsMusic';
+
+const endOf = (cue: CuePlan): number => cue.at.getTime() + cue.track.durationSec * 1000;
+
+const tracksOf = (part: PartPlan): ScheduledEntry[] =>
+  (part.kind === 'music' ? part.tracks : part.cues.map((cue) => cue.track));
+
+function inTimeOrder(part: PartPlan): PartPlan {
+  return part.kind === 'cues' ? { ...part, cues: [...part.cues].sort((a, b) => a.at.getTime() - b.at.getTime()) } : part;
+}
+
+/**
+ * Whether each of a plan's sounds can be heard on its own. A cue sounds inside
+ * the gate's window, after the cue before it has ended, and in no stretch the
+ * run's music is playing: that is how a flow keeps other music off its
+ * announcements. Music is counted from when it can first sound, the lock.
+ */
+export function timelineConflict(plan: Pick<Plan, 'lock' | 'parts'>): TimelineConflict | null {
+  const lockAt = plan.lock.at.getTime();
+  const music = plan.parts.flatMap((part) => (part.kind === 'music'
+    ? [{ from: Math.max(part.startsAt.getTime(), lockAt), to: part.endsAt.getTime() }]
+    : []));
+
+  for (const part of plan.parts) {
+    if (part.kind !== 'cues') continue;
+    let previousEnd = -Infinity;
+    for (const cue of (inTimeOrder(part) as CuesPlan).cues) {
+      const from = cue.at.getTime();
+      const to = endOf(cue);
+      if (from < lockAt || to > plan.lock.until.getTime()) return 'cueOutsideLock';
+      if (from < previousEnd) return 'cuesOverlap';
+      if (music.some((span) => from < span.to && to > span.from)) return 'cueOverlapsMusic';
+      previousEnd = to;
+    }
+  }
+  return null;
+}
+
 /** Absolute instant each track of a music part begins */
-function boundariesOf(part: Extract<PartPlan, { kind: 'music' }>): Date[] {
+function boundariesOf(part: MusicPlan): Date[] {
   const starts: Date[] = [];
   let offsetMs = 0;
   for (const track of part.tracks) {
