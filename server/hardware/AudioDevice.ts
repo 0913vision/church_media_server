@@ -134,13 +134,13 @@ class AudioDevice implements AudioOutput {
    * Walks a fade, a step every FADE_STEP_MS, with the level it moves around taken
    * as it stands each step — so a level moved during a fade is the one it lands on.
    */
-  private async fadeAlong(curve: (t: number, durationMs: number) => number, durationMs: number): Promise<void> {
+  private async fadeAlong(curve: typeof fadeInDb, durationMs: number): Promise<void> {
     const step = DEVICE_CONFIG.FADE_STEP_MS;
     let t = 0;
     while (t + step < durationMs) {
       t += step;
       await this.delay(step);
-      this.setDb(dbFromLevel(this.level) + curve(t, durationMs));
+      this.setDb(dbFromLevel(this.level) + curve(t, durationMs, DEVICE_CONFIG.FADE_EDGE_DB));
     }
     await this.delay(durationMs - t);
   }
@@ -149,7 +149,7 @@ class AudioDevice implements AudioOutput {
    * Pauses playback, fading out unless told otherwise — over `durationMs`, any
    * length. See `resume` for when a fade is wanted and when it is only a delay.
    */
-  async pause(fade = true, durationMs: number = DEVICE_CONFIG.FADE_MS): Promise<void> {
+  async pause(fade = true, durationMs: number = DEVICE_CONFIG.FADE_OUT_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "yes");
       return;
@@ -166,13 +166,13 @@ class AudioDevice implements AudioOutput {
    * before it is over. A song that begins at its own beginning has nothing to
    * cover, and fading it in only mutes the opening the arranger wrote.
    */
-  async resume(fade = true, onSounding?: () => void, durationMs: number = DEVICE_CONFIG.FADE_MS): Promise<void> {
+  async resume(fade = true, onSounding?: () => void, durationMs: number = DEVICE_CONFIG.FADE_IN_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "no");
       onSounding?.();
       return;
     }
-    this.setDb(dbFromLevel(this.level) + fadeInDb(0, durationMs));
+    this.setDb(dbFromLevel(this.level) + fadeInDb(0, durationMs, DEVICE_CONFIG.FADE_EDGE_DB));
     this.mpv.setProperty("pause", "no");
     onSounding?.();
     await this.fadeAlong(fadeInDb, durationMs);

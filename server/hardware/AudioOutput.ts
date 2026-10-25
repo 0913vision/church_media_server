@@ -13,7 +13,7 @@ export interface AudioOutput {
    * Start and stop. Both fade by default; pass false where there is no cut to
    * cover — a song beginning at its beginning, or one that has just reached its
    * own end. A fade there is only a delay. A fade takes durationMs, any length
-   * (FADE_MS unless given). onSounding runs the moment the sound starts, before a
+   * (FADE_IN_MS or FADE_OUT_MS unless given). onSounding runs the moment the sound starts, before a
    * fade in has finished.
    */
   resume(fade?: boolean, onSounding?: () => void, durationMs?: number): Promise<void>;

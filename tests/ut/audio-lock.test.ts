@@ -6,7 +6,7 @@ import { MuteState, PlaybackState, RejectReason } from '../../server/protocol.ts
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): The audio lock is held for the whole play/pause fade (~3s). A contending
+// Note(yoochan.kim): The audio lock is held for the whole play/pause fade (seconds). A contending
 // audio write during that window must be refused as deviceBusy — not as a
 // permission problem — and must work again once the lock is released. The fade
 // used is pausing's: a song at its beginning starts without one.
@@ -43,7 +43,7 @@ describe('Audio Lock Contention Tests', () => {
       }
       assert.strictEqual((await observer.read()).audioLock, false);
 
-      // Note(yoochan.kim): Pause: the ~3s fade-out holds the audio lock
+      // Note(yoochan.kim): Pause: the fade-out holds the audio lock
       const lockAcquired = observer.waitForState((patch) => patch.audioLock === true);
       actor.write('playback', PlaybackState.PAUSED);
       await lockAcquired;

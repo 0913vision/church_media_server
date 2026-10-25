@@ -73,7 +73,7 @@ narrowed by the runtime guards in `server/constants/playerStates.ts`.
 ## Domain behavior
 
 - Two songs, `slow` and `fast`, with per-song default volumes (50 / 35).
-- Play/pause fade in decibels, any length (`FADE_MS` in `deviceConfig` unless
+- Play/pause fade in decibels, any length (`FADE_IN_MS`, `FADE_OUT_MS` in `deviceConfig` unless
   given; the curve is `hardware/loudness.ts`); the audio lock is held for the
   whole fade.
 - Switching songs remembers the previous song's playback position.

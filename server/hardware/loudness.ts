@@ -52,30 +52,29 @@ export function dbFromCubicLevel(level: number): number {
   return level > 0 ? 60 * Math.log10(level / 100) : -Infinity;
 }
 
-/** Where a fade in is quiet enough to be all but unheard, and from where it rises at an even pace. */
-const AUDIBLE_DB = -40;
-/** The rise from silence to AUDIBLE_DB: a tenth of the fade, and never more than this. */
+/** The rise from silence to where a fade starts: a tenth of the fade, and never more than this. */
 const QUICK_MAX_MS = 300;
 const QUICK_SHARE = 0.1;
 
 /**
  * Where a fade in stands `t` ms into one lasting `durationMs`, in decibels under
- * the level it rises to. Any length.
+ * the level it rises to: quickly from silence to `startDb`, then the same decibels
+ * every moment. Any length, any start.
  *
  * Note(yoochan.kim): the way a hand pushes a fader up: through the bottom, where nothing
- * is heard, quickly, then at an even pace — the same decibels every second, which
- * the ear hears as an even rise. From silence at that pace the first half of the
- * fade went unheard (−80 to −40 dB), and a press of play seemed not to land.
+ * is heard, quickly, then at an even pace, which the ear hears as an even rise.
+ * From silence at that pace the first half of the fade went unheard (−80 to
+ * −40 dB), and a press of play seemed not to land.
  */
-export function fadeInDb(t: number, durationMs: number): number {
+export function fadeInDb(t: number, durationMs: number, startDb: number): number {
   if (t <= 0) return FLOOR_DB;
   if (t >= durationMs) return 0;
   const quick = Math.min(QUICK_MAX_MS, durationMs * QUICK_SHARE);
-  if (t < quick) return FLOOR_DB + (AUDIBLE_DB - FLOOR_DB) * (t / quick);
-  return AUDIBLE_DB * (1 - (t - quick) / (durationMs - quick));
+  if (t < quick) return FLOOR_DB + (startDb - FLOOR_DB) * (t / quick);
+  return startDb * (1 - (t - quick) / (durationMs - quick));
 }
 
-/** A fade out is a fade in run backwards: an even fall to −40 dB, then quickly away. */
-export function fadeOutDb(t: number, durationMs: number): number {
-  return fadeInDb(durationMs - t, durationMs);
+/** A fade out is a fade in run backwards: an even fall to `startDb`, then quickly away. */
+export function fadeOutDb(t: number, durationMs: number, startDb: number): number {
+  return fadeInDb(durationMs - t, durationMs, startDb);
 }

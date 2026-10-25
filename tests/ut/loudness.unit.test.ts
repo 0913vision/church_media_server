@@ -55,25 +55,27 @@ describe('A level as people hear it', () => {
 });
 
 describe('A fade as people hear it', () => {
-  for (const durationMs of [1000, 3100, 10_000]) {
-    test(`over ${durationMs}ms: up through the silent bottom quickly, then the same dB every moment`, () => {
-      const quick = Math.min(300, durationMs / 10);
-      assert.equal(fadeInDb(0, durationMs), FLOOR_DB);
-      near(fadeInDb(quick, durationMs), -40, 'heard once the quick part is over');
-      assert.equal(fadeInDb(durationMs, durationMs), 0);
+  for (const startDb of [-40, -25]) {
+    for (const durationMs of [1000, 2000, 10_000]) {
+      test(`over ${durationMs}ms from ${startDb} dB: up through the silent bottom quickly, then the same dB every moment`, () => {
+        const quick = Math.min(300, durationMs / 10);
+        assert.equal(fadeInDb(0, durationMs, startDb), FLOOR_DB);
+        near(fadeInDb(quick, durationMs, startDb), startDb, 'heard once the quick part is over');
+        assert.equal(fadeInDb(durationMs, durationMs, startDb), 0);
 
-      const pace = 40 / (durationMs - quick);
-      for (let t = quick; t < durationMs; t += 50) {
-        near(fadeInDb(t + 50, durationMs) - fadeInDb(t, durationMs), Math.min(50, durationMs - t) * pace, `${t}ms`);
-      }
-    });
+        const pace = -startDb / (durationMs - quick);
+        for (let t = quick; t < durationMs; t += 50) {
+          near(fadeInDb(t + 50, durationMs, startDb) - fadeInDb(t, durationMs, startDb), Math.min(50, durationMs - t) * pace, `${t}ms`);
+        }
+      });
+    }
   }
 
   test('a fade out is a fade in run backwards', () => {
-    for (let t = 0; t <= 3100; t += 50) {
-      near(fadeOutDb(t, 3100), fadeInDb(3100 - t, 3100), `${t}ms`);
+    for (let t = 0; t <= 2000; t += 50) {
+      near(fadeOutDb(t, 2000, -25), fadeInDb(2000 - t, 2000, -25), `${t}ms`);
     }
-    assert.equal(fadeOutDb(0, 3100), 0);
-    assert.equal(fadeOutDb(3100, 3100), FLOOR_DB);
+    assert.equal(fadeOutDb(0, 2000, -25), 0);
+    assert.equal(fadeOutDb(2000, 2000, -25), FLOOR_DB);
   });
 });
