@@ -191,6 +191,22 @@ describe('Holding part of the desk', () => {
     holds.dispose();
   });
 
+  test('the desk as it was, every address, is written down before the first change is sent', async () => {
+    const { desk, holds, journal } = rig();
+    const writtenAtSend: (readonly DeskJournalEntry[])[] = [];
+    desk.onSend = () => writtenAtSend.push(journal());
+
+    await holds.holding([off(auxin(5)), fader(auxin(5), -10), off(ch(1))], async () => {});
+
+    assert.deepEqual(writtenAtSend[0], [
+      { address: AUX_ON, original: int(1) },
+      { address: AUX_FADER, original: float(0.75) },
+      { address: CH1_ON, original: int(1) },
+    ]);
+    assert.deepEqual(journal(), []);
+    holds.dispose();
+  });
+
   test('a desk that went away is put back when it answers again, and stays held until then', async () => {
     const { desk, holds, journal } = rig();
 

@@ -115,7 +115,16 @@ class DeskHolds {
       this.close(hold);
       throw error;
     }
-    log.info('deskHolds', null, 'Desk held', { addresses: [...hold.originals.keys()].join(',') });
+    // Note(yoochan.kim): the desk as it was, all of it, is written down — in the state file
+    // and in the log — before the first change is sent, so what to put back can be
+    // read from either however the changes go.
+    for (const address of new Set(changes.map((change) => change.address))) {
+      hold.entries.push({ address, original: hold.originals.get(address)! });
+    }
+    this.writeJournal();
+    log.info('deskHolds', null, 'Desk captured before changing it', {
+      values: hold.entries.map((entry) => `${entry.address}=${entry.original.value}`).join(' '),
+    });
 
     const desk: HeldDesk = {
       apply: (change) => this.apply(hold, change),
