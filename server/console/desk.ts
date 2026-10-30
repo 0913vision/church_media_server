@@ -103,16 +103,56 @@ export const sendOff = (from: Strip, to: Bus | Mtx): DeskChange => ({ address: `
 export const sendLevel = (from: Strip, to: Bus | Mtx, db: number): DeskChange =>
   ({ address: `${sendPath(from, to)}/level`, value: float(sendLevelFromDb(db)) });
 
+/** Strips with a main send and group assignments: inputs, aux ins, FX returns and buses. */
+const MIXED = /^\/(ch|auxin|fxrtn|bus)\//;
+
+function mixed(strip: Strip): Strip {
+  if (!MIXED.test(strip)) throw new RangeError(`${strip} has no main send or groups`);
+  return strip;
+}
+
+/** A strip's send to the main stereo bus (LR). */
+export const mainSend = (strip: Strip, on: boolean): DeskChange =>
+  ({ address: `${mixed(strip)}/mix/st`, value: int(on ? 1 : 0) });
+/** A strip's send to the mono bus. */
+export const monoSend = (strip: Strip, on: boolean): DeskChange =>
+  ({ address: `${mixed(strip)}/mix/mono`, value: int(on ? 1 : 0) });
+
+/** A bitmap of group numbers, group 1 in the lowest bit, as the desk keeps them. */
+function members(groups: readonly number[], count: number): number {
+  let bits = 0;
+  for (const group of groups) {
+    if (!Number.isInteger(group) || group < 1 || group > count) throw new RangeError(`group ${group} is not on this desk`);
+    bits |= 1 << (group - 1);
+  }
+  return bits;
+}
+
+/**
+ * The mute groups (1–6) a strip is in, all at once; none takes it out of every one.
+ * Written whole, so putting it back restores every group it was in.
+ */
+export const muteGroupsOf = (strip: Strip, groups: readonly number[]): DeskChange =>
+  ({ address: `${mixed(strip)}/grp/mute`, value: int(members(groups, 6)) });
+/** The DCAs (1–8) a strip is in, all at once; none takes it out of every one. */
+export const dcasOf = (strip: Strip, dcas: readonly number[]): DeskChange =>
+  ({ address: `${mixed(strip)}/grp/dca`, value: int(members(dcas, 8)) });
+
 /** A mute group engaged mutes every strip assigned to it; released, it lets them be. */
 export const engage = (group: MuteGroup): DeskChange => ({ address: group, value: int(1) });
 export const release = (group: MuteGroup): DeskChange => ({ address: group, value: int(0) });
 
-/** What one address on the desk holds: a switch, or a level and how many steps it has. */
-export type DeskAddress = { readonly kind: 'switch' } | { readonly kind: 'level'; readonly steps: number };
+/** What one address on the desk holds: a switch, a level and how many steps it has, or a set of groups. */
+export type DeskAddress =
+  | { readonly kind: 'switch' }
+  | { readonly kind: 'level'; readonly steps: number }
+  | { readonly kind: 'groups'; readonly count: number };
 
 const SWITCH: DeskAddress = { kind: 'switch' };
 const FADER: DeskAddress = { kind: 'level', steps: FADER_STEPS };
 const SEND: DeskAddress = { kind: 'level', steps: SEND_STEPS };
+const MUTE_GROUPS: DeskAddress = { kind: 'groups', count: 6 };
+const DCAS: DeskAddress = { kind: 'groups', count: 8 };
 
 const upTo = <T>(count: number, make: (n: number) => T): T[] => Array.from({ length: count }, (_, i) => make(i + 1));
 
@@ -130,6 +170,12 @@ const ADDRESSES: ReadonlyMap<string, DeskAddress> = (() => {
   for (const strip of strips) {
     all.set(on(strip).address, SWITCH);
     all.set(fader(strip, 0).address, FADER);
+    if (MIXED.test(strip)) {
+      all.set(mainSend(strip, false).address, SWITCH);
+      all.set(monoSend(strip, false).address, SWITCH);
+      all.set(muteGroupsOf(strip, []).address, MUTE_GROUPS);
+      all.set(dcasOf(strip, []).address, DCAS);
+    }
     for (const to of destinations.filter((destination) => routes(strip, destination))) {
       all.set(sendOn(strip, to).address, SWITCH);
       all.set(sendLevel(strip, to, 0).address, SEND);

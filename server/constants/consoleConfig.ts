@@ -1,4 +1,11 @@
 import { requireEnv, requireIntEnv } from '../utils/env.ts';
+import { auxin, bus, dcasOf, fader, mainSend, monoSend, mtx, muteGroupsOf, on, sendOff, sendOn } from '../console/desk.ts';
+import type { DeskChange } from '../console/desk.ts';
+
+/** The music player's input, a linked pair, and AuxMix, the bus the band hears on their P16s. */
+const MUSIC_PLAYER = [auxin(5), auxin(6)] as const;
+const AUX_MIX = bus(8);
+const upTo = (count: number): number[] => Array.from({ length: count }, (_, i) => i + 1);
 
 /**
  * One console channel this server drives, by its OSC addresses.
@@ -93,6 +100,36 @@ export const CONSOLE_CONFIG = {
     CONFIRM_ATTEMPTS: 3,
     CONFIRM_GAP_MS: 50,
     RESTORE_RETRY_MS: 5000
+  },
+
+  /**
+   * The desk while a cue is for the band alone, the countdown: the music player
+   * reaches AuxMix, which the band hears on P16 15 before its fader, and nothing
+   * else.
+   *
+   * Note(yoochan.kim): every way out is switched off first, whatever it was set to, so a
+   * send somebody has turned up since still cannot carry it (BLOCK); only then is the
+   * way in opened (OPEN). Putting back runs the other way round: OPEN first, then
+   * BLOCK. Out of every mute group and DCA while it sounds, because a group engaged
+   * or a DCA pulled down would silence the band's count; the groups it was in are
+   * written back whole. Output 8 also carries AuxMix and is left alone — nothing
+   * is wired to it (user, 2026-10-30).
+   */
+  BAND_ONLY: {
+    BLOCK: [
+      ...MUSIC_PLAYER.flatMap((strip) => [
+        mainSend(strip, false),
+        monoSend(strip, false),
+        ...upTo(16).filter((n) => bus(n) !== AUX_MIX).map((n) => sendOff(strip, bus(n))),
+      ]),
+      ...upTo(6).map((n) => sendOff(AUX_MIX, mtx(n))),
+      mainSend(AUX_MIX, false),
+      monoSend(AUX_MIX, false),
+    ] satisfies DeskChange[],
+    OPEN: [
+      ...MUSIC_PLAYER.flatMap((strip) => [fader(strip, 0), sendOn(strip, AUX_MIX)]),
+      ...MUSIC_PLAYER.flatMap((strip) => [muteGroupsOf(strip, []), dcasOf(strip, []), on(strip)]),
+    ] satisfies DeskChange[],
   },
 
   // Note(yoochan.kim): where the music player's input shows on the desk's meters —

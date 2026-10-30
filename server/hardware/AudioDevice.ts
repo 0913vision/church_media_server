@@ -284,7 +284,7 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  async playFileAt(filePath: string, offsetSec: number, loop = false): Promise<void> {
+  async playFileAt(filePath: string, offsetSec: number, loop = false, fadeLimitMs = Infinity): Promise<void> {
     this.mpv.setProperty("pause", "yes");
     this.mpv.setProperty("loop", loop ? "inf" : "no");
 
@@ -309,8 +309,9 @@ class AudioDevice implements AudioOutput {
     }
 
     // Note(yoochan.kim): a seek means the run joined this song part-way through, so the
-    // fade covers a cut.
-    await this.resume(joined);
+    // fade covers a cut — but never past the song's own end: joined in its last two
+    // seconds, a full fade held the deck after it and the next thing started late.
+    await this.resume(joined, undefined, Math.min(DEVICE_CONFIG.FADE_IN_MS, fadeLimitMs));
   }
 }
 

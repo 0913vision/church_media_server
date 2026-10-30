@@ -273,9 +273,11 @@ class Player {
    * The user's own volume is left untouched in state: a flow borrows the deck
    * and hands it back, so restoreSong puts their level back with their song.
    * Muted still means silent — a flow may take the deck, but not the decision
-   * to make noise.
+   * to make noise. Joined part-way it fades in for no longer than `fadeLimitMs`.
    */
-  async playTrackAt(track: { id: string; file: string }, offsetSec: number, volume: number, loop = false): Promise<void> {
+  async playTrackAt(
+    track: { id: string; file: string }, offsetSec: number, volume: number, loop = false, fadeLimitMs?: number,
+  ): Promise<void> {
     try {
       // Note(yoochan.kim): the caller has already taken the deck, fading or not as it
       // chose. Taking it again with a fade put three seconds between a run's own
@@ -283,7 +285,7 @@ class Player {
       await this.takeDeck(false);
       this.device.setVolume(this.isMuted() ? 0 : volume);
       this.liveVolume = volume;
-      await this.device.playFileAt(track.file, offsetSec, loop);
+      await this.device.playFileAt(track.file, offsetSec, loop, fadeLimitMs);
     } catch (error) {
       log.error('player', null, 'Failed to play track', { track: track.id, offsetSec, volume, error: errorMessage(error) });
       throw error;

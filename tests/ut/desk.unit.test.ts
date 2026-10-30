@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import { strict as assert } from 'node:assert';
 import {
   auxin, bus, ch, dca, fxrtn, mainMono, mainSt, mtx, muteGroup,
-  deskAddress, engage, fader, float, int, off, on, release, sendLevel, sendOff, sendOn,
+  dcasOf, deskAddress, engage, fader, float, int, mainSend, monoSend, muteGroupsOf, off, on, release, sendLevel, sendOff, sendOn,
 } from '../../server/console/desk.ts';
 import { dbFromFader } from '../../server/console/faderLevel.ts';
 
@@ -68,6 +68,40 @@ describe('Sends, where the desk routes them', () => {
       assert.ok(Math.abs(steps - Math.round(steps)) < 1e-9, `${tenths / 10} dB is off the steps`);
     }
     assert.equal(dbFromFader(at(-25.5)), -25.5);
+  });
+});
+
+describe('A strip\'s main send and groups', () => {
+  test('the main LR and mono sends switch where the desk keeps them', () => {
+    assert.deepEqual(mainSend(auxin(5), false), { address: '/auxin/05/mix/st', value: int(0) });
+    assert.deepEqual(monoSend(bus(8), false), { address: '/bus/08/mix/mono', value: int(0) });
+    assert.deepEqual(mainSend(ch(1), true), { address: '/ch/01/mix/st', value: int(1) });
+    assert.deepEqual(monoSend(fxrtn(2), true), { address: '/fxrtn/02/mix/mono', value: int(1) });
+  });
+
+  test('group membership is one bitmap, group 1 in the lowest bit, as the desk reads it back', () => {
+    // As read on the room's desk on 2026-10-30: aux 5 in DCA 7 ("%01000000") and mute group 1 ("%000001").
+    assert.deepEqual(dcasOf(auxin(5), [7]), { address: '/auxin/05/grp/dca', value: int(0b1000000) });
+    assert.deepEqual(muteGroupsOf(auxin(5), [1]), { address: '/auxin/05/grp/mute', value: int(0b000001) });
+    assert.deepEqual(muteGroupsOf(auxin(6), [1, 3, 6]), { address: '/auxin/06/grp/mute', value: int(0b100101) });
+    assert.deepEqual(muteGroupsOf(auxin(6), []), { address: '/auxin/06/grp/mute', value: int(0) });
+  });
+
+  test('a strip without them, or a group the desk does not have, is refused', () => {
+    assert.throws(() => mainSend(mtx(1), false), RangeError);
+    assert.throws(() => mainSend(mainSt, false), RangeError);
+    assert.throws(() => dcasOf(dca(1), []), RangeError);
+    assert.throws(() => muteGroupsOf(auxin(5), [7]), RangeError);
+    assert.throws(() => dcasOf(auxin(5), [0]), RangeError);
+  });
+
+  test('the desk has these addresses', () => {
+    assert.deepEqual(deskAddress('/auxin/05/mix/st'), { kind: 'switch' });
+    assert.deepEqual(deskAddress('/bus/08/mix/mono'), { kind: 'switch' });
+    assert.deepEqual(deskAddress('/auxin/05/grp/mute'), { kind: 'groups', count: 6 });
+    assert.deepEqual(deskAddress('/ch/32/grp/dca'), { kind: 'groups', count: 8 });
+    assert.equal(deskAddress('/mtx/01/mix/st'), null);
+    assert.equal(deskAddress('/main/st/grp/dca'), null);
   });
 });
 

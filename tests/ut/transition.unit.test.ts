@@ -80,6 +80,17 @@ describe('A run moving from one of its tracks to the next', () => {
     assert.strictEqual(mpv.calls.at(-1), 'pause=no');
   });
 
+  test('a track joined in its last moments fades in no longer than what is left of it', async () => {
+    const { mpv, device } = deck();
+    mpv.calls = [];
+    const started = Date.now();
+    await device.playFileAt('/audio/late.mp3', 12, false, 300);
+    const took = Date.now() - started;
+
+    assert.ok(took < 600, `the fade in took ${took}ms with 300ms of the track left`);
+    assert.ok(mpv.calls.includes('playback-time=12'));
+  });
+
   test('a track joined part-way is sought and faded in, which is what the fade is for', async () => {
     const { mpv, player } = deck();
     await player.takeDeck(true);

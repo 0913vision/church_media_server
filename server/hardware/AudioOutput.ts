@@ -28,8 +28,12 @@ export interface AudioOutput {
   setLoop(loop: boolean): void;
   /** Whether the file on the deck has run out */
   hasEnded(): boolean;
-  /** Plays a library file from an offset, repeating only if asked */
-  playFileAt(filePath: string, offsetSec: number, loop?: boolean): Promise<void>;
+  /**
+   * Plays a library file from an offset, repeating only if asked. Joined part-way it
+   * fades in, for no longer than `fadeLimitMs` — what is left of it, so a fade never
+   * outlasts the music it is fading.
+   */
+  playFileAt(filePath: string, offsetSec: number, loop?: boolean, fadeLimitMs?: number): Promise<void>;
   /** Puts a library file on the deck, paused at its start */
   loadFile(filePath: string, loop: boolean): void;
   /** Loads a song file onto the looping two-song deck (no position save) */
