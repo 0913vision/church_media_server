@@ -164,7 +164,8 @@ class AudioDevice implements AudioOutput {
    *
    * A fade covers a cut: sound appearing part-way through a piece, or leaving
    * before it is over. A song that begins at its own beginning has nothing to
-   * cover, and fading it in only mutes the opening the arranger wrote.
+   * cover, and fading it in only mutes the opening the arranger wrote — except the
+   * app's own songs, which the player fades from their beginning too (Player.play).
    */
   async resume(fade = true, onSounding?: () => void, durationMs: number = DEVICE_CONFIG.FADE_IN_MS): Promise<void> {
     if (!fade) {

@@ -142,7 +142,12 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
           // Note(yoochan.kim): told the moment it sounds, not when its fade is done — every
           // screen sat on 일시정지 for three seconds after a press. The fade still
           // holds the audio lock until it ends.
-          await deps.player.play(() => deps.notifier.state({ playback }));
+          // The app's own songs (통성기도, 피아노 찬송가) fade in from their very beginning
+          // too, put on by the panel or as a library track: one started there at full
+          // level startled the room (2026-10-30).
+          const deck = deps.player.getDeck();
+          const appSong = deck.source === 'song' || deps.trackLibrary.isDeckSong(deck.id);
+          await deps.player.play(() => deps.notifier.state({ playback }), appSong);
           return {};
         }
         await deps.player.pause();

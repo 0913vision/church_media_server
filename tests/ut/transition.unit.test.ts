@@ -102,7 +102,7 @@ const near = (actual: number, expected: number, what: string): void => {
 };
 
 describe('Pressing play', () => {
-  test('a song at its beginning sounds at once, with no fade', async () => {
+  test('a track at its beginning sounds at once, with no fade', async () => {
     const { mpv, player } = deck();
     mpv.calls = [];
     let soundingAt = -1;
@@ -113,6 +113,24 @@ describe('Pressing play', () => {
     assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms`);
     assert.ok(!mpv.calls.some((call) => call.startsWith('volume=')), 'nothing faded');
     assert.deepStrictEqual(mpv.calls, ['pause=no']);
+  });
+
+  // Note(yoochan.kim): 통성기도 started from its beginning with no fade came in at full level and
+  // startled the room (2026-10-30). The app's own songs fade wherever they are.
+  test('one of the app\'s own songs fades in from its very beginning too', async () => {
+    const { mpv, player } = deck();
+    mpv.calls = [];
+    let soundingAt = -1;
+    const pressed = Date.now();
+    await player.play(() => { soundingAt = Date.now() - pressed; }, true);
+    const done = Date.now() - pressed;
+
+    assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms`);
+    assert.ok(done > FADE_IN_MS - 200, `the fade ran (${done}ms)`);
+    assert.strictEqual(mpv.calls[1], 'pause=no', 'set quiet before it is let go');
+    const curve = fadeDb(mpv.calls);
+    assert.strictEqual(curve.length, FADE_IN_MS / STEP_MS + 1);
+    curve.forEach((db, i) => near(db, fadeInDb(i * STEP_MS, FADE_IN_MS, EDGE_DB), `${i * STEP_MS}ms`));
   });
 
   test('picked up part-way it fades in: up through the silent bottom quickly, then the same dB every moment', async () => {
