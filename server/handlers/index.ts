@@ -13,6 +13,21 @@ function asObject(payload: unknown): Record<string, unknown> | null {
   return typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : null;
 }
 
+/** Who sent something, by the name it gave at hello, so a line reads without looking the socket up. */
+function who(socket: ServerSocket): { client: string } {
+  return { client: socket.data.client ?? 'unknown' };
+}
+
+/**
+ * A value as one log field. What a client sends is cut to a length, and anything
+ * named like a password is masked, since the log is shown on the admin web.
+ */
+function brief(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const text = JSON.stringify(value, (key, inner: unknown) => (/password/i.test(key) ? '***' : inner));
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
 /** Attributes carry a permission only when they are writable; default to open. */
 function permissionOf(name: AttributeName): string {
   return (ATTRIBUTES[name] as { permission?: string }).permission ?? 'any';
@@ -109,31 +124,36 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
     const parsed = asObject(payload);
     const field = parsed?.field;
     const target = typeof field === 'string' ? field : C2S.WRITE;
+    // Note(yoochan.kim): every refusal is written down with who asked, so "I pressed it and
+    // nothing happened" can be answered from the log afterwards.
+    const refuse = (reason: RejectReason, message = 'Write refused', extra: Record<string, unknown> = {}): void => {
+      log.warn('write', socket, message, { ...who(socket), field: target, ...extra, reason });
+      deps.notifier.rejected(socket, target, reason);
+    };
 
     try {
       if (typeof field !== 'string') {
-        deps.notifier.rejected(socket, target, RejectReason.INVALID_VALUE);
+        refuse(RejectReason.INVALID_VALUE);
         return;
       }
       if (!socket.data.accepted) {
-        deps.notifier.rejected(socket, target, RejectReason.PROTOCOL_MISMATCH);
+        refuse(RejectReason.PROTOCOL_MISMATCH);
         return;
       }
 
       const spec = ATTRIBUTE_IMPL[field as AttributeName] as (typeof ATTRIBUTE_IMPL)[AttributeName] | undefined;
       if (!spec) {
-        deps.notifier.rejected(socket, target, RejectReason.UNKNOWN_TARGET);
+        refuse(RejectReason.UNKNOWN_TARGET);
         return;
       }
       if (!spec.write) {
-        deps.notifier.rejected(socket, target, RejectReason.NOT_WRITABLE);
+        refuse(RejectReason.NOT_WRITABLE);
         return;
       }
 
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       if (permissionOf(field as AttributeName) === 'admin' && !isAdmin) {
-        log.warn('write', socket, 'Non-admin attempted an admin write', { field });
-        deps.notifier.rejected(socket, target, RejectReason.NOT_ADMIN);
+        refuse(RejectReason.NOT_ADMIN, 'Non-admin attempted an admin write');
         return;
       }
 
@@ -141,16 +161,23 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
       // also be something only it knows, like a flow owning the admin lock.
       const plan = spec.write.prepare(parsed?.value, deps);
       if (!plan.ok) {
-        log.warn('write', socket, 'Write denied', { field, value: parsed?.value, reason: plan.reason });
-        deps.notifier.rejected(socket, target, plan.reason);
+        refuse(plan.reason, 'Write denied', { value: brief(parsed?.value) });
         return;
       }
 
       // Note(yoochan.kim): The gate decides who may start work; the audio lock decides whether the
       // device is free. They are checked separately so the client learns which.
       if (!deps.lockCoordinator.passesAdminGate(isAdmin)) {
-        deps.notifier.rejected(socket, target, RejectReason.ADMIN_LOCKED);
+        refuse(RejectReason.ADMIN_LOCKED);
         return;
+      }
+
+      // Note(yoochan.kim): what was let through, by whom, before it acts — so the deck's own
+      // lines that follow read as its answer. Volume is dragged by a hand: a drag is one line.
+      if (field === 'volume') {
+        log.drag(`${socket.id}:${field}`, 'write', socket, 'Write', parsed?.value, { ...who(socket), field });
+      } else {
+        log.info('write', socket, 'Write', { ...who(socket), field, value: brief(parsed?.value) });
       }
 
       let patch: StatePatch = {};
@@ -159,8 +186,7 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
           patch = await plan.apply();
         });
         if (!ran) {
-          log.warn('write', socket, 'Write blocked, device busy', { field });
-          deps.notifier.rejected(socket, target, RejectReason.DEVICE_BUSY);
+          refuse(RejectReason.DEVICE_BUSY, 'Write blocked, device busy');
           return;
         }
       } else {
@@ -183,34 +209,38 @@ const registerInvoke = (socket: ServerSocket, deps: ServerDeps): void => {
     const parsed = asObject(payload);
     const command = parsed?.command;
     const target = typeof command === 'string' ? command : C2S.INVOKE;
+    const refuse = (reason: RejectReason, message = 'Command refused'): void => {
+      log.warn('invoke', socket, message, { ...who(socket), command: target, reason });
+      deps.notifier.rejected(socket, target, reason);
+    };
 
     try {
       if (typeof command !== 'string') {
-        deps.notifier.rejected(socket, target, RejectReason.INVALID_VALUE);
+        refuse(RejectReason.INVALID_VALUE);
         return;
       }
       if (!socket.data.accepted) {
-        deps.notifier.rejected(socket, target, RejectReason.PROTOCOL_MISMATCH);
+        refuse(RejectReason.PROTOCOL_MISMATCH);
         return;
       }
 
       const spec = COMMAND_IMPL[command as CommandName];
       if (!spec) {
-        deps.notifier.rejected(socket, target, RejectReason.UNKNOWN_TARGET);
+        refuse(RejectReason.UNKNOWN_TARGET);
         return;
       }
 
       const meta = COMMANDS[command as CommandName] as { permission?: string } | undefined;
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       if (meta?.permission === 'admin' && !isAdmin) {
-        log.warn('invoke', socket, 'Non-admin attempted an admin command', { command });
-        deps.notifier.rejected(socket, target, RejectReason.NOT_ADMIN);
+        refuse(RejectReason.NOT_ADMIN, 'Non-admin attempted an admin command');
         return;
       }
 
+      log.info('invoke', socket, 'Command', { ...who(socket), command, args: brief(parsed?.args) });
       const outcome = await spec.run(parsed?.args, deps, socket);
       if (!outcome.ok) {
-        deps.notifier.rejected(socket, target, outcome.reason);
+        refuse(outcome.reason);
       }
     } catch (error) {
       log.error('invoke', socket, 'Error invoking command', { error: errorMessage(error), command });

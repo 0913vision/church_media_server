@@ -28,6 +28,9 @@ class FakeAudioOutput implements AudioOutput {
   isPartWay(): boolean {
     return false;
   }
+  position(): number | null {
+    return 0;
+  }
   captureSongTime(): void {}
   loadSong(): void {}
   async loadLastSongTime(): Promise<void> {}

@@ -129,6 +129,18 @@ class MediaServer {
         persist();
       }
     );
+    // Note(yoochan.kim): what the deck came back with. Where each song had got to is not
+    // kept across a restart, so every song is at its beginning again — worth seeing
+    // when reading back what the room heard afterwards. The fades are said here once,
+    // since a line saying fade=in means this long.
+    log.info('player', null, 'Player restored', {
+      song: initialConfig.currentSong,
+      volume: initialConfig.serverVolume,
+      mute: initialConfig.muted,
+      at: 'every song at its beginning',
+      fadeIn: `${DEVICE_CONFIG.FADE_IN_MS}ms from ${DEVICE_CONFIG.FADE_EDGE_DB} dB`,
+      fadeOut: `${DEVICE_CONFIG.FADE_OUT_MS}ms to ${DEVICE_CONFIG.FADE_EDGE_DB} dB`,
+    });
 
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);

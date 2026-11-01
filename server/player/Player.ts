@@ -4,6 +4,7 @@ import type { SongId } from '../constants/songs.ts';
 import type { PlayerConfig } from '../constants/playerConfig.ts';
 import type { AudioOutput } from '../hardware/AudioOutput.ts';
 import type { PersistedState } from '../state/StateStore.ts';
+import { dbFromLevel } from '../hardware/loudness.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
@@ -42,6 +43,25 @@ class Player {
     this.liveVolume = this.state.serverVolume;
     // Note(yoochan.kim): Initialize hardware with the starting volume (silent if muted)
     this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
+  }
+
+  /**
+   * The deck as a log line reads it: what is on it, where in it, at what level —
+   * enough to tell afterwards what the room heard.
+   */
+  private where(): Record<string, string> {
+    const at = this.device.position();
+    return {
+      deck: this.trackMode ? `track ${this.trackId}` : `song ${this.state.currentSong}`,
+      at: at === null ? 'unknown' : `${at.toFixed(1)}s`,
+      level: this.levelText(),
+    };
+  }
+
+  private levelText(): string {
+    return this.isMuted()
+      ? `muted (${this.liveVolume})`
+      : `${this.liveVolume} (${dbFromLevel(this.liveVolume).toFixed(1)} dB)`;
   }
 
   /** Snapshot of the persisted preferences (no play/pause state) */
@@ -98,8 +118,10 @@ class Player {
    * it then rather than when the fade is done.
    */
   async play(onSounding?: () => void, fadeFromStart = false): Promise<void> {
+    const fade = fadeFromStart || this.device.isPartWay();
+    log.info('player', null, 'Play', { ...this.where(), fade: fade ? 'in' : 'none' });
     try {
-      await this.device.resume(fadeFromStart || this.device.isPartWay(), () => {
+      await this.device.resume(fade, () => {
         this.state.state = PlaybackState.PLAYING;
         onSounding?.();
       });
@@ -114,6 +136,7 @@ class Player {
    * Pauses the audio and updates state
    */
   async pause(): Promise<void> {
+    log.info('player', null, 'Pause', { ...this.where(), fade: 'out' });
     try {
       await this.device.pause();
     } catch (error) {
@@ -208,6 +231,11 @@ class Player {
       log.error('player', null, 'Failed to load last song time', { newSong, error: errorMessage(error) });
       throw error;
     }
+    log.info('player', null, 'Song changed', {
+      from: currentSong,
+      ...this.where(),
+      fade: wasPlaying ? 'out' : 'none',
+    });
   }
 
   /**
@@ -221,6 +249,10 @@ class Player {
     // Note(yoochan.kim): the position is captured once — a track's position must never be
     // written into a song's memory.
     if (!this.trackMode) {
+      log.info('player', null, 'Deck taken from the song', {
+        ...this.where(),
+        fade: fade && this.isPlaying() ? 'out' : 'none',
+      });
       this.device.captureSongTime(this.state.currentSong);
       this.trackMode = true;
     }
@@ -278,6 +310,9 @@ class Player {
     }
     this.trackId = track.id;
     this.state.state = PlaybackState.PAUSED;
+    // Note(yoochan.kim): no position here: the file is still loading, and mpv would give the
+    // one before. A track put on is at its start.
+    log.info('player', null, 'Track put on the deck', { deck: `track ${track.id}`, level: this.levelText(), loop });
   }
 
   /** What has the deck: the panel's own song, or a library track an admin put on. */
@@ -293,8 +328,9 @@ class Player {
   async restoreSong(fade = true): Promise<void> {
     if (!this.trackMode) return;
 
+    const wasPlaying = this.isPlaying();
     try {
-      if (this.isPlaying()) {
+      if (wasPlaying) {
         // Note(yoochan.kim): a fade covers a cut. Music that has just reached its
         // own end has nothing to cover, and fading it costs seconds of silence.
         await this.device.pause(fade);
@@ -313,6 +349,10 @@ class Player {
     this.trackMode = false;
     this.trackId = '';
     this.loop = true;
+    log.info('player', null, 'Deck back to the song', {
+      ...this.where(),
+      fade: wasPlaying && fade ? 'out' : 'none',
+    });
   }
 
   getLoop(): boolean {

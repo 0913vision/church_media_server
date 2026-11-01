@@ -125,6 +125,10 @@ class AudioDevice implements AudioOutput {
     return at !== null && at > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
   }
 
+  position(): number | null {
+    return this.getCurrentSongTime();
+  }
+
   /** Puts mpv at some decibels under the file's own level. */
   private setDb(db: number): void {
     this.mpv.setProperty("volume", mpvVolumeFromDb(db).toString());

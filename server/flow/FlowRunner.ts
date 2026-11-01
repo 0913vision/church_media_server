@@ -300,6 +300,7 @@ class FlowRunner {
       title: track.title,
       seek: `${seekSec.toFixed(1)}s`,
       lag: `${lagSec.toFixed(2)}s`,
+      level: track.volume,
     });
     this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
     return true;

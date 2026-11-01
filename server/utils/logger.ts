@@ -17,25 +17,27 @@ interface SocketLike {
 type LogExtra = Record<string, unknown>;
 
 /**
- * Local wall-clock time, to the second.
+ * Local wall-clock time, to the millisecond.
  *
  * Schedules are written and read in local time, so logs in UTC mean adding
  * nine hours in your head before a line means anything — and a flow that ran
  * exactly on time reads as if it ran nine hours early. The offset is kept in
  * the line so a log lifted onto another machine is still unambiguous.
+ * Milliseconds, because what somebody pressed and what the deck did about it
+ * usually fall in the same second.
  */
-function timestamp(): string {
-  const now = new Date();
+function timestamp(at: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
-  const offsetMinutes = -now.getTimezoneOffset();
+  const offsetMinutes = -at.getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? '+' : '-';
   const offset = `${sign}${pad(Math.floor(Math.abs(offsetMinutes) / 60))}:${pad(Math.abs(offsetMinutes) % 60)}`;
 
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
-    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offset}`;
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ` +
+    `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}` +
+    `.${String(at.getMilliseconds()).padStart(3, '0')}${offset}`;
 }
 
-function write(level: LogLevel, message: string, context: LogExtra): void {
+function print(level: LogLevel, message: string, context: LogExtra, at: Date): void {
   if (LOG_LEVELS[level] < MIN_LEVEL) {
     return;
   }
@@ -44,7 +46,57 @@ function write(level: LogLevel, message: string, context: LogExtra): void {
     ? `[${Object.entries(context).map(([k, v]) => `${k}=${String(v)}`).join(',')}]`
     : '';
 
-  console.log(`[${timestamp()}][${level.toUpperCase()}] ${message} ${contextStr}`);
+  console.log(`[${timestamp(at)}][${level.toUpperCase()}] ${message} ${contextStr}`);
+}
+
+/** How long a run of values has to go quiet before it is written as one line. */
+const DRAG_QUIET_MS = 700;
+
+/** A value moving in a run — a fader being dragged — not yet written. */
+interface Drag {
+  message: string;
+  context: LogExtra;
+  first: unknown;
+  last: unknown;
+  steps: number;
+  startedAt: Date;
+  lastAt: Date;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const drags = new Map<string, Drag>();
+
+/**
+ * Writes a run as one line, stamped with its last step: where it went, and —
+ * when it moved more than once — where it came from, in how many steps, over
+ * how long.
+ */
+function flushDrag(key: string): void {
+  const drag = drags.get(key);
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  drags.delete(key);
+  const run = drag.steps > 1
+    ? { from: drag.first, steps: drag.steps, over: `${((drag.lastAt.getTime() - drag.startedAt.getTime()) / 1000).toFixed(1)}s` }
+    : {};
+  print('info', drag.message, { ...drag.context, value: drag.last, ...run }, drag.lastAt);
+}
+
+// Note(yoochan.kim): every other line waits for the runs still open, so the log
+// reads in the order things happened — a volume dragged up, then play pressed.
+function flushDrags(): void {
+  for (const key of [...drags.keys()]) flushDrag(key);
+}
+
+function quietTimer(key: string): ReturnType<typeof setTimeout> {
+  const timer = setTimeout(() => flushDrag(key), DRAG_QUIET_MS);
+  timer.unref?.();
+  return timer;
+}
+
+function write(level: LogLevel, message: string, context: LogExtra): void {
+  flushDrags();
+  print(level, message, context, new Date());
 }
 
 function createContext(
@@ -75,5 +127,36 @@ export const log = {
 
   error: (module: string, socket: SocketLike | null | undefined, message: string, extra?: LogExtra): void => {
     write('error', message, createContext(module, socket, extra));
-  }
+  },
+
+  /**
+   * An info line for a value that moves in runs, like a fader dragged: steps under
+   * one key are kept as one line until the run goes quiet, so fifty ticks of a
+   * drag do not push everything else off the end of the log.
+   */
+  drag: (
+    key: string, module: string, socket: SocketLike | null | undefined, message: string, value: unknown, extra?: LogExtra,
+  ): void => {
+    const now = new Date();
+    const open = drags.get(key);
+    if (open) {
+      clearTimeout(open.timer);
+      open.last = value;
+      open.steps += 1;
+      open.lastAt = now;
+      open.timer = quietTimer(key);
+      return;
+    }
+    flushDrags();
+    drags.set(key, {
+      message,
+      context: createContext(module, socket, extra),
+      first: value,
+      last: value,
+      steps: 1,
+      startedAt: now,
+      lastAt: now,
+      timer: quietTimer(key),
+    });
+  },
 };

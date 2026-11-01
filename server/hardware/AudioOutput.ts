@@ -20,6 +20,8 @@ export interface AudioOutput {
   pause(fade?: boolean, durationMs?: number): Promise<void>;
   /** Whether the deck is past the opening of what it holds, so starting it is a cut */
   isPartWay(): boolean;
+  /** Where the deck is in what it holds, in seconds; null while mpv cannot say */
+  position(): number | null;
   /** Saves the song's live playback position into its time memory */
   captureSongTime(song: SongId): void;
   /** Whether what is loaded repeats */
