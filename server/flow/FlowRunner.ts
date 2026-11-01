@@ -102,6 +102,8 @@ interface ActiveRun {
   deckHeld: boolean;
   /** Parts still to finish sounding; the one that brings this to none puts the deck back. */
   partsLeft: number;
+  /** A countdown notice is sounding. A stop cuts it at once, before its desk goes back. */
+  cueSounding: boolean;
 }
 
 /**
@@ -246,6 +248,7 @@ class FlowRunner {
       restorePoint: { song: this.player.getCurrentSong(), volume: this.player.getUserVolume() },
       deckHeld: false,
       partsLeft: plan.parts.length,
+      cueSounding: false,
     };
     this.active.finished = this.run(plan);
     this.publish();
@@ -263,6 +266,9 @@ class FlowRunner {
     if (!run) return { ok: false, reason: RejectReason.NO_FLOW };
 
     log.info('flow', null, 'Flow stopped by request', { name: run.plan.name });
+    // Note(yoochan.kim): a notice is cut before anything unwinds. Unwinding puts its desk back,
+    // and a count still fading out as the room's sends reopen would be heard in the room.
+    await this.cutCue();
     this.abortWaits();
     await run.finished;
     return { ok: true };
@@ -377,11 +383,16 @@ class FlowRunner {
 
     const play = async (): Promise<void> => {
       if (part.desk && part.desk.length > 0) log.info('flow', null, 'Countdown: desk set', { after: elapsed() });
-      for (let index = 0; index < part.cues.length; index++) {
-        const cue = part.cues[index]!;
-        if (this.missed(cue)) continue;
-        // Put on the deck now — straight after the step before — and started on its second.
-        if (!(await this.playCue(cue, { index: index + 1, total: part.cues.length }))) throw new CueFailed();
+      try {
+        for (let index = 0; index < part.cues.length; index++) {
+          const cue = part.cues[index]!;
+          if (this.missed(cue)) continue;
+          // Put on the deck now — straight after the step before — and started on its second.
+          if (!(await this.playCue(cue, { index: index + 1, total: part.cues.length }))) throw new CueFailed();
+        }
+      } finally {
+        // Silent before the desk goes back, however this ends.
+        await this.cutCue();
       }
     };
     try {
@@ -428,7 +439,10 @@ class FlowRunner {
       return false;
     }
     const endsAt = new Date(endOf(cue));
-    if (this.active) this.active.playing = { track: { title: cue.track.title, ...place }, endsAt };
+    if (this.active) {
+      this.active.playing = { track: { title: cue.track.title, ...place }, endsAt };
+      this.active.cueSounding = true;
+    }
     log.info('flow', null, 'Cue started', {
       cue: `${place.index}/${place.total}`,
       title: cue.track.title,
@@ -437,9 +451,21 @@ class FlowRunner {
     this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
 
     await this.sleepUntil(endsAt);
-    if (this.active) this.active.playing = undefined;
+    if (this.active) {
+      this.active.playing = undefined;
+      this.active.cueSounding = false;
+    }
     this.publish();
     return true;
+  }
+
+  /** Silences a notice still sounding, at once: a count is cut, never faded. */
+  private async cutCue(): Promise<void> {
+    const run = this.active;
+    if (!run?.cueSounding) return;
+    const cut = await this.withAudio(() => this.player.cut());
+    if (!cut) log.error('flow', null, 'Could not take the audio device to cut a notice');
+    run.cueSounding = false;
   }
 
   /**

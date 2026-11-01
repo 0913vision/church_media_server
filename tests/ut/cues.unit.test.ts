@@ -561,4 +561,39 @@ describe('A countdown for the band alone', () => {
     assert.deepEqual(await values(desk, touched), before, 'the desk as it was');
     holds.dispose();
   });
+
+  // Note(yoochan.kim): in a service the music player goes to the room: aux 5/6 on, to the main,
+  // in no muted group. A count still sounding as that is put back would be heard in the room.
+  test('stopped mid-count with the music player live to the room: cut at once, silent before any of the desk goes back', async () => {
+    const { mpv, runner, desk, holds } = rig();
+    seedRoom(desk);
+    for (const strip of AUX) {
+      desk.set(`${strip}/mix/on`, 1);
+      desk.set(`${strip}/grp/mute`, 0);
+    }
+    desk.clearJournal();
+    const touched = bandOnly().map((change) => change.address);
+    const before = await values(desk, touched);
+    const t0 = Date.now();
+    const restores: number[] = [];
+    let stopping = Infinity;
+    const send = desk.send.bind(desk);
+    desk.send = async (address, value) => { if (Date.now() >= stopping) restores.push(Date.now()); return send(address, value); };
+
+    assert.deepEqual(runner.startPlan(countdown(t0, 1000, 3, 6000, bandOnly())), { ok: true });
+    await settle(1500);
+    stopping = Date.now();
+    await runner.stop();
+
+    const cut = mpv.calls.find((call) => call.at >= stopping && call.call === 'pause=yes');
+    assert.ok(cut, 'the count was stopped');
+    assert.ok(cut.at - stopping < SLACK_MS, `stopped ${cut.at - stopping}ms after the stop, not faded`);
+    // By order, not by time: the song put back after the cut can land in the same millisecond.
+    const faded = mpv.calls.slice(0, mpv.calls.indexOf(cut)).filter((call) => call.at >= stopping && call.call.startsWith('volume='));
+    assert.deepEqual(faded, [], `no fade steps before it stopped: ${mpv.calls.filter((call) => call.at >= stopping - 600)
+      .map((call) => `${call.at - stopping}:${call.call.slice(0, 24)}`).join(' ')}`);
+    assert.ok(restores.length > 0 && restores[0]! >= cut.at, 'silent before the first of the desk went back');
+    assert.deepEqual(await values(desk, touched), before, 'the desk as it was, the music player live to the room again');
+    holds.dispose();
+  });
 });

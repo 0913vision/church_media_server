@@ -146,6 +146,22 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
+  /**
+   * Stops what is sounding at once, with no fade — a run's notice cut short. A count
+   * fading away is still a count, heard for as long as it fades.
+   */
+  async cut(): Promise<void> {
+    if (!this.isPlaying()) return;
+    log.info('player', null, 'Cut', { ...this.where(), fade: 'none' });
+    try {
+      await this.device.pause(false);
+    } catch (error) {
+      log.error('player', null, 'Failed to cut audio', { error: errorMessage(error) });
+      throw error;
+    }
+    this.state.state = PlaybackState.PAUSED;
+  }
+
   // Note(yoochan.kim): Mute methods
   /**
    * Gets the current mute status
