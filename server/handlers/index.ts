@@ -20,11 +20,12 @@ function who(socket: ServerSocket): { client: string } {
 
 /**
  * A value as one log field. What a client sends is cut to a length, and anything
- * named like a password is masked, since the log is shown on the admin web.
+ * named like a password is masked, since the log is shown on the admin web. Its
+ * commas become spaces: a log line already separates its fields with commas.
  */
 function brief(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
-  const text = JSON.stringify(value, (key, inner: unknown) => (/password/i.test(key) ? '***' : inner));
+  const text = JSON.stringify(value, (key, inner: unknown) => (/password/i.test(key) ? '***' : inner)).replace(/,/g, ' ');
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }
 
