@@ -477,6 +477,9 @@ describe('A countdown for the band alone', () => {
   test('every way out is shut, then the way in opened, before it sounds; after, the other way round, whole', async () => {
     const { mpv, runner, desk, holds } = rig();
     seedRoom(desk);
+    // AuxMix left switched off by somebody, so switching it on for the count — and back — is seen.
+    desk.set('/bus/08/mix/on', 0);
+    desk.clearJournal();
     const touched = bandOnly().map((change) => change.address);
     const before = await values(desk, touched);
     const t0 = Date.now();
@@ -499,6 +502,13 @@ describe('A countdown for the band alone', () => {
     const firstOpen = applied.findIndex((message) => !blocks.has(message.address));
     assert.ok(lastBlock < firstOpen, 'every way out shut before the way in opened');
     assert.deepEqual(putBack.map((message) => message.address), [...touched].reverse(), 'the way in closed before the ways out reopened');
+    // Like powering a sound system: closed from the output end, opened from the source with
+    // the output last — and put back the other way round.
+    assert.equal(applied[0]?.address, '/bus/08/mix/01/on', 'closing starts at the output end, AuxMix\'s matrices');
+    assert.equal(applied[blocks.size]?.address, '/auxin/05/grp/mute', 'opening starts at the source, the music player\'s channel');
+    assert.equal(applied.at(-1)?.address, '/bus/08/mix/on', 'AuxMix, the band\'s ears, switched on last');
+    assert.equal(putBack[0]?.address, '/bus/08/mix/on', 'AuxMix put back first');
+    assert.equal(putBack.at(-1)?.address, '/bus/08/mix/01/on', 'the output end reopened last');
 
     for (const strip of AUX) {
       assert.equal(during[`${strip}/mix/st`], 0, `${strip} off the main LR`);
@@ -512,9 +522,11 @@ describe('A countdown for the band alone', () => {
     for (let n = 1; n <= 6; n += 1) assert.equal(during[`/bus/08/mix/${two(n)}/on`], 0, `AuxMix to matrix ${n}`);
     assert.equal(during['/bus/08/mix/st'], 0, 'AuxMix off the main LR');
     assert.equal(during['/bus/08/mix/mono'], 0);
+    assert.equal(during['/bus/08/mix/on'], 1, 'AuxMix itself on: P16 15 follows its mute');
 
     const after = await values(desk, touched);
     assert.deepEqual(after, before, 'the desk as it was');
+    assert.equal(after['/bus/08/mix/on'], 0, 'AuxMix back off, as it was left');
     assert.equal(after['/auxin/05/grp/mute'], 0b100101, 'back in all three mute groups');
     assert.equal(after['/auxin/05/grp/dca'], 0b1000000, 'back in DCA 7');
     holds.dispose();

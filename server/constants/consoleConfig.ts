@@ -109,26 +109,30 @@ export const CONSOLE_CONFIG = {
    *
    * Note(yoochan.kim): every way out is switched off first, whatever it was set to, so a
    * send somebody has turned up since still cannot carry it (BLOCK); only then is the
-   * way in opened (OPEN). Putting back runs the other way round: OPEN first, then
-   * BLOCK. Out of every mute group and DCA while it sounds, because a group engaged
-   * or a DCA pulled down would silence the band's count; the groups it was in are
-   * written back whole. Output 8 also carries AuxMix and is left alone — nothing
-   * is wired to it (user, 2026-10-30).
+   * way in opened (OPEN). Like powering a sound system, ways are closed from the
+   * output end — AuxMix's matrices, the end that reaches other rooms' speakers — back
+   * towards the source, and opened from the source — the music player's channel —
+   * along the signal to the output, AuxMix itself last (user, 2026-11-01). Putting
+   * back is the exact reverse, so it keeps the same rule: the band's way closes from
+   * AuxMix, and the ways out reopen with their output end last. Out of every mute
+   * group and DCA while it sounds, because a group engaged or a DCA pulled down would
+   * silence the band's count; the groups it was in are written back whole. AuxMix
+   * itself is switched on because P16 15 takes it before its fader but after its mute.
+   * Output 8 also carries AuxMix and is left alone — nothing is wired to it (user,
+   * 2026-10-30).
    */
   BAND_ONLY: {
     BLOCK: [
-      ...MUSIC_PLAYER.flatMap((strip) => [
-        mainSend(strip, false),
-        monoSend(strip, false),
-        ...upTo(16).filter((n) => bus(n) !== AUX_MIX).map((n) => sendOff(strip, bus(n))),
-      ]),
       ...upTo(6).map((n) => sendOff(AUX_MIX, mtx(n))),
       mainSend(AUX_MIX, false),
       monoSend(AUX_MIX, false),
+      ...MUSIC_PLAYER.flatMap((strip) => [mainSend(strip, false), monoSend(strip, false)]),
+      ...MUSIC_PLAYER.flatMap((strip) => upTo(16).filter((n) => bus(n) !== AUX_MIX).map((n) => sendOff(strip, bus(n)))),
     ] satisfies DeskChange[],
     OPEN: [
-      ...MUSIC_PLAYER.flatMap((strip) => [fader(strip, 0), sendOn(strip, AUX_MIX)]),
       ...MUSIC_PLAYER.flatMap((strip) => [muteGroupsOf(strip, []), dcasOf(strip, []), on(strip)]),
+      ...MUSIC_PLAYER.flatMap((strip) => [fader(strip, 0), sendOn(strip, AUX_MIX)]),
+      on(AUX_MIX),
     ] satisfies DeskChange[],
   },
 
