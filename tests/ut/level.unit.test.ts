@@ -124,7 +124,7 @@ class MeterDesk implements ConsoleDevice {
 }
 
 function entry(id: string, durationSec: number, volume: number): LibraryEntry {
-  return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false };
+  return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false, role: 'music' };
 }
 
 function rig() {

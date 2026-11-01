@@ -5,7 +5,7 @@ import { ADMIN_CONFIG } from '../constants/authConfig.ts';
 import { verifyPassword } from '../auth/password.ts';
 import type { ServerSocket } from '../constants/socketConfig.ts';
 import type { ServerDeps } from '../deps.ts';
-import { runsOn } from '../schedule/Schedule.ts';
+import { runsOn, validate } from '../schedule/Schedule.ts';
 import { isYoutube } from '../tracks/Fetcher.ts';
 import { DeskHeldError } from '../console/DeskHolds.ts';
 import { log } from '../utils/logger.ts';
@@ -177,6 +177,14 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       const named = tracksNamedBy(entry);
       for (const id of named) {
         if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
+        if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
+      }
+
+      const checked = validate(entry);
+      if (checked.ok) {
+        // Note(yoochan.kim): a countdown's block depends on its audio's length, so it is tried against today as a start would.
+        const fits = deps.flowRunner.check(deps.schedule.toRunArgs(checked.value, deps.clock.now()));
+        if (!fits.ok) return refuse(fits.reason);
       }
 
       const saved = deps.schedule.save(entry);
@@ -300,6 +308,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       // Note(yoochan.kim): the panel's songs are named once, in ready.songs, and a panel
       // installed by hand is not asked to notice a rename.
       if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
+      if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
       if (titleInUse(deps, named, id)) return refuse(RejectReason.TITLE_TAKEN);
 
       deps.trackLibrary.rename(id, named);
@@ -314,6 +323,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
       if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
       if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
+      if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
 
       const deck = deps.player.getDeck();
       const onDeck = deck.source === 'track' && deck.id === id;
@@ -343,6 +353,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
 
       const track = deps.trackLibrary.get(id);
       if (!track) return refuse(RejectReason.UNKNOWN_TRACK);
+      if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
 
       // Note(yoochan.kim): a song the panel can pick is one that runs under a service,
       // so it repeats; anything else is put on to be heard once.

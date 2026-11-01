@@ -1,5 +1,5 @@
-import { RejectReason } from '../protocol.ts';
-import type { FlowStatus, FlowTrack } from '../protocol.ts';
+import { RejectReason, TrackRole, isNotice } from '../protocol.ts';
+import type { FlowStatus, FlowTrack, Notice } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type { SongId } from '../constants/songs.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
@@ -27,6 +27,9 @@ const AUDIO_LOCK_RETRY_MS = 300;
 
 /** A library track as one flow scheduled it: same audio, that flow's level */
 type ScheduledEntry = LibraryEntry;
+
+/** How long before zero each notice starts. */
+const NOTICE_LEAD_SEC: Record<Notice, number> = { oneMinute: 60, thirtySeconds: 30 };
 
 /** One clip of a countdown, played on its own second: 1분 남았습니다, the count. */
 export interface CuePlan {
@@ -157,6 +160,8 @@ class FlowRunner {
     // system clock directly.
     private readonly clock: Clock,
     private readonly mixer: Pick<MixerConsole, 'holding'>,
+    /** The desk while a countdown runs, in the order to set it. */
+    private readonly countdownDesk: readonly DeskChange[],
     private readonly timing: FlowTiming,
   ) {}
 
@@ -210,16 +215,19 @@ class FlowRunner {
 
     const planned = this.planOf(args);
     if (!planned.ok) return planned;
-    this.begin(planned.value);
-    return { ok: true };
+    return this.startPlan(planned.value);
   }
 
-  /**
-   * Runs a plan built inside the server, a countdown included — the door it comes
-   * in by until the protocol carries it. Refused like start, and for a timeline
-   * whose sounds would overlap or fall outside the gate.
-   */
-  startPlan(plan: Plan): { ok: true } | { ok: false; reason: RejectReason | TimelineConflict | 'countdownUnderway' } {
+  /** Whether a run could be played as written, without starting it: for a calendar entry being saved. */
+  check(args: unknown): { ok: true } | { ok: false; reason: RejectReason } {
+    const planned = this.planOf(args);
+    if (!planned.ok) return planned;
+    const conflict = timelineConflict({ ...planned.value, parts: planned.value.parts.map(inTimeOrder) }, this.timing);
+    return conflict ? { ok: false, reason: conflict } : { ok: true };
+  }
+
+  /** Runs a plan, refused when its window has passed, its timeline does not fit, or its countdown is under way. */
+  startPlan(plan: Plan): { ok: true } | { ok: false; reason: RejectReason } {
     if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };
     const now = this.clock.now().getTime();
     if (plan.lock.until.getTime() <= now) return { ok: false, reason: RejectReason.WINDOW_PASSED };
@@ -231,7 +239,7 @@ class FlowRunner {
     // inside its countdown's block: the count would begin in the middle, or its desk be
     // set in a hurry. Once the block is over it may start; the countdown is behind it.
     const block = countdownBlock(ordered, this.timing);
-    if (block && now >= block.opens && now < block.ends) return { ok: false, reason: 'countdownUnderway' };
+    if (block && now >= block.opens && now < block.ends) return { ok: false, reason: RejectReason.COUNTDOWN_UNDERWAY };
     this.begin(ordered);
     return { ok: true };
   }
@@ -631,15 +639,9 @@ class FlowRunner {
     const name = parsed.name;
     if (typeof name !== 'string' || name.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    const now = this.clock.now();
     const locked = this.lockOf(asObject(parsed.lock));
     if (!locked.ok) return locked;
     const lock = locked.value;
-
-    // Note(yoochan.kim): A window that has already closed would be accepted and finish in the
-    // same millisecond, which reads to the operator as the button doing
-    // nothing. Refusing says what actually happened.
-    if (lock.until.getTime() <= now.getTime()) return { ok: false, reason: RejectReason.WINDOW_PASSED };
 
     const raw = parsed.parts;
     if (!Array.isArray(raw)) return { ok: false, reason: RejectReason.INVALID_VALUE };
@@ -653,13 +655,34 @@ class FlowRunner {
       if (typeof kind !== 'string' || seen.has(kind)) return { ok: false, reason: RejectReason.INVALID_VALUE };
       seen.add(kind);
 
-      if (kind !== 'music') return { ok: false, reason: RejectReason.INVALID_VALUE };
-      const planned = this.musicPartOf(part, lock);
+      if (kind !== 'music' && kind !== 'countdown') return { ok: false, reason: RejectReason.INVALID_VALUE };
+      const planned = kind === 'music' ? this.musicPartOf(part, lock) : this.countdownPartOf(part);
       if (!planned.ok) return planned;
       parts.push(planned.value);
     }
 
     return { ok: true, value: { id, name, lock, parts } };
+  }
+
+  /** A countdown: the count ending at zero, and each notice asked for at its own lead. */
+  private countdownPartOf(part: Record<string, unknown>): Checked<PartPlan> {
+    const zero = instantOf(part.at);
+    if (!zero.ok) return zero;
+    const notices = part.notices;
+    if (!Array.isArray(notices) || !notices.every(isNotice) || new Set(notices).size !== notices.length) {
+      return { ok: false, reason: RejectReason.INVALID_VALUE };
+    }
+
+    const count = this.trackLibrary.countdownTrack(TrackRole.COUNT);
+    if (!count) return { ok: false, reason: RejectReason.NOTICE_MISSING };
+    const cues: CuePlan[] = [];
+    for (const notice of notices) {
+      const track = this.trackLibrary.countdownTrack(notice);
+      if (!track) return { ok: false, reason: RejectReason.NOTICE_MISSING };
+      cues.push({ track: { ...track }, at: new Date(zero.value.getTime() - NOTICE_LEAD_SEC[notice] * 1000) });
+    }
+    cues.push({ track: { ...count }, at: new Date(zero.value.getTime() - count.durationSec * 1000) });
+    return { ok: true, value: { kind: 'countdown', cues, desk: this.countdownDesk } };
   }
 
   private lockOf(lock: Record<string, unknown>): Checked<LockPlan> {
@@ -692,6 +715,7 @@ class FlowRunner {
       }
       const track = this.trackLibrary.get(id);
       if (!track) return { ok: false, reason: RejectReason.UNKNOWN_TRACK };
+      if (this.trackLibrary.isCountdownTrack(id)) return { ok: false, reason: RejectReason.NOTICE_TRACK };
       tracks.push({ ...track, volume });
     }
 
@@ -717,8 +741,11 @@ class FlowRunner {
   }
 }
 
-/** Why a timeline cannot be played as written. Internal until the protocol carries the countdown. */
-export type TimelineConflict = 'countdownOutsideLock' | 'cuesOverlap' | 'countdownOverlapsMusic';
+/** Why a timeline cannot be played as written. */
+export type TimelineConflict =
+  | typeof RejectReason.COUNTDOWN_OUTSIDE_LOCK
+  | typeof RejectReason.NOTICES_OVERLAP
+  | typeof RejectReason.COUNTDOWN_OVERLAPS_MUSIC;
 
 const endOf = (cue: CuePlan): number => cue.at.getTime() + cue.track.durationSec * 1000;
 
@@ -765,12 +792,12 @@ export function timelineConflict(plan: Pick<Plan, 'lock' | 'parts'>, timing: Flo
     const cues = (inTimeOrder(part) as CountdownPlan).cues;
     let previousEnd = -Infinity;
     for (const cue of cues) {
-      if (cue.at.getTime() < previousEnd) return 'cuesOverlap';
+      if (cue.at.getTime() < previousEnd) return RejectReason.NOTICES_OVERLAP;
       previousEnd = endOf(cue);
     }
     const from = cues[0]!.at.getTime() - reserveMs(part, timing);
-    if (from < lockAt || previousEnd > plan.lock.until.getTime()) return 'countdownOutsideLock';
-    if (music.some((span) => from < span.to && previousEnd > span.from)) return 'countdownOverlapsMusic';
+    if (from < lockAt || previousEnd > plan.lock.until.getTime()) return RejectReason.COUNTDOWN_OUTSIDE_LOCK;
+    if (music.some((span) => from < span.to && previousEnd > span.from)) return RejectReason.COUNTDOWN_OVERLAPS_MUSIC;
   }
   return null;
 }

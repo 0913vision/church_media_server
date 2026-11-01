@@ -74,6 +74,12 @@ class RejectReason(str, Enum):
     DECK_PLAYING = "deckPlaying"
     DECK_MUTED = "deckMuted"
     NOT_MEASURING = "notMeasuring"
+    NOTICE_TRACK = "noticeTrack"
+    NOTICE_MISSING = "noticeMissing"
+    COUNTDOWN_OUTSIDE_LOCK = "countdownOutsideLock"
+    COUNTDOWN_OVERLAPS_MUSIC = "countdownOverlapsMusic"
+    NOTICES_OVERLAP = "noticesOverlap"
+    COUNTDOWN_UNDERWAY = "countdownUnderway"
     PROTOCOL_MISMATCH = "protocolMismatch"
 
 
@@ -90,6 +96,28 @@ class LevelFailure(str, Enum):
     DESK_SILENT = "deskSilent"
     DESK_HELD = "deskHeld"
     NO_SIGNAL = "noSignal"
+
+
+class TrackRole(str, Enum):
+    """
+    What a track is for. Music is what people and a flow's music play. The
+    other three are a countdown's audio: the server plays them itself, inside
+    a flow, and the player never puts one on.
+    """
+    MUSIC = "music"
+    ONE_MINUTE = "oneMinute"
+    THIRTY_SECONDS = "thirtySeconds"
+    COUNT = "count"
+
+
+class Notice(str, Enum):
+    """
+    An announcement a countdown may play ahead of its count: oneMinute is 1분
+    남았습니다, sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty
+    seconds before.
+    """
+    ONE_MINUTE = "oneMinute"
+    THIRTY_SECONDS = "thirtySeconds"
 
 
 class Song(TypedDict):
@@ -128,6 +156,7 @@ class Track(TypedDict):
     title: str  # Human-readable name
     durationSec: float  # Length in seconds, measured from the file
     volume: float  # The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
+    role: TrackRole  # music, or which part of a countdown it is. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it.
 
 
 class ScheduledTrack(TypedDict):
@@ -189,8 +218,9 @@ class ConsoleInput(TypedDict):
 
 class ScheduleUntilMusic(TypedDict):
     """
-    With the music. The usual case, and only valid on an entry that has a
-    music part.
+    With the last sound: the music, or a countdown that ends after it. The
+    usual case, and only valid on an entry that has a music or a countdown
+    part.
     """
     kind: Literal["music"]
 
@@ -271,12 +301,22 @@ class SchedulePartMusic(TypedDict):
     endsAt: str  # HH:MM or HH:MM:SS, church time. Seconds are allowed because track lengths are not whole minutes.
 
 
+class SchedulePartCountdown(TypedDict):
+    """
+    Count down to a moment, on the band's ears alone. Everything as in
+    FlowPart's countdown.
+    """
+    kind: Literal["countdown"]
+    at: str  # HH:MM or HH:MM:SS, church time: when the count reaches zero
+    notices: list[Notice]  # Which notices go ahead of the count. Empty for the count alone; at most one of each.
+
+
 """
 One thing a scheduled flow does, in the calendar's own vocabulary. The same
 kinds as FlowPart, but the times are wall-clock rather than instants: a weekly
 entry says 19:30, and which 19:30 is decided when it starts.
 """
-SchedulePart = SchedulePartMusic
+SchedulePart = SchedulePartMusic | SchedulePartCountdown
 
 
 class TrackSourceUpload(TypedDict):
@@ -435,13 +475,34 @@ class FlowPartMusic(TypedDict):
     endsAt: str  # Instant the last track must finish
 
 
+class FlowPartCountdown(TypedDict):
+    """
+    Count down to a moment, on the band's ears alone: the count (카운트다운을 시작합니다,
+    then 10 to 1) always, ending exactly at at, and ahead of it whichever
+    notices were ticked, each on its own second. The server picks the audio by
+    role from its tracks and plays each at that track's own level. It is one
+    block, from 10 seconds before its first sound to zero: nothing else sounds
+    in it, and the desk is set so the music player reaches AuxMix alone —
+    which the band hears on their P16s — and put back after. The block must
+    lie inside the lock window (countdownOutsideLock) and clear of the flow's
+    music (countdownOverlapsMusic), and no notice may start before the one
+    ahead of it has ended (noticesOverlap); a countdown track missing from the
+    library is noticeMissing. A flow is never started inside its countdown's
+    block (countdownUnderway): started before it, the countdown plays whole;
+    after it, the countdown is behind it.
+    """
+    kind: Literal["countdown"]
+    at: str  # Instant the count reaches zero
+    notices: list[Notice]  # Which notices go ahead of the count. Empty for the count alone; at most one of each.
+
+
 """
 One thing a flow does on top of holding the gate. The lock is not among these:
 every flow holds it, so it is a field of the flow rather than a part that
 could be left out. A new capability later is a new kind here rather than a new
 command.
 """
-FlowPart = FlowPartMusic
+FlowPart = FlowPartMusic | FlowPartCountdown
 
 
 class DeckSourceSong(TypedDict):
@@ -625,7 +686,11 @@ class StartFlowArgs(TypedDict):
     the timeline where it already is, the opening cut exactly like a late
     start. Only one flow runs at a time. A flow whose window has already
     closed is refused with windowPassed rather than accepted and completed
-    instantly, so pressing start never looks like nothing happened.
+    instantly, so pressing start never looks like nothing happened. A
+    countdown part is refused as its kind describes — countdownOutsideLock,
+    countdownOverlapsMusic, noticesOverlap, noticeMissing — and the whole flow
+    with countdownUnderway when pressed inside the countdown's block; a music
+    part naming a countdown track is refused with noticeTrack.
     """
     id: str  # The caller's own id for this flow, uninterpreted and handed back on every status.
     name: str  # Display name, e.g. '수요 예배'
@@ -659,7 +724,10 @@ class SaveFlowArgs(TypedDict):
     one the next boot refuses. Refused with musicOutsideLock if the music
     could not finish inside the gate window, and with unknownTrack if it names
     a track this server does not have — both caught while somebody is still
-    editing rather than at 19:30 on a Wednesday.
+    editing rather than at 19:30 on a Wednesday. Its countdown is checked the
+    way a start would check it, against today: countdownOutsideLock,
+    countdownOverlapsMusic, noticesOverlap and noticeMissing; music naming a
+    countdown track is noticeTrack.
     """
     flow: ScheduleEntry  # The entry to write. A known id replaces in place; a new one is appended.
 
@@ -732,7 +800,7 @@ class RenameTrackArgs(TypedDict):
     left empty is refused with invalidValue, one another track already has
     with titleTaken. Refused with deckSong for a song the panel offers: those
     are named once, in ready.songs, and a panel installed by hand is not asked
-    to notice a rename.
+    to notice a rename. Refused with noticeTrack for a countdown track.
     """
     id: str  # Track id from the tracks attribute
     title: str  # The new name
@@ -744,7 +812,8 @@ class DeleteTrackArgs(TypedDict):
     deckSong for a song the panel offers, and with trackInUse while anything
     still needs it: a calendar entry that names it, the run in flight, or the
     deck it is on right now. A run copies its tracks when it starts, so the
-    calendar alone would let a run lose a track it has yet to play.
+    calendar alone would let a run lose a track it has yet to play. Refused
+    with noticeTrack for a countdown track: a countdown needs it.
     """
     id: str  # Track id from the tracks attribute
 
@@ -763,7 +832,8 @@ class SelectTrackArgs(TypedDict):
     comes due; the run goes back to the deck it was handed, not to the track
     somebody put on during its quiet half. Releasing the gate takes the track
     off and puts the user's song back. Refused with levelMatching while a
-    level measurement has the deck.
+    level measurement has the deck, and with noticeTrack for a countdown track
+    — only a flow's countdown plays those.
     """
     id: str  # Track id from the tracks attribute
 

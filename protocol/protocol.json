@@ -65,6 +65,12 @@
         "DECK_PLAYING": "deckPlaying",
         "DECK_MUTED": "deckMuted",
         "NOT_MEASURING": "notMeasuring",
+        "NOTICE_TRACK": "noticeTrack",
+        "NOTICE_MISSING": "noticeMissing",
+        "COUNTDOWN_OUTSIDE_LOCK": "countdownOutsideLock",
+        "COUNTDOWN_OVERLAPS_MUSIC": "countdownOverlapsMusic",
+        "NOTICES_OVERLAP": "noticesOverlap",
+        "COUNTDOWN_UNDERWAY": "countdownUnderway",
         "PROTOCOL_MISMATCH": "protocolMismatch"
       }
     },
@@ -80,6 +86,14 @@
         "DESK_HELD": "deskHeld",
         "NO_SIGNAL": "noSignal"
       }
+    },
+    "TrackRole": {
+      "description": "What a track is for. Music is what people and a flow's music play. The other three are a countdown's audio: the server plays them itself, inside a flow, and the player never puts one on.",
+      "values": { "MUSIC": "music", "ONE_MINUTE": "oneMinute", "THIRTY_SECONDS": "thirtySeconds", "COUNT": "count" }
+    },
+    "Notice": {
+      "description": "An announcement a countdown may play ahead of its count: oneMinute is 1분 남았습니다, sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty seconds before.",
+      "values": { "ONE_MINUTE": "oneMinute", "THIRTY_SECONDS": "thirtySeconds" }
     }
   },
   "types": {
@@ -110,7 +124,8 @@
         "id": { "type": "string", "description": "Stable identifier used by startFlow" },
         "title": { "type": "string", "description": "Human-readable name" },
         "durationSec": { "type": "number", "description": "Length in seconds, measured from the file" },
-        "volume": { "type": "number", "description": "The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written." }
+        "volume": { "type": "number", "description": "The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written." },
+        "role": { "type": "TrackRole", "description": "music, or which part of a countdown it is. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it." }
       }
     },
     "ScheduledTrack": {
@@ -162,7 +177,7 @@
       "discriminator": "kind",
       "variants": {
         "music": {
-          "description": "With the music. The usual case, and only valid on an entry that has a music part.",
+          "description": "With the last sound: the music, or a countdown that ends after it. The usual case, and only valid on an entry that has a music or a countdown part.",
           "fields": {}
         },
         "clock": {
@@ -218,6 +233,13 @@
           "fields": {
             "tracks": { "type": "ScheduledTrack[]", "description": "The tracks in play order, each with the level it plays at" },
             "endsAt": { "type": "string", "description": "HH:MM or HH:MM:SS, church time. Seconds are allowed because track lengths are not whole minutes." }
+          }
+        },
+        "countdown": {
+          "description": "Count down to a moment, on the band's ears alone. Everything as in FlowPart's countdown.",
+          "fields": {
+            "at": { "type": "string", "description": "HH:MM or HH:MM:SS, church time: when the count reaches zero" },
+            "notices": { "type": "Notice[]", "description": "Which notices go ahead of the count. Empty for the count alone; at most one of each." }
           }
         }
       }
@@ -349,6 +371,13 @@
           "fields": {
             "tracks": { "type": "ScheduledTrack[]", "description": "The tracks in play order, each with the level it plays at" },
             "endsAt": { "type": "string", "description": "Instant the last track must finish" }
+          }
+        },
+        "countdown": {
+          "description": "Count down to a moment, on the band's ears alone: the count (카운트다운을 시작합니다, then 10 to 1) always, ending exactly at at, and ahead of it whichever notices were ticked, each on its own second. The server picks the audio by role from its tracks and plays each at that track's own level. It is one block, from 10 seconds before its first sound to zero: nothing else sounds in it, and the desk is set so the music player reaches AuxMix alone — which the band hears on their P16s — and put back after. The block must lie inside the lock window (countdownOutsideLock) and clear of the flow's music (countdownOverlapsMusic), and no notice may start before the one ahead of it has ended (noticesOverlap); a countdown track missing from the library is noticeMissing. A flow is never started inside its countdown's block (countdownUnderway): started before it, the countdown plays whole; after it, the countdown is behind it.",
+          "fields": {
+            "at": { "type": "string", "description": "Instant the count reaches zero" },
+            "notices": { "type": "Notice[]", "description": "Which notices go ahead of the count. Empty for the count alone; at most one of each." }
           }
         }
       }
@@ -544,7 +573,7 @@
       "args": {}
     },
     "startFlow": {
-      "description": "Hand the server one run, spelled out in instants, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. This is the primitive underneath startScheduledFlow, which is how a calendar entry is normally run — reach for this one only to run something that is not on the calendar. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.",
+      "description": "Hand the server one run, spelled out in instants, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. This is the primitive underneath startScheduledFlow, which is how a calendar entry is normally run — reach for this one only to run something that is not on the calendar. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened. A countdown part is refused as its kind describes — countdownOutsideLock, countdownOverlapsMusic, noticesOverlap, noticeMissing — and the whole flow with countdownUnderway when pressed inside the countdown's block; a music part naming a countdown track is refused with noticeTrack.",
       "permission": "admin",
       "args": {
         "id": { "type": "string", "description": "The caller's own id for this flow, uninterpreted and handed back on every status." },
@@ -564,7 +593,7 @@
       "args": {}
     },
     "saveFlow": {
-      "description": "Create or replace one calendar entry, and write the calendar to disk. Validated the way the file is at boot, so an entry saved here cannot be one the next boot refuses. Refused with musicOutsideLock if the music could not finish inside the gate window, and with unknownTrack if it names a track this server does not have — both caught while somebody is still editing rather than at 19:30 on a Wednesday.",
+      "description": "Create or replace one calendar entry, and write the calendar to disk. Validated the way the file is at boot, so an entry saved here cannot be one the next boot refuses. Refused with musicOutsideLock if the music could not finish inside the gate window, and with unknownTrack if it names a track this server does not have — both caught while somebody is still editing rather than at 19:30 on a Wednesday. Its countdown is checked the way a start would check it, against today: countdownOutsideLock, countdownOverlapsMusic, noticesOverlap and noticeMissing; music naming a countdown track is noticeTrack.",
       "permission": "admin",
       "args": {
         "flow": { "type": "ScheduleEntry", "description": "The entry to write. A known id replaces in place; a new one is appended." }
@@ -608,7 +637,7 @@
       }
     },
     "renameTrack": {
-      "description": "Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue, one another track already has with titleTaken. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.",
+      "description": "Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue, one another track already has with titleTaken. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename. Refused with noticeTrack for a countdown track.",
       "permission": "admin",
       "args": {
         "id": { "type": "string", "description": "Track id from the tracks attribute" },
@@ -616,14 +645,14 @@
       }
     },
     "deleteTrack": {
-      "description": "Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play.",
+      "description": "Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play. Refused with noticeTrack for a countdown track: a countdown needs it.",
       "permission": "admin",
       "args": {
         "id": { "type": "string", "description": "Track id from the tracks attribute" }
       }
     },
     "selectTrack": {
-      "description": "Put a library track on the deck, paused at its start, at its own level — the same act as writing the song attribute, for the tracks that are not among ready.songs. Playing it is a separate write to playback. Refused with adminUnlocked unless the gate is held: while the panel is open it shows the song it thinks is playing, and a track it never chose would make that a lie. Refused with flowActive while a run's music is sounding — a run holds the gate, so that first check passes during a service and this one is what keeps the deck the run's. While a run only holds the gate this is allowed, and what it puts on is faded out when the run's own music comes due; the run goes back to the deck it was handed, not to the track somebody put on during its quiet half. Releasing the gate takes the track off and puts the user's song back. Refused with levelMatching while a level measurement has the deck.",
+      "description": "Put a library track on the deck, paused at its start, at its own level — the same act as writing the song attribute, for the tracks that are not among ready.songs. Playing it is a separate write to playback. Refused with adminUnlocked unless the gate is held: while the panel is open it shows the song it thinks is playing, and a track it never chose would make that a lie. Refused with flowActive while a run's music is sounding — a run holds the gate, so that first check passes during a service and this one is what keeps the deck the run's. While a run only holds the gate this is allowed, and what it puts on is faded out when the run's own music comes due; the run goes back to the deck it was handed, not to the track somebody put on during its quiet half. Releasing the gate takes the track off and puts the user's song back. Refused with levelMatching while a level measurement has the deck, and with noticeTrack for a countdown track — only a flow's countdown plays those.",
       "permission": "admin",
       "args": {
         "id": { "type": "string", "description": "Track id from the tracks attribute" }

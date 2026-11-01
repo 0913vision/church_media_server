@@ -162,7 +162,10 @@ class MediaServer {
     this.deskHolds = deskHolds;
     const mixerConsole = new MixerConsole(consoleDevice, deskHolds);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));
-    const flowRunner = new FlowRunner(player, trackLibrary, lockCoordinator, notifier, clock, mixerConsole, FLOW_CONFIG.TIMING);
+    const flowRunner = new FlowRunner(
+      player, trackLibrary, lockCoordinator, notifier, clock, mixerConsole,
+      [...CONSOLE_CONFIG.BAND_ONLY.BLOCK, ...CONSOLE_CONFIG.BAND_ONLY.OPEN], FLOW_CONFIG.TIMING,
+    );
     this.flowRunner = flowRunner;
     const levelMatcher = new LevelMatcher(
       player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner, LEVEL_CONFIG.TIMING,

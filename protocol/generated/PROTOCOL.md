@@ -90,7 +90,7 @@ _필드 없음._
 
 권한: admin
 
-Hand the server one run, spelled out in instants, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. This is the primitive underneath startScheduledFlow, which is how a calendar entry is normally run — reach for this one only to run something that is not on the calendar. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened.
+Hand the server one run, spelled out in instants, and it owns that run to the end: it keeps to the wall clock, restores the user's song afterwards, and cleans up however it finishes. This is the primitive underneath startScheduledFlow, which is how a calendar entry is normally run — reach for this one only to run something that is not on the calendar. Every flow holds the admin gate for a window it names, and music must finish inside that window: running past the unlock is refused with musicOutsideLock rather than played on an open panel, as is music that would end before the gate even engages, since it could never sound. A timeline that begins before the window is accepted — the sound starts with the lock and joins the timeline where it already is, the opening cut exactly like a late start. Only one flow runs at a time. A flow whose window has already closed is refused with windowPassed rather than accepted and completed instantly, so pressing start never looks like nothing happened. A countdown part is refused as its kind describes — countdownOutsideLock, countdownOverlapsMusic, noticesOverlap, noticeMissing — and the whole flow with countdownUnderway when pressed inside the countdown's block; a music part naming a countdown track is refused with noticeTrack.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -119,7 +119,7 @@ _필드 없음._
 
 권한: admin
 
-Create or replace one calendar entry, and write the calendar to disk. Validated the way the file is at boot, so an entry saved here cannot be one the next boot refuses. Refused with musicOutsideLock if the music could not finish inside the gate window, and with unknownTrack if it names a track this server does not have — both caught while somebody is still editing rather than at 19:30 on a Wednesday.
+Create or replace one calendar entry, and write the calendar to disk. Validated the way the file is at boot, so an entry saved here cannot be one the next boot refuses. Refused with musicOutsideLock if the music could not finish inside the gate window, and with unknownTrack if it names a track this server does not have — both caught while somebody is still editing rather than at 19:30 on a Wednesday. Its countdown is checked the way a start would check it, against today: countdownOutsideLock, countdownOverlapsMusic, noticesOverlap and noticeMissing; music naming a countdown track is noticeTrack.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -181,7 +181,7 @@ Make a new track, stored on the server for good: its audio moves into the librar
 
 권한: admin
 
-Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue, one another track already has with titleTaken. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename.
+Change what a track is called. Its id and audio stay as they are, so every flow that names it still does. Surrounding spaces are trimmed, and a title left empty is refused with invalidValue, one another track already has with titleTaken. Refused with deckSong for a song the panel offers: those are named once, in ready.songs, and a panel installed by hand is not asked to notice a rename. Refused with noticeTrack for a countdown track.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Change what a track is called. Its id and audio stay as they are, so every flow 
 
 권한: admin
 
-Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play.
+Take a track out of the library and delete its audio file. Refused with deckSong for a song the panel offers, and with trackInUse while anything still needs it: a calendar entry that names it, the run in flight, or the deck it is on right now. A run copies its tracks when it starts, so the calendar alone would let a run lose a track it has yet to play. Refused with noticeTrack for a countdown track: a countdown needs it.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -202,7 +202,7 @@ Take a track out of the library and delete its audio file. Refused with deckSong
 
 권한: admin
 
-Put a library track on the deck, paused at its start, at its own level — the same act as writing the song attribute, for the tracks that are not among ready.songs. Playing it is a separate write to playback. Refused with adminUnlocked unless the gate is held: while the panel is open it shows the song it thinks is playing, and a track it never chose would make that a lie. Refused with flowActive while a run's music is sounding — a run holds the gate, so that first check passes during a service and this one is what keeps the deck the run's. While a run only holds the gate this is allowed, and what it puts on is faded out when the run's own music comes due; the run goes back to the deck it was handed, not to the track somebody put on during its quiet half. Releasing the gate takes the track off and puts the user's song back. Refused with levelMatching while a level measurement has the deck.
+Put a library track on the deck, paused at its start, at its own level — the same act as writing the song attribute, for the tracks that are not among ready.songs. Playing it is a separate write to playback. Refused with adminUnlocked unless the gate is held: while the panel is open it shows the song it thinks is playing, and a track it never chose would make that a lie. Refused with flowActive while a run's music is sounding — a run holds the gate, so that first check passes during a service and this one is what keeps the deck the run's. While a run only holds the gate this is allowed, and what it puts on is faded out when the run's own music comes due; the run goes back to the deck it was handed, not to the track somebody put on during its quiet half. Releasing the gate takes the track off and puts the user's song back. Refused with levelMatching while a level measurement has the deck, and with noticeTrack for a countdown track — only a flow's countdown plays those.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -258,13 +258,25 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"titleTaken"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"consoleHeld"` · `"levelMatching"` · `"deckPlaying"` · `"deckMuted"` · `"notMeasuring"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"titleTaken"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"consoleHeld"` · `"levelMatching"` · `"deckPlaying"` · `"deckMuted"` · `"notMeasuring"` · `"noticeTrack"` · `"noticeMissing"` · `"countdownOutsideLock"` · `"countdownOverlapsMusic"` · `"noticesOverlap"` · `"countdownUnderway"` · `"protocolMismatch"`
 
 ### LevelFailure
 
 Why a level measurement ended without an answer. Nothing about the track was changed, and the deck and the desk were put back.
 
 `"stopped"` · `"gateReleased"` · `"deckTaken"` · `"deckFailed"` · `"deskMoved"` · `"deskSilent"` · `"deskHeld"` · `"noSignal"`
+
+### TrackRole
+
+What a track is for. Music is what people and a flow's music play. The other three are a countdown's audio: the server plays them itself, inside a flow, and the player never puts one on.
+
+`"music"` · `"oneMinute"` · `"thirtySeconds"` · `"count"`
+
+### Notice
+
+An announcement a countdown may play ahead of its count: oneMinute is 1분 남았습니다, sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty seconds before.
+
+`"oneMinute"` · `"thirtySeconds"`
 
 ## 객체
 
@@ -305,6 +317,7 @@ A playable library entry. File paths never leave the server.
 | `title` | `string` | Human-readable name |
 | `durationSec` | `number` | Length in seconds, measured from the file |
 | `volume` | `number` | The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written. |
+| `role` | `TrackRole` | music, or which part of a countdown it is. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it. |
 
 ### ScheduledTrack
 

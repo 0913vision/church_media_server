@@ -83,6 +83,12 @@ export const RejectReason = {
   DECK_PLAYING: 'deckPlaying',
   DECK_MUTED: 'deckMuted',
   NOT_MEASURING: 'notMeasuring',
+  NOTICE_TRACK: 'noticeTrack',
+  NOTICE_MISSING: 'noticeMissing',
+  COUNTDOWN_OUTSIDE_LOCK: 'countdownOutsideLock',
+  COUNTDOWN_OVERLAPS_MUSIC: 'countdownOverlapsMusic',
+  NOTICES_OVERLAP: 'noticesOverlap',
+  COUNTDOWN_UNDERWAY: 'countdownUnderway',
   PROTOCOL_MISMATCH: 'protocolMismatch',
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
@@ -107,6 +113,35 @@ export const LevelFailure = {
 export type LevelFailure = (typeof LevelFailure)[keyof typeof LevelFailure];
 export function isLevelFailure(value: unknown): value is LevelFailure {
   return typeof value === 'string' && (Object.values(LevelFailure) as string[]).includes(value);
+}
+
+/**
+ * What a track is for. Music is what people and a flow's music play. The other three
+ * are a countdown's audio: the server plays them itself, inside a flow, and the player
+ * never puts one on.
+ */
+export const TrackRole = {
+  MUSIC: 'music',
+  ONE_MINUTE: 'oneMinute',
+  THIRTY_SECONDS: 'thirtySeconds',
+  COUNT: 'count',
+} as const;
+export type TrackRole = (typeof TrackRole)[keyof typeof TrackRole];
+export function isTrackRole(value: unknown): value is TrackRole {
+  return typeof value === 'string' && (Object.values(TrackRole) as string[]).includes(value);
+}
+
+/**
+ * An announcement a countdown may play ahead of its count: oneMinute is 1분 남았습니다,
+ * sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty seconds before.
+ */
+export const Notice = {
+  ONE_MINUTE: 'oneMinute',
+  THIRTY_SECONDS: 'thirtySeconds',
+} as const;
+export type Notice = (typeof Notice)[keyof typeof Notice];
+export function isNotice(value: unknown): value is Notice {
+  return typeof value === 'string' && (Object.values(Notice) as string[]).includes(value);
 }
 
 /**
@@ -159,6 +194,12 @@ export interface Track {
    * track it plays, so changing this never rewrites a service already written.
    */
   volume: number;
+  /**
+   * music, or which part of a countdown it is. A countdown track is never put on the
+   * deck or used in a flow's music, and it is not renamed or deleted (noticeTrack);
+   * its level is set like any track's, and is how loud the band hears it.
+   */
+  role: TrackRole;
 }
 
 /**
@@ -241,7 +282,10 @@ export interface ConsoleInput {
  * time, so moving the music moves the gate with it.
  */
 export type ScheduleUntil =
-  /** With the music. The usual case, and only valid on an entry that has a music part. */
+  /**
+   * With the last sound: the music, or a countdown that ends after it. The usual case,
+   * and only valid on an entry that has a music or a countdown part.
+   */
   | { kind: 'music' }
   /**
    * At a time of its own — for an entry that holds the gate over something other than
@@ -307,9 +351,15 @@ export const DeadlineKind = {
 export type SchedulePart =
   /** Play these tracks in order so the last one finishes at endsAt. */
   | { kind: 'music'; tracks: ScheduledTrack[]; endsAt: string }
+  /**
+   * Count down to a moment, on the band's ears alone. Everything as in FlowPart's
+   * countdown.
+   */
+  | { kind: 'countdown'; at: string; notices: Notice[] }
   ;
 export const SchedulePartKind = {
   MUSIC: 'music',
+  COUNTDOWN: 'countdown',
 } as const;
 
 /**
@@ -425,9 +475,25 @@ export type FlowPart =
    * flow's lock window.
    */
   | { kind: 'music'; tracks: ScheduledTrack[]; endsAt: string }
+  /**
+   * Count down to a moment, on the band's ears alone: the count (카운트다운을 시작합니다, then 10
+   * to 1) always, ending exactly at at, and ahead of it whichever notices were ticked,
+   * each on its own second. The server picks the audio by role from its tracks and
+   * plays each at that track's own level. It is one block, from 10 seconds before its
+   * first sound to zero: nothing else sounds in it, and the desk is set so the music
+   * player reaches AuxMix alone — which the band hears on their P16s — and put back
+   * after. The block must lie inside the lock window (countdownOutsideLock) and clear
+   * of the flow's music (countdownOverlapsMusic), and no notice may start before the
+   * one ahead of it has ended (noticesOverlap); a countdown track missing from the
+   * library is noticeMissing. A flow is never started inside its countdown's block
+   * (countdownUnderway): started before it, the countdown plays whole; after it, the
+   * countdown is behind it.
+   */
+  | { kind: 'countdown'; at: string; notices: Notice[] }
   ;
 export const FlowPartKind = {
   MUSIC: 'music',
+  COUNTDOWN: 'countdown',
 } as const;
 
 /**
@@ -685,7 +751,11 @@ export const COMMANDS = {
    * lock and joins the timeline where it already is, the opening cut exactly like a
    * late start. Only one flow runs at a time. A flow whose window has already closed
    * is refused with windowPassed rather than accepted and completed instantly, so
-   * pressing start never looks like nothing happened.
+   * pressing start never looks like nothing happened. A countdown part is refused as
+   * its kind describes — countdownOutsideLock, countdownOverlapsMusic, noticesOverlap,
+   * noticeMissing — and the whole flow with countdownUnderway when pressed inside the
+   * countdown's block; a music part naming a countdown track is refused with
+   * noticeTrack.
    */
   startFlow: { permission: 'admin' },
   /**
@@ -706,6 +776,9 @@ export const COMMANDS = {
    * refuses. Refused with musicOutsideLock if the music could not finish inside the
    * gate window, and with unknownTrack if it names a track this server does not have —
    * both caught while somebody is still editing rather than at 19:30 on a Wednesday.
+   * Its countdown is checked the way a start would check it, against today:
+   * countdownOutsideLock, countdownOverlapsMusic, noticesOverlap and noticeMissing;
+   * music naming a countdown track is noticeTrack.
    */
   saveFlow: { permission: 'admin' },
   /**
@@ -754,6 +827,7 @@ export const COMMANDS = {
    * is refused with invalidValue, one another track already has with titleTaken.
    * Refused with deckSong for a song the panel offers: those are named once, in
    * ready.songs, and a panel installed by hand is not asked to notice a rename.
+   * Refused with noticeTrack for a countdown track.
    */
   renameTrack: { permission: 'admin' },
   /**
@@ -761,7 +835,8 @@ export const COMMANDS = {
    * for a song the panel offers, and with trackInUse while anything still needs it: a
    * calendar entry that names it, the run in flight, or the deck it is on right now. A
    * run copies its tracks when it starts, so the calendar alone would let a run lose a
-   * track it has yet to play.
+   * track it has yet to play. Refused with noticeTrack for a countdown track: a
+   * countdown needs it.
    */
   deleteTrack: { permission: 'admin' },
   /**
@@ -776,7 +851,8 @@ export const COMMANDS = {
    * music comes due; the run goes back to the deck it was handed, not to the track
    * somebody put on during its quiet half. Releasing the gate takes the track off and
    * puts the user's song back. Refused with levelMatching while a level measurement
-   * has the deck.
+   * has the deck, and with noticeTrack for a countdown track — only a flow's countdown
+   * plays those.
    */
   selectTrack: { permission: 'admin' },
   /**

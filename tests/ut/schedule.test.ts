@@ -144,6 +144,48 @@ describe('Schedule Tests', () => {
     }
   });
 
+  test('a countdown is written with the flow, its block checked as a start would check it', async () => {
+    const admin = await connectAuthedAdmin();
+    const tracks = [{ id: someTrackId, volume: 40 }];
+    const countdown = (at: string, notices: string[]) => ({ kind: 'countdown', at, notices });
+    const refused = async (flow: Record<string, unknown>): Promise<string> => {
+      const answer = admin.waitForRejected('saveFlow');
+      admin.invoke('saveFlow', { flow });
+      return answer;
+    };
+
+    try {
+      const list = await saved(admin, entry('countdown-test', {
+        lock: { at: '19:00', until: { kind: 'music' } },
+        parts: [{ kind: 'music', tracks, endsAt: '19:30' }, countdown('20:00', ['oneMinute', 'thirtySeconds'])],
+      }));
+      assert.deepStrictEqual(list[0]!.parts[1], countdown('20:00', ['oneMinute', 'thirtySeconds']));
+
+      const alone = await saved(admin, entry('countdown-test', { lock: { at: '19:00', until: { kind: 'music' } }, parts: [countdown('20:00', [])] }));
+      assert.deepStrictEqual(alone[0]!.parts, [countdown('20:00', [])], 'the gate can follow a countdown alone');
+
+      assert.strictEqual(await refused(entry('countdown-test', {
+        lock: { at: '19:00', until: { kind: 'music' } },
+        parts: [{ kind: 'music', tracks, endsAt: '19:59:30' }, countdown('20:00', ['oneMinute'])],
+      })), RejectReason.COUNTDOWN_OVERLAPS_MUSIC);
+      assert.strictEqual(await refused(entry('countdown-test', {
+        lock: { at: '19:59:30', until: { kind: 'clock', at: '20:30' } },
+        parts: [countdown('20:00', ['oneMinute'])],
+      })), RejectReason.COUNTDOWN_OUTSIDE_LOCK);
+      assert.strictEqual(await refused(entry('countdown-test', {
+        parts: [countdown('20:00', ['twoMinutes'])],
+      })), RejectReason.INVALID_VALUE);
+
+      const count = (await admin.read()).tracks!.find((track) => track.role === 'count')!;
+      assert.strictEqual(await refused(entry('countdown-test', {
+        parts: [{ kind: 'music', tracks: [{ id: count.id, volume: 40 }], endsAt: '20:00' }],
+      })), RejectReason.NOTICE_TRACK);
+    } finally {
+      await clear(admin).catch(() => {});
+      admin.disconnect();
+    }
+  });
+
   test('starting an entry is refused on a day it does not run', async () => {
     const admin = await connectAuthedAdmin();
 

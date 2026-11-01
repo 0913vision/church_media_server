@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { SongId } from '../constants/songs.ts';
 import { TRACK_CONFIG } from '../constants/trackConfig.ts';
+import { TrackRole, isTrackRole } from '../protocol.ts';
 import type { Song, Track } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -25,7 +26,7 @@ const STAGING = /^\.incoming-[0-9a-f]+\./;
 
 /**
  * Track library: loads a JSON manifest at boot
- * (`[{ id, title, file, durationSec, volume, userSelectable? }]`, file paths
+ * (`[{ id, title, file, durationSec, volume, userSelectable?, role? }]`, file paths
  * relative to the manifest) and fails fast on any invalid entry, matching the
  * server's no-defaults policy.
  *
@@ -33,6 +34,7 @@ const STAGING = /^\.incoming-[0-9a-f]+\./;
  * it sounds at unless a flow says otherwise. `userSelectable` marks the ones a
  * person may also pick at the panel: those, in manifest order, are the deck's
  * songs. So the deck's size, order, names, files and levels are all data.
+ * `role` marks a countdown's audio, one track per role; without it an entry is music.
  *
  * Note(yoochan.kim): the manifest is the server's file, not a checked-in one — it is
  * kept out of git and rewritten here when a track is renamed or deleted or its
@@ -66,7 +68,7 @@ class TrackLibrary {
     }
 
     for (const entry of parsed) {
-      const { id, title, file, durationSec, volume, userSelectable } = entry as Record<string, unknown>;
+      const { id, title, file, durationSec, volume, userSelectable, role } = entry as Record<string, unknown>;
       if (typeof id !== 'string' || id.length === 0 ||
           typeof title !== 'string' || title.length === 0 ||
           typeof file !== 'string' || file.length === 0 ||
@@ -78,6 +80,16 @@ class TrackLibrary {
       }
       if (userSelectable !== undefined && typeof userSelectable !== 'boolean') {
         throw new Error(`Track '${id}' has a non-boolean userSelectable: ${JSON.stringify(userSelectable)}`);
+      }
+      if (role !== undefined && !isTrackRole(role)) {
+        throw new Error(`Track '${id}' has an unknown role: ${JSON.stringify(role)}`);
+      }
+      const trackRole = role ?? TrackRole.MUSIC;
+      if (trackRole !== TrackRole.MUSIC && userSelectable === true) {
+        throw new Error(`Track '${id}' is a countdown's ${trackRole} and cannot be a deck song too`);
+      }
+      if (trackRole !== TrackRole.MUSIC && [...this.tracks.values()].some((each) => each.role === trackRole)) {
+        throw new Error(`Two tracks in the manifest are the countdown's ${trackRole}`);
       }
       if (this.tracks.has(id)) {
         throw new Error(`Duplicate track id in manifest: ${id}`);
@@ -92,6 +104,7 @@ class TrackLibrary {
       this.tracks.set(id, {
         id, title, file: resolvedFile, declaredFile: file, durationSec, volume,
         userSelectable: userSelectable === true,
+        role: trackRole,
       });
     }
 
@@ -114,6 +127,17 @@ class TrackLibrary {
 
   isDeckSong(id: unknown): id is SongId {
     return typeof id === 'string' && this.tracks.get(id)?.userSelectable === true;
+  }
+
+  /** Whether a track is a countdown's audio, which only a flow's countdown plays. */
+  isCountdownTrack(id: string): boolean {
+    const role = this.tracks.get(id)?.role;
+    return role !== undefined && role !== TrackRole.MUSIC;
+  }
+
+  /** The track that plays one part of a countdown, if the library has one. */
+  countdownTrack(role: Exclude<TrackRole, 'music'>): LibraryEntry | undefined {
+    return [...this.tracks.values()].find((entry) => entry.role === role);
   }
 
   /** The deck's audio files, one per song — the manifest owns these too */
@@ -166,6 +190,7 @@ class TrackLibrary {
       declaredFile: `./${path.relative(path.dirname(this.manifestPath), file)}`,
       volume: TRACK_CONFIG.NEW_TRACK_VOLUME,
       userSelectable: false,
+      role: TrackRole.MUSIC,
     };
     this.tracks.set(id, entry);
     this.persist();
@@ -210,7 +235,7 @@ class TrackLibrary {
 
   /** The client-facing slice: everything but where the audio lives. */
   list(): Track[] {
-    return [...this.tracks.values()].map(({ id, title, durationSec, volume }) => ({ id, title, durationSec, volume }));
+    return [...this.tracks.values()].map(({ id, title, durationSec, volume, role }) => ({ id, title, durationSec, volume, role }));
   }
 
   get(id: string): LibraryEntry | undefined {
@@ -250,6 +275,7 @@ class TrackLibrary {
       durationSec: entry.durationSec,
       volume: entry.volume,
       ...(entry.userSelectable ? { userSelectable: true } : {}),
+      ...(entry.role !== TrackRole.MUSIC ? { role: entry.role } : {}),
     }));
     try {
       const tmp = `${this.manifestPath}.tmp`;

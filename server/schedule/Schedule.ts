@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ScheduleEntry, SchedulePart } from '../protocol.ts';
+import { isNotice } from '../protocol.ts';
+import type { Notice, ScheduleEntry, SchedulePart } from '../protocol.ts';
 import { formatInstant } from '../utils/instant.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -17,7 +18,10 @@ export interface RunArgs {
   id: string;
   name: string;
   lock: { at: string; until: string };
-  parts: { kind: 'music'; tracks: { id: string; volume: number }[]; endsAt: string }[];
+  parts: (
+    | { kind: 'music'; tracks: { id: string; volume: number }[]; endsAt: string }
+    | { kind: 'countdown'; at: string; notices: Notice[] }
+  )[];
 }
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -103,20 +107,23 @@ class Schedule {
     const opensAt = onDay(now, entry.lock.at);
 
     const parts: RunArgs['parts'] = [];
-    let musicEndsAt: Date | null = null;
+    let lastSound: Date | null = null;
     for (const part of entry.parts) {
-      const endsAt = onDay(now, part.endsAt);
-      // A finish before the gate opens is tomorrow's: a run crossing midnight.
-      if (endsAt < opensAt) endsAt.setDate(endsAt.getDate() + 1);
-      musicEndsAt = endsAt;
-      parts.push({ kind: 'music', tracks: part.tracks.map((track) => ({ ...track })), endsAt: formatInstant(endsAt) });
+      const ends = onDay(now, part.kind === 'music' ? part.endsAt : part.at);
+      // An end before the gate opens is tomorrow's: a run crossing midnight.
+      if (ends < opensAt) ends.setDate(ends.getDate() + 1);
+      if (!lastSound || ends > lastSound) lastSound = ends;
+      parts.push(part.kind === 'music'
+        ? { kind: 'music', tracks: part.tracks.map((track) => ({ ...track })), endsAt: formatInstant(ends) }
+        : { kind: 'countdown', at: formatInstant(ends), notices: [...part.notices] });
     }
 
     let closesAt: Date;
     if (entry.lock.until.kind === 'music') {
       // Note(yoochan.kim): stated as an intent rather than a copied time, so moving the
-      // music moves the gate with it. Validation guarantees the music exists.
-      closesAt = musicEndsAt!;
+      // music moves the gate with it — or the countdown, when the last sound is its zero.
+      // Validation guarantees there is one.
+      closesAt = lastSound!;
     } else {
       closesAt = onDay(now, entry.lock.until.at);
       if (closesAt <= opensAt) closesAt.setDate(closesAt.getDate() + 1);
@@ -148,9 +155,9 @@ export function runsOn(entry: ScheduleEntry, day: Date): boolean {
   return entry.weekdays.includes(WEEKDAY_KEYS[(day.getDay() + 6) % 7]!);
 }
 
-/** Every track id an entry names, in play order. */
+/** Every track id an entry's music names, in play order; a countdown names none. */
 export function tracksOf(entry: ScheduleEntry): string[] {
-  return entry.parts.flatMap((part) => part.tracks.map((track) => track.id));
+  return entry.parts.flatMap((part) => (part.kind === 'music' ? part.tracks.map((track) => track.id) : []));
 }
 
 /** Seconds since midnight, from HH:MM or HH:MM:SS. */
@@ -171,7 +178,9 @@ function copy(entry: ScheduleEntry): ScheduleEntry {
     ...entry,
     weekdays: [...entry.weekdays],
     lock: { at: entry.lock.at, until: { ...entry.lock.until } },
-    parts: entry.parts.map((part) => ({ ...part, tracks: part.tracks.map((track) => ({ ...track })) })),
+    parts: entry.parts.map((part) => (part.kind === 'music'
+      ? { ...part, tracks: part.tracks.map((track) => ({ ...track })) }
+      : { ...part, notices: [...part.notices] })),
   };
 }
 
@@ -210,7 +219,7 @@ export function validate(value: unknown): Checked<ScheduleEntry> {
   const checkedLock = validateLock(id, lock, checkedParts);
   if (!checkedLock.ok) return checkedLock;
 
-  const covered = musicIsCovered(id, checkedLock.value, checkedParts);
+  const covered = partsAreCovered(id, checkedLock.value, checkedParts);
   if (!covered.ok) return covered;
 
   return {
@@ -227,25 +236,28 @@ export function validate(value: unknown): Checked<ScheduleEntry> {
 }
 
 /**
- * Whether the music finishes inside the gate window.
+ * Whether the music finishes, and the countdown reaches zero, inside the gate window.
  *
  * Note(yoochan.kim): measured as distance after the gate opens, not as clock times, so a
  * window that runs past midnight is one interval rather than two. The runner
  * refuses this too, but only when start is pressed — which is during a service.
  * The same rule here catches it while somebody is still editing.
  */
-function musicIsCovered(id: string, lock: ScheduleEntry['lock'], parts: SchedulePart[]): Checked<true> {
-  const music = parts.find((part) => part.kind === 'music');
-  if (!music) return { ok: true, value: true };
+function partsAreCovered(id: string, lock: ScheduleEntry['lock'], parts: SchedulePart[]): Checked<true> {
+  if (parts.length === 0) return { ok: true, value: true };
 
   const opens = secondsOf(lock.at);
   const after = (clock: string): number => ((secondsOf(clock) - opens) % 86400 + 86400) % 86400;
+  const ends = parts.map((part) => ({ what: part.kind === 'music' ? 'the music ends' : 'the countdown reaches zero', at: after(part.kind === 'music' ? part.endsAt : part.at) }));
 
-  const ends = after(music.endsAt);
-  if (ends === 0) return bad(`${id}: the music ends the moment the gate opens, so it could never sound`);
-  const closes = lock.until.kind === 'music' ? ends : after(lock.until.at);
+  for (const end of ends) {
+    if (end.at === 0) return bad(`${id}: ${end.what} the moment the gate opens, so it could never sound`);
+  }
+  const closes = lock.until.kind === 'music' ? Math.max(...ends.map((end) => end.at)) : after(lock.until.at);
   if (closes === 0) return bad(`${id}: the gate would close the moment it opens`);
-  if (ends > closes) return bad(`${id}: the music ends after the gate opens again`);
+  for (const end of ends) {
+    if (end.at > closes) return bad(`${id}: ${end.what} after the gate opens again`);
+  }
   return { ok: true, value: true };
 }
 
@@ -257,10 +269,9 @@ function validateLock(id: string, value: unknown, parts: SchedulePart[]): Checke
   const until = lock.until;
   if (typeof until !== 'object' || until === null) return bad(`${id}: lock.until must be an object`);
   const kind = (until as Record<string, unknown>).kind;
-  const music = parts.find((part) => part.kind === 'music');
 
   if (kind === 'music') {
-    if (!music) return bad(`${id}: lock.until follows the music, but there is none`);
+    if (parts.length === 0) return bad(`${id}: lock.until follows the last sound, but there is no music or countdown`);
     return { ok: true, value: { at: lock.at, until: { kind: 'music' } } };
   }
   if (kind === 'clock') {
@@ -274,7 +285,8 @@ function validateLock(id: string, value: unknown, parts: SchedulePart[]): Checke
 function validatePart(id: string, value: unknown): Checked<SchedulePart> {
   if (typeof value !== 'object' || value === null) return bad(`${id}: each part must be an object`);
   const part = value as Record<string, unknown>;
-  if (part.kind !== 'music') return bad(`${id}: unknown part kind ${JSON.stringify(part.kind)} (only music today)`);
+  if (part.kind === 'countdown') return validateCountdown(id, part);
+  if (part.kind !== 'music') return bad(`${id}: unknown part kind ${JSON.stringify(part.kind)} (use music or countdown)`);
   if (!isClock(part.endsAt)) return bad(`${id}: endsAt must be HH:MM or HH:MM:SS, got ${JSON.stringify(part.endsAt)}`);
 
   const tracks = part.tracks;
@@ -292,6 +304,18 @@ function validatePart(id: string, value: unknown): Checked<SchedulePart> {
     checked.push({ id: cue.id, volume: cue.volume });
   }
   return { ok: true, value: { kind: 'music', tracks: checked, endsAt: part.endsAt } };
+}
+
+/** A countdown: when it reaches zero, and which notices go ahead of the count. */
+function validateCountdown(id: string, part: Record<string, unknown>): Checked<SchedulePart> {
+  if (!isClock(part.at)) return bad(`${id}: the countdown's at must be HH:MM or HH:MM:SS, got ${JSON.stringify(part.at)}`);
+  const notices = part.notices;
+  if (!Array.isArray(notices)) return bad(`${id}: the countdown's notices must be a list`);
+  for (const notice of notices) {
+    if (!isNotice(notice)) return bad(`${id}: unknown notice ${JSON.stringify(notice)} (use oneMinute or thirtySeconds)`);
+  }
+  if (new Set(notices).size !== notices.length) return bad(`${id}: a notice appears more than once`);
+  return { ok: true, value: { kind: 'countdown', at: part.at, notices: notices as Notice[] } };
 }
 
 function isClock(value: unknown): value is string {

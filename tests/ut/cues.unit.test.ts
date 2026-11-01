@@ -11,6 +11,7 @@ import { dbFromLevel, mpvVolumeFromDb } from '../../server/hardware/loudness.ts'
 import { int } from '../../server/console/desk.ts';
 import type { DeskChange } from '../../server/console/desk.ts';
 import { dbFromFader } from '../../server/console/faderLevel.ts';
+import { formatInstant } from '../../server/utils/instant.ts';
 
 // Note(yoochan.kim): a run's cues against a stand-in mpv that writes down what it was
 // told and when, so nothing here can make a sound. The modules read env-backed
@@ -81,11 +82,24 @@ class FakeMpv {
   }
 }
 
-function entry(id: string, durationSec: number, volume: number): LibraryEntry {
-  return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false };
+function entry(id: string, durationSec: number, volume: number, role: LibraryEntry['role'] = 'music'): LibraryEntry {
+  return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false, role };
 }
 
-function rig() {
+/** A library with one music track and the countdown's three, as the flow runner asks of it. */
+const TRACKS = [
+  entry('song', 30, 50),
+  entry('min', 1.1, 60, 'oneMinute'),
+  entry('half', 1.0, 60, 'thirtySeconds'),
+  entry('count', 12.3, 70, 'count'),
+];
+const LIBRARY = {
+  get: (id: string) => TRACKS.find((track) => track.id === id),
+  isCountdownTrack: (id: string) => TRACKS.some((track) => track.id === id && track.role !== 'music'),
+  countdownTrack: (role: string) => TRACKS.find((track) => track.role === role),
+} as unknown as TrackLibrary;
+
+function rig(library: TrackLibrary = LIBRARY) {
   const mpv = new FakeMpv();
   const device = new m.AudioDevice(mpv as unknown as MpvClient, 'calm', { calm: '/audio/calm.mp3' });
   const player = new m.Player(
@@ -100,7 +114,9 @@ function rig() {
   const holds = new m.DeskHolds(desk, HOLD_TIMING, () => {}, []);
   const mixer = new m.MixerConsole(desk, holds);
   const clock = new m.Clock(0);
-  const runner = new m.FlowRunner(player, {} as TrackLibrary, locks, notifier, clock, mixer, TIMING);
+  const runner = new m.FlowRunner(
+    player, library, locks, notifier, clock, mixer, [...m.BAND_ONLY.BLOCK, ...m.BAND_ONLY.OPEN], TIMING,
+  );
   return { mpv, player, locks, runner, desk, holds, clock };
 }
 
@@ -326,6 +342,58 @@ describe('A run\'s countdown', () => {
   });
 });
 
+describe('A countdown as a flow asks for it', () => {
+  const at = (ms: number): string => formatInstant(new Date(ms));
+  // Far enough ahead that nothing starts while these run.
+  const zero = Date.now() + 3_600_000;
+  const flow = (parts: unknown[], lockFrom = zero - 600_000) =>
+    ({ id: 'f', name: 'f', lock: { at: at(lockFrom), until: at(zero) }, parts });
+  const music = (endsAt: number) => ({ kind: 'music', tracks: [{ id: 'song', volume: 50 }], endsAt: at(endsAt) });
+  const countdown = (notices: string[]) => ({ kind: 'countdown', at: at(zero), notices });
+  // The test timing keeps 0.8s ahead of the first sound.
+  const LEAD = 800;
+
+  test('1분 전 starts sixty seconds before zero, its block that much and the lead ahead of it', () => {
+    const { runner } = rig();
+    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD), countdown(['oneMinute'])])), { ok: true });
+    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD + 100), countdown(['oneMinute'])])),
+      { ok: false, reason: 'countdownOverlapsMusic' });
+  });
+
+  test('the count alone ends at zero, its block its length and the lead ahead of it', () => {
+    const { runner } = rig();
+    assert.deepEqual(runner.check(flow([music(zero - 12_300 - LEAD), countdown([])])), { ok: true });
+    assert.deepEqual(runner.check(flow([music(zero - 12_300 - LEAD + 100), countdown([])])),
+      { ok: false, reason: 'countdownOverlapsMusic' });
+    assert.deepEqual(runner.check(flow([countdown(['thirtySeconds'])], zero - 30_000)),
+      { ok: false, reason: 'countdownOutsideLock' }, '30초 전 needs its lead inside the gate too');
+  });
+
+  test('a countdown whose audio the library lacks is noticeMissing', () => {
+    const { runner } = rig({ ...LIBRARY, countdownTrack: (role: string) => (role === 'thirtySeconds' ? undefined : LIBRARY.countdownTrack(role as 'count')) } as unknown as TrackLibrary);
+    assert.deepEqual(runner.check(flow([countdown(['oneMinute'])])), { ok: true });
+    assert.deepEqual(runner.check(flow([countdown(['thirtySeconds'])])), { ok: false, reason: 'noticeMissing' });
+  });
+
+  test('music naming a countdown track is noticeTrack; a notice unknown or twice is invalidValue', () => {
+    const { runner } = rig();
+    const asMusic = { kind: 'music', tracks: [{ id: 'count', volume: 50 }], endsAt: at(zero - 120_000) };
+    assert.deepEqual(runner.check(flow([asMusic])), { ok: false, reason: 'noticeTrack' });
+    assert.deepEqual(runner.check(flow([countdown(['twoMinutes'])])), { ok: false, reason: 'invalidValue' });
+    assert.deepEqual(runner.check(flow([countdown(['oneMinute', 'oneMinute'])])), { ok: false, reason: 'invalidValue' });
+  });
+
+  test('started inside its block it is refused with countdownUnderway, and nothing happens', async () => {
+    const { runner, mpv } = rig();
+    mpv.calls = [];
+    const soon = Date.now() + 5_000;
+    const inside = { id: 'f', name: 'f', lock: { at: at(Date.now() - 60_000), until: at(soon) }, parts: [{ kind: 'countdown', at: at(soon), notices: [] }] };
+    assert.deepEqual(await runner.start(inside), { ok: false, reason: 'countdownUnderway' });
+    assert.equal(runner.ownsDeck(), false);
+    assert.deepEqual(mpv.calls, []);
+  });
+});
+
 describe('A timeline with a countdown', () => {
   /** The real lead times: a countdown with a desk keeps 7s of quiet ahead of its first clip, without one 2s. */
   const REAL: FlowTiming = { CUE_PRELOAD_MS: 2000, CUE_GRACE_MS: 500, CUE_DESK_LEAD_MS: 5000, CUE_LEAD_SLACK_MS: 3000 };
@@ -364,7 +432,7 @@ describe('A timeline with a countdown', () => {
   });
 
   test('no notice may begin before the one ahead of it has ended', () => {
-    assert.equal(m.timelineConflict({ lock, parts: [countdown(DESK, [40_000, 2], [41_000, 1])] }, REAL), 'cuesOverlap');
+    assert.equal(m.timelineConflict({ lock, parts: [countdown(DESK, [40_000, 2], [41_000, 1])] }, REAL), 'noticesOverlap');
     assert.equal(m.timelineConflict({ lock, parts: [countdown(DESK, [45_000, 1], [31_000, 1])] }, REAL), null, 'given out of order, it is put in order');
   });
 

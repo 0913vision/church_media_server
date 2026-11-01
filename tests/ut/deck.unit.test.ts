@@ -93,6 +93,29 @@ describe('Deck songs come from the manifest', () => {
     assert.deepStrictEqual(Object.keys(lib.songFiles()), ['song'], 'the deck loads only its own');
   });
 
+  test('a countdown track carries its role, one per role, never a deck song; anything else is music', () => {
+    const { file, lib } = onDisk([
+      track('song', { userSelectable: true }),
+      track('count', { role: 'count' }),
+    ]);
+    try {
+      assert.deepStrictEqual(lib.list().map(({ id, role }) => ({ id, role })), [{ id: 'song', role: 'music' }, { id: 'count', role: 'count' }]);
+      assert.strictEqual(lib.countdownTrack('count')?.id, 'count');
+      assert.strictEqual(lib.countdownTrack('oneMinute'), undefined);
+      assert.strictEqual(lib.isCountdownTrack('count'), true);
+      assert.strictEqual(lib.isCountdownTrack('song'), false);
+      lib.setVolume('count', 70);
+      const kept = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>[];
+      assert.deepStrictEqual(kept.map((entry) => entry.role), [undefined, 'count'], 'music stays unmarked; a role is written back');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+
+    assert.throws(() => library([track('song', { userSelectable: true }), track('x', { role: 'twoMinutes' })]), /unknown role/);
+    assert.throws(() => library([track('song', { userSelectable: true }), track('a', { role: 'count' }), track('b', { role: 'count' })]), /Two tracks/);
+    assert.throws(() => library([track('song', { userSelectable: true, role: 'count' })]), /cannot be a deck song/);
+  });
+
   test('a manifest nobody can select from does not boot', () => {
     assert.throws(() => library([track('schedule-only')]), /no userSelectable track/);
   });

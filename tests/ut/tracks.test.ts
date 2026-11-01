@@ -62,7 +62,7 @@ describe('Track Library Tests', () => {
       const { state } = await sock.open();
 
       for (const track of state.tracks!) {
-        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'title', 'volume']);
+        assert.deepStrictEqual(Object.keys(track).sort(), ['durationSec', 'id', 'role', 'title', 'volume']);
       }
     } finally {
       sock.disconnect();
@@ -132,6 +132,35 @@ describe('Renaming and deleting tracks', () => {
       const deleted = admin.waitForRejected('deleteTrack');
       admin.invoke('deleteTrack', { id: song });
       assert.strictEqual(await deleted, RejectReason.DECK_SONG);
+    } finally {
+      admin.disconnect();
+    }
+  });
+
+  test('a countdown track carries its role, and is never put on, renamed or deleted', async () => {
+    const admin = await connectAuthedAdmin('tracks-admin');
+    try {
+      const tracks = (await admin.read()).tracks!;
+      const count = tracks.find((track) => track.role === 'count');
+      assert.ok(count, 'the countdown has its count');
+      assert.ok(tracks.some((track) => track.role === 'music'));
+
+      const held = admin.waitForState((patch) => patch.adminLock === true);
+      admin.write('adminLock', true);
+      await held;
+      const cases: [string, Record<string, unknown>][] = [
+        ['selectTrack', { id: count.id }],
+        ['renameTrack', { id: count.id, title: '다른 이름' }],
+        ['deleteTrack', { id: count.id }],
+      ];
+      for (const [command, args] of cases) {
+        const refused = admin.waitForRejected(command);
+        admin.invoke(command, args);
+        assert.strictEqual(await refused, RejectReason.NOTICE_TRACK, command);
+      }
+      const released = admin.waitForState((patch) => patch.adminLock === false);
+      admin.write('adminLock', false);
+      await released;
     } finally {
       admin.disconnect();
     }
