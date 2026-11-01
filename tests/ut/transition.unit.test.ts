@@ -118,7 +118,7 @@ describe('Pressing play', () => {
     mpv.calls = [];
     let soundingAt = -1;
     const pressed = Date.now();
-    await player.play(() => { soundingAt = Date.now() - pressed; });
+    await player.play({ onSounding: () => { soundingAt = Date.now() - pressed; } });
 
     assert.ok(Date.now() - pressed < 100, 'play returned without waiting on a fade');
     assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms`);
@@ -133,7 +133,7 @@ describe('Pressing play', () => {
     mpv.calls = [];
     let soundingAt = -1;
     const pressed = Date.now();
-    await player.play(() => { soundingAt = Date.now() - pressed; }, true);
+    await player.play({ onSounding: () => { soundingAt = Date.now() - pressed; }, fadeFromStart: true });
     const done = Date.now() - pressed;
 
     assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms`);
@@ -150,7 +150,7 @@ describe('Pressing play', () => {
     mpv.calls = [];
     let soundingAt = -1;
     const pressed = Date.now();
-    await player.play(() => { soundingAt = Date.now() - pressed; });
+    await player.play({ onSounding: () => { soundingAt = Date.now() - pressed; } });
     const done = Date.now() - pressed;
 
     assert.ok(soundingAt >= 0 && soundingAt < 50, `told it sounds after ${soundingAt}ms, not when the fade ended`);

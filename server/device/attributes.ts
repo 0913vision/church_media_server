@@ -158,7 +158,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
           // level startled the room (2026-10-30).
           const deck = deps.player.getDeck();
           const appSong = deck.source === 'song' || deps.trackLibrary.isDeckSong(deck.id);
-          await deps.player.play(() => deps.notifier.state({ playback }), appSong);
+          await deps.player.play({ onSounding: () => deps.notifier.state({ playback }), fadeFromStart: appSong });
           return {};
         }
         await deps.player.pause();

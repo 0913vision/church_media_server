@@ -117,7 +117,7 @@ class Player {
    * always fade. onSounding runs as the sound starts, so whoever asked hears about
    * it then rather than when the fade is done.
    */
-  async play(onSounding?: () => void, fadeFromStart = false): Promise<void> {
+  async play({ onSounding, fadeFromStart = false }: { onSounding?: () => void; fadeFromStart?: boolean } = {}): Promise<void> {
     const fade = fadeFromStart || this.device.isPartWay();
     log.info('player', null, 'Play', { ...this.where(), fade: fade ? 'in' : 'none' });
     try {
