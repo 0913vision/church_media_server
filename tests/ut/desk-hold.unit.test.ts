@@ -4,8 +4,7 @@ import type { ConsoleDevice } from '../../server/console/ConsoleDevice.ts';
 import type { DeskValue } from '../../server/console/desk.ts';
 import type { DeskJournalEntry, HoldTiming } from '../../server/console/DeskHolds.ts';
 
-// Note(yoochan.kim): the console config and the logger read required env the
-// moment they load, so the environment comes first and the imports are dynamic.
+// Note(yoochan.kim): console config and logger read required env on load, hence env first and dynamic imports.
 process.env.X32_REMOTE_ADDRESS ??= '127.0.0.1';
 process.env.X32_REMOTE_PORT ??= '10023';
 process.env.LOG_LEVEL ??= 'warn';
@@ -24,12 +23,7 @@ const CH1_ON = '/ch/01/mix/on';
 
 const settle = (ms = 0): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * A desk that only remembers. It can lose its network (`unplugged`: what is sent
- * goes nowhere and nothing answers), lose one message on the way (`lose`), be
- * touched by a hand, or have an old answer arrive late — the things a hold has to
- * survive.
- */
+/** A desk that only remembers, and can go unplugged, lose a message, be touched by hand or answer late. */
 class FakeDesk implements ConsoleDevice {
   readonly values = new Map<string, DeskValue>();
   readonly sent: string[] = [];
@@ -127,8 +121,7 @@ describe('Holding part of the desk', () => {
       console.log = print;
     }
 
-    // Note(yoochan.kim): the log says what happened — not there yet, sent again — and does not
-    // blame a hand on the desk for the old value a lost change leaves behind.
+    // Note(yoochan.kim): the old value a lost change leaves is logged as sent again, never blamed on a hand.
     assert.equal(lines.filter((line) => line.includes('Desk change not there yet, sent again')).length, 2, lines.join('\n'));
     assert.ok(lines.some((line) => line.includes(`address=${AUX_ON},wanted=0,read=1`)), 'going: wanted off, read on');
     assert.ok(!lines.some((line) => line.includes('moved on the desk')), `no hand blamed:\n${lines.join('\n')}`);
@@ -181,7 +174,7 @@ describe('Holding part of the desk', () => {
     await assert.rejects(holds.holding([off(auxin(5)), fader(auxin(5), -10)], async () => {}), /no answer/);
     assert.deepEqual(desk.sent, []);
 
-    // Nothing was left spoken for: once it answers, the same hold goes ahead.
+    // Note(yoochan.kim): nothing was left spoken for: once it answers, the same hold goes ahead.
     desk.silent.clear();
     await holds.holding([off(auxin(5)), fader(auxin(5), -10)], async () => {});
     holds.dispose();
@@ -327,8 +320,7 @@ describe('Holding the mock desk', () => {
     desk.set(SEND_ON, 1);
     desk.set(SEND_LEVEL, 0.5);
 
-    // Note(yoochan.kim): the desk rounds onto its own steps, so a send given a fader's
-    // number reads back as another one and would never count as landed.
+    // Note(yoochan.kim): the desk rounds onto its steps, so a fader's number sent to a send never counts as landed.
     await desk.send(SEND_LEVEL, float(faderFromDb(0.7)));
     assert.equal(sameValue(await desk.query(SEND_LEVEL), float(faderFromDb(0.7))), false);
     desk.set(SEND_LEVEL, 0.5);

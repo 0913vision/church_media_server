@@ -20,10 +20,7 @@ async function connectAuthedAdmin(client: string): Promise<SocketTestHelper> {
   return admin;
 }
 
-/**
- * Whether the scratch track is here to be renamed and deleted. A server started
- * elsewhere has none, and these tests must never pick a real one instead.
- */
+/** A server started elsewhere has no scratch track, and these tests must never pick a real one instead. */
 async function hasScratch(admin: SocketTestHelper, t: TestContext): Promise<boolean> {
   const present = ((await admin.read()).tracks ?? []).some((track) => track.id === SCRATCH_TRACK_ID);
   if (!present) t.skip('no scratch track on an externally started server');
@@ -34,8 +31,7 @@ function clock(offsetMinutes: number): string {
   return formatInstant(new Date(Date.now() + offsetMinutes * 60_000));
 }
 
-// Note(yoochan.kim): tracks are added and deleted while clients are connected, so the
-// library is state rather than part of the handshake.
+// Note(yoochan.kim): tracks change while clients are connected, so the library is state, not part of the handshake.
 describe('Track Library Tests', () => {
   test('the tracks attribute carries the manifest entries', async () => {
     const sock = new SocketTestHelper();
@@ -95,9 +91,7 @@ describe('Track Library Tests', () => {
   });
 });
 
-// Note(yoochan.kim): only the scratch track is ever renamed or deleted here. It is a
-// silent copy in the test's own folder, so nothing these do reaches the room
-// or the library this building plays from.
+// Note(yoochan.kim): only the scratch track is renamed or deleted: a silent copy kept apart from the real audio.
 describe('Renaming and deleting tracks', () => {
   test('only an admin renames or deletes', async () => {
     const anyone = new SocketTestHelper();
@@ -208,7 +202,6 @@ describe('Renaming and deleting tracks', () => {
       if (!(await hasScratch(admin, t))) return;
       const cue = [{ id: SCRATCH_TRACK_ID, volume: 40 }];
 
-      // Note(yoochan.kim): the calendar names it.
       const saved = admin.waitForState((patch) => patch.schedule !== undefined);
       admin.invoke('saveFlow', {
         flow: {
@@ -225,8 +218,7 @@ describe('Renaming and deleting tracks', () => {
       admin.invoke('deleteFlow', { id: 'uses-scratch' });
       await unsaved;
 
-      // Note(yoochan.kim): a run that copied it and has yet to play it. Its music is
-      // due fifty minutes out and the run is stopped long before.
+      // Note(yoochan.kim): its music is due fifty minutes out and the run is stopped long before, so nothing plays.
       const holding = admin.waitForState((patch) => patch.flow?.phase === 'holding');
       admin.invoke('startFlow', {
         id: 'flow-scratch', name: '시험', lock: { at: clock(0), until: clock(60) },

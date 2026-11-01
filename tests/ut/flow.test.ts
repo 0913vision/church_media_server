@@ -5,16 +5,11 @@ import { RejectReason } from '../../server/protocol.ts';
 import type { StatePatch } from '../../server/protocol.ts';
 import { INSTANT_PATTERN, formatInstant } from '../../server/utils/instant.ts';
 
-// Note(yoochan.kim): no flow here ever reaches playback. A music part would
-// start audible sound on the host, so the music timeline is covered by the
-// FlowRunner's own scheduling — and the music tests below are all refusals,
-// which are decided before anything is loaded.
+// Note(yoochan.kim): no flow here ever reaches playback: a music part would sound on the host.
 
-// Note(yoochan.kim): Read from the handshake rather than hardcoded: these tests need "a real
-// track", not a particular one, and the library is fixed at boot anyway.
+// Note(yoochan.kim): read from the handshake: these tests need a real track, not a particular one.
 let firstTrackId = '';
 
-/** A track as a flow schedules it: an id and the level it plays at. */
 const cue = (id: string, volume = 40): { id: string; volume: number } => ({ id, volume });
 
 before(async () => {
@@ -41,12 +36,10 @@ after(async () => {
   await stopServer();
 });
 
-/** An absolute instant this many minutes from now, as the protocol wants it */
 function clock(offsetMinutes: number): string {
   return formatInstant(new Date(Date.now() + offsetMinutes * 60_000));
 }
 
-/** A lock-only flow that engages now and would release in an hour */
 function lockFlow(name = '테스트 순서'): Record<string, unknown> {
   return { id: `flow-${name}`, name, lock: { at: clock(0), until: clock(60) }, parts: [] };
 }
@@ -60,7 +53,6 @@ async function connectAuthedAdmin(): Promise<SocketTestHelper> {
   return admin;
 }
 
-/** Starts a lock-only flow and waits until it is actually holding the lock */
 async function startHoldingFlow(admin: SocketTestHelper, name?: string): Promise<StatePatch> {
   const holding = admin.waitForState((patch) => patch.flow?.phase === 'holding');
   admin.invoke('startFlow', lockFlow(name));
@@ -120,8 +112,7 @@ describe('Flow Tests', () => {
     try {
       await startHoldingFlow(admin);
 
-      // Note(yoochan.kim): Toggling the gate by hand would leave the flow describing a lock that
-      // is no longer there, so it is refused and stopping is the way out.
+      // Note(yoochan.kim): released by hand, the flow would describe a lock that is gone; stopping is the way out.
       const rejected = admin.waitForRejected('adminLock');
       admin.write('adminLock', false);
       assert.strictEqual(await rejected, RejectReason.FLOW_ACTIVE);
@@ -140,9 +131,7 @@ describe('Flow Tests', () => {
       const before = await admin.read();
       await startHoldingFlow(admin);
 
-      // Note(yoochan.kim): the gate keeps the panel out; it does not mean the run is
-      // using the deck. Playback is left out of this on purpose — asserting it
-      // would put sound in the room the tests run in.
+      // Note(yoochan.kim): holding the gate is not using the deck; playback stays out, as it would sound in the room.
       const next = before.volume === 42 ? 43 : 42;
       const observed = admin.waitForState((patch) => patch.volume !== undefined);
       admin.write('volume', next);
@@ -160,9 +149,7 @@ describe('Flow Tests', () => {
       const before = await admin.read();
       await startHoldingFlow(admin);
 
-      // Note(yoochan.kim): the gate is held but nothing is sounding, so the panel is still
-      // the panel. Only a selection is asserted here — playing would make the
-      // host audible, and what a run does to a sounding deck is FlowRunner's.
+      // Note(yoochan.kim): a quiet run leaves the panel free; only a selection, as playing would sound on the host.
       const chosen = admin.waitForState((patch) => patch.deck?.source === 'track');
       admin.invoke('selectTrack', { id: firstTrackId });
       assert.strictEqual((await chosen).deck!.source, 'track', 'a quiet run does not own the deck');
@@ -170,8 +157,7 @@ describe('Flow Tests', () => {
       await stopFlow(admin);
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Note(yoochan.kim): back to the deck the run was handed, not the track put on
-      // halfway through it.
+      // Note(yoochan.kim): back to the deck the run was handed, not the track put on halfway through it.
       const after = await admin.read();
       assert.deepStrictEqual(after.deck, { source: 'song' });
       assert.strictEqual(after.song, before.song, 'the run restored what it was given');
@@ -187,8 +173,7 @@ describe('Flow Tests', () => {
 
     try {
       const before = await admin.read();
-      // Note(yoochan.kim): every refusal here is decided before anything is loaded, so
-      // nothing in this test reaches the speakers.
+      // Note(yoochan.kim): every refusal here comes before anything loads, so nothing reaches the speakers.
       const closed = admin.waitForRejected('selectTrack');
       admin.invoke('selectTrack', { id: firstTrackId });
       assert.strictEqual(await closed, RejectReason.ADMIN_UNLOCKED, 'no gate, no track');
@@ -209,8 +194,7 @@ describe('Flow Tests', () => {
       admin.write('loop', false);
       assert.strictEqual((await chosen).loop, false, 'the gate lets the choice through');
 
-      // Note(yoochan.kim): opening the gate sends two patches — the lock's own, then what
-      // it put back. Reading between them would catch the second instead of the reply.
+      // Note(yoochan.kim): opening the gate sends two patches; a read before the second would take it as its reply.
       const restored = admin.waitForState((patch) => patch.loop === true);
       admin.write('adminLock', false);
       await restored;
@@ -344,17 +328,14 @@ describe('Flow Validation Tests', () => {
         parts: [{ kind: 'music', tracks: [cue('no-such-track')], endsAt: clock(30) }],
       });
 
-      // Note(yoochan.kim): Distinguished from a malformed request, so the client can say which
-      // track went missing rather than blaming the whole plan.
+      // Note(yoochan.kim): its own reason, so the client can name the missing track rather than blame the whole plan.
       assert.strictEqual(await rejected, RejectReason.UNKNOWN_TRACK);
     } finally {
       admin.disconnect();
     }
   });
 
-  // Note(yoochan.kim): one spelling only. Every other shape a date parser would
-  // take is a shape a client could come to depend on, and the panel app cannot
-  // be updated in a hurry.
+  // Note(yoochan.kim): one spelling only: clients may depend on any other, and the panel app cannot be updated fast.
   test('an instant written any other way is refused', async () => {
     const admin = await connectAuthedAdmin();
     try {
@@ -375,8 +356,7 @@ describe('Flow Validation Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): a track with no level would fall back to whatever the
-  // panel was left at, which is exactly the surprise the level exists to stop.
+  // Note(yoochan.kim): a track with no level would play as loud as the panel was left, the surprise a level prevents.
   test('a scheduled track without a usable level is refused', async () => {
     const admin = await connectAuthedAdmin();
     try {
@@ -400,8 +380,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      // Note(yoochan.kim): Accepting this would engage and release in the same millisecond, which
-      // looks to the operator like the button did nothing.
+      // Note(yoochan.kim): accepted, it would engage and release at once, as if the button did nothing.
       admin.invoke('startFlow', {
         id: 'flow-test',
         name: '지난 순서',
@@ -432,9 +411,7 @@ describe('Flow Validation Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): Only the finish is bound to the window: music running past the unlock
-  // would sound on an open panel, where a tablet could take the deck out from
-  // under the run.
+  // Note(yoochan.kim): past the unlock the music would sound on an open panel, where a tablet could take the deck.
   test('music finishing after the lock releases is refused', async () => {
     const admin = await connectAuthedAdmin();
     try {
@@ -456,9 +433,7 @@ describe('Flow Validation Tests', () => {
     const admin = await connectAuthedAdmin();
     try {
       const rejected = admin.waitForRejected('startFlow');
-      // Note(yoochan.kim): Ends fully before the gate: with the front cut at the lock instant,
-      // nothing of it could ever sound, so accepting it would look like the
-      // button doing nothing.
+      // Note(yoochan.kim): none of it could sound before the gate; accepted, it would look like nothing happened.
       admin.invoke('startFlow', {
         id: 'flow-test',
         name: '락 전에 끝나는 음악',
@@ -472,14 +447,11 @@ describe('Flow Validation Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): The front of a timeline is cut, not refused: the sound would start with
-  // the lock and seek to where the timeline already is. Nothing plays here —
-  // the lock is half an hour away and the flow is stopped while still waiting.
+  // Note(yoochan.kim): a timeline's front is cut, not refused: sound starts with the lock, where the timeline is.
   test('music timed to begin before the lock is accepted', async () => {
     const admin = await connectAuthedAdmin();
     try {
-      // Note(yoochan.kim): The library's first track is longer than the one minute between the
-      // lock and the finish, so the derived start lands before the gate.
+      // Note(yoochan.kim): the first track outlasts the lock-to-finish minute, so its start falls before the gate.
       const waiting = admin.waitForState((patch) => patch.flow?.phase === 'waiting');
       admin.invoke('startFlow', {
         id: 'flow-test',
@@ -489,6 +461,7 @@ describe('Flow Validation Tests', () => {
       });
       await waiting;
 
+      // Note(yoochan.kim): nothing plays: the lock is half an hour away and the flow is stopped while still waiting.
       await stopFlow(admin);
     } finally {
       admin.disconnect();

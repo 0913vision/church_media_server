@@ -1,42 +1,24 @@
 import type { SongId } from '../constants/songs.ts';
 
-/**
- * The audio output surface the Player depends on.
- *
- * AudioDevice (real playback over MPV) implements it; tests substitute a fake.
- * This decouples Player from the hardware/FFI layer so player logic (mute,
- * volume memory, song switching) can be unit-tested in isolation.
- */
+/** Lets the Player be tested against a fake, with no mpv and no sound. */
 export interface AudioOutput {
   setVolume(volume: number): void;
-  /**
-   * Start and stop. Both fade by default; pass false where there is no cut to
-   * cover — a song beginning at its beginning, or one that has just reached its
-   * own end. A fade there is only a delay. A fade takes durationMs, any length
-   * (FADE_IN_MS or FADE_OUT_MS unless given). onSounding runs the moment the sound starts, before a
-   * fade in has finished.
-   */
+  /** A fade covers a cut, so none from a beginning but for the app's songs; onSounding runs as sound starts. */
   resume(fade?: boolean, onSounding?: () => void, durationMs?: number): Promise<void>;
+  /** Always fades but for music at its own end, which has nothing to cover, or a notice cut short. */
   pause(fade?: boolean, durationMs?: number): Promise<void>;
   /** Whether the deck is past the opening of what it holds, so starting it is a cut */
   isPartWay(): boolean;
   /** Where the deck is in what it holds, in seconds; null while mpv cannot say */
   position(): number | null;
-  /** Saves the song's live playback position into its time memory */
   captureSongTime(song: SongId): void;
-  /** Whether what is loaded repeats */
   setLoop(loop: boolean): void;
-  /** Whether the file on the deck has run out */
   hasEnded(): boolean;
-  /**
-   * Plays a library file from an offset, repeating only if asked. Joined part-way it
-   * fades in, for no longer than `fadeLimitMs` — what is left of it, so a fade never
-   * outlasts the music it is fading.
-   */
+  /** Joined part-way it fades in, never for longer than what is left of the track. */
   playFileAt(filePath: string, offsetSec: number, loop?: boolean, fadeLimitMs?: number): Promise<void>;
   /** Puts a library file on the deck, paused at its start */
   loadFile(filePath: string, loop: boolean): void;
-  /** Loads a song file onto the looping two-song deck (no position save) */
+  /** Saves no position: only the caller knows whether the one leaving is a song's. */
   loadSong(song: SongId): void;
   loadLastSongTime(song: SongId): Promise<void>;
 }

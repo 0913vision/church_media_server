@@ -1,4 +1,2 @@
-// Note(yoochan.kim): Re-export of the generated protocol bindings, so server code has one short
-// import path for them. The generator owns the contents — change
-// protocol/protocol.json and run `npm run gen-protocol`.
+// Note(yoochan.kim): one short import path; the generator owns the contents, so edit protocol.json and regenerate.
 export * from '../protocol/generated/protocol.ts';

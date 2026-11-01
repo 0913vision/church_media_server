@@ -13,9 +13,7 @@ import type { DeskChange } from '../../server/console/desk.ts';
 import { dbFromFader } from '../../server/console/faderLevel.ts';
 import { formatInstant } from '../../server/utils/instant.ts';
 
-// Note(yoochan.kim): a run's cues against a stand-in mpv that writes down what it was
-// told and when, so nothing here can make a sound. The modules read env-backed
-// config and log at load, so they are loaded once that is set.
+// Note(yoochan.kim): mpv is a stand-in that only records calls, so nothing sounds; modules load after env is set.
 type Modules = {
   Player: typeof import('../../server/player/Player.ts').default;
   AudioDevice: typeof import('../../server/hardware/AudioDevice.ts').default;
@@ -76,7 +74,6 @@ class FakeMpv {
     this.calls.push({ at: Date.now(), call: command.filter((part) => part !== null).join(' ') });
   }
 
-  /** When mpv was first told this, after `from`. */
   when(call: string, from = 0): number | undefined {
     return this.calls.find((entry) => entry.call === call && entry.at >= from)?.at;
   }
@@ -86,7 +83,6 @@ function entry(id: string, durationSec: number, volume: number, role: LibraryEnt
   return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false, role };
 }
 
-/** A library with one music track and the countdown's three, as the flow runner asks of it. */
 const TRACKS = [
   entry('song', 30, 50),
   entry('min', 1.1, 60, 'oneMinute'),
@@ -125,7 +121,6 @@ const near = (actual: number | undefined, want: number, what: string): void => {
   assert.ok(actual !== undefined, `${what}: never happened`);
   assert.ok(Math.abs(actual - want) < SLACK_MS, `${what}: at ${actual}ms, want ${want}ms`);
 };
-/** Reads ownsDeck at each of these moments after t0. */
 function sampleDeck(runner: { ownsDeck(): boolean }, t0: number, moments: number[]): Record<number, boolean> {
   const seen: Record<number, boolean> = {};
   for (const ms of moments) setTimeout(() => { seen[ms] = runner.ownsDeck(); }, t0 + ms - Date.now());
@@ -147,11 +142,11 @@ describe('A run\'s countdown', () => {
     assert.deepEqual(runner.startPlan(plan), { ok: true });
     await settle(2400);
 
-    // The block opens at 200 (500 before the first, no desk): the deck is taken and the first loaded then.
+    // Note(yoochan.kim): the block opens at 200 (500 ahead, no desk), and the deck is taken and the first loaded then.
     const loadMin = mpv.when('loadfile /audio/min.mp3');
     near(loadMin === undefined ? undefined : loadMin - t0, 200, 'the first cue loaded');
     near(mpv.when('pause=no', loadMin) === undefined ? undefined : mpv.when('pause=no', loadMin)! - t0, 700, 'the first cue started');
-    // The second loads the moment the first has ended (1200), not at a lead of its own.
+    // Note(yoochan.kim): the second loads the moment the first has ended (1200), not at a lead of its own.
     const loadCount = mpv.when('loadfile /audio/count.mp3');
     near(loadCount === undefined ? undefined : loadCount - t0, 1200, 'the second cue loaded');
     near(mpv.when('pause=no', loadCount) === undefined ? undefined : mpv.when('pause=no', loadCount)! - t0, 1600, 'the second cue started');
@@ -202,7 +197,7 @@ describe('A run\'s countdown', () => {
     const plan: Plan = {
       id: 'late', name: '늦은 시작', lock: { at: new Date(t0 - 3000), until: new Date(t0 + 3400) },
       parts: [
-        // More of it left than a fade in takes, which holds the deck until it is done.
+        // Note(yoochan.kim): more of it left than a fade in takes, which holds the deck until it is done.
         { kind: 'music', tracks: [entry('song', 4.4, 50)], startsAt: new Date(t0 - 2000), endsAt: new Date(t0 + 2400) },
         { kind: 'countdown', cues: [{ track: entry('count', 0.4, 70), at: new Date(t0 + 2900) }] },
       ],
@@ -224,7 +219,7 @@ describe('A run\'s countdown', () => {
     ]);
 
     assert.deepEqual(runner.startPlan(plan), { ok: true });
-    // The block opens at 200ms by the wall; the church clock moves 100ms on meanwhile, inside the 200ms slack.
+    // Note(yoochan.kim): the block opens at 200ms by the wall; the church clock moves on 100ms, within the 200ms slack.
     setTimeout(() => clock.setOffset(0.1), 100);
     await settle(1000);
 
@@ -247,14 +242,12 @@ describe('A run\'s countdown', () => {
     assert.deepEqual(runner.startPlan(plan), { ok: true });
     await settle(1500);
 
-    // The music's own fade: what mpv was told after the song was loaded, until the block
-    // opens at 500ms. Counted by order, not by time — the deck's own setting up can
-    // land in the same millisecond as the load.
+    // Note(yoochan.kim): the fade before the block opens (500ms), by order: setup can land in the load's millisecond.
     const loaded = mpv.calls.findIndex((call) => call.call === 'loadfile /audio/song.mp3');
     const song = mpv.calls[loaded]!.at;
     const steps = mpv.calls.slice(loaded + 1).filter((call) => call.at < t0 + 450 && call.call.startsWith('volume='));
     assert.ok(steps.length <= 300 / 50 + 2, `the fade in took ${steps.length} steps, no more than the 0.3s left`);
-    // The seek before it takes a few tens of milliseconds; a full fade in would take 2000.
+    // Note(yoochan.kim): the seek before it takes a few tens of milliseconds; a full fade in would take 2000.
     assert.ok(steps.at(-1)!.at - song < 600, `and was over ${steps.at(-1)!.at - song}ms after the load`);
     const load = mpv.when('loadfile /audio/count.mp3');
     near(mpv.when('pause=no', load) === undefined ? undefined : mpv.when('pause=no', load)! - t0, 1000, 'the countdown on its second');
@@ -269,7 +262,7 @@ describe('A run\'s countdown', () => {
     ]);
 
     assert.deepEqual(runner.startPlan(plan), { ok: true });
-    // The block opens at 200ms by the wall; the church clock leaps a second past it meanwhile.
+    // Note(yoochan.kim): the block opens at 200ms by the wall; the church clock leaps a second past it meanwhile.
     setTimeout(() => clock.setOffset(1), 100);
     await settle(1800);
 
@@ -295,7 +288,7 @@ describe('A run\'s countdown', () => {
 
     const song = mpv.when('loadfile /audio/song.mp3');
     near(song === undefined ? undefined : song - t0, 200, 'the music started');
-    // Its block opens 500 before it, at 1000, as the music ends.
+    // Note(yoochan.kim): its block opens 500 before it, at 1000, as the music ends.
     const cue = mpv.when('loadfile /audio/min.mp3');
     near(cue === undefined ? undefined : cue - t0, 1000, 'the cue loaded as its block opened, the music over');
     const backs = mpv.calls.filter((entryCall) => entryCall.call === 'loadfile /audio/calm.mp3' && entryCall.at > song!);
@@ -344,13 +337,13 @@ describe('A run\'s countdown', () => {
 
 describe('A countdown as a flow asks for it', () => {
   const at = (ms: number): string => formatInstant(new Date(ms));
-  // Far enough ahead that nothing starts while these run.
+  // Note(yoochan.kim): far enough ahead that nothing starts while these run.
   const zero = Date.now() + 3_600_000;
   const flow = (parts: unknown[], lockFrom = zero - 600_000) =>
     ({ id: 'f', name: 'f', lock: { at: at(lockFrom), until: at(zero) }, parts });
   const music = (endsAt: number) => ({ kind: 'music', tracks: [{ id: 'song', volume: 50 }], endsAt: at(endsAt) });
   const countdown = (notices: string[]) => ({ kind: 'countdown', at: at(zero), notices });
-  // The test timing keeps 0.8s ahead of the first sound.
+  // Note(yoochan.kim): the test timing keeps 0.8s ahead of the first sound.
   const LEAD = 800;
 
   test('1분 전 starts sixty seconds before zero, its block that much and the lead ahead of it', () => {
@@ -471,11 +464,7 @@ describe('A countdown for the band alone', () => {
   const bandOnly = (): DeskChange[] => [...m.BAND_ONLY.BLOCK, ...m.BAND_ONLY.OPEN];
   type Desk = InstanceType<Modules['MockConsole']>;
 
-  /**
-   * The room as read on 2026-10-30 — aux 5/6 off, to main LR, every send switched on,
-   * AuxMix sending to every matrix — with the fader off 0 dB and the strips in three
-   * mute groups, so that putting back is seen to be whole.
-   */
+  /** The room's desk as read; its fader off 0 dB and three mute groups show a put-back is whole. */
   function seedRoom(desk: Desk): void {
     for (const strip of AUX) {
       desk.set(`${strip}/mix/on`, 0);
@@ -535,7 +524,7 @@ describe('A countdown for the band alone', () => {
     const n = touched.length;
     assert.equal(sent.length, n * 2, 'set once and put back once');
     assert.ok(sent.slice(0, n).every((message) => message.at <= min), 'set before 1분 전');
-    // An end is a planned instant; a start lands a few milliseconds after its own.
+    // Note(yoochan.kim): an end is a planned instant; a start lands a few milliseconds after its own.
     assert.ok(sent.slice(n).every((message) => message.at >= count + 500 - SLACK_MS), 'put back after the count had ended');
     assert.equal(between['/auxin/05/mix/st'], 0, 'between the notices, still the band\'s alone');
     assert.deepEqual(await values(desk, touched), before, 'and after, the desk as it was');
@@ -545,7 +534,7 @@ describe('A countdown for the band alone', () => {
   test('every way out is shut, then the way in opened, before it sounds; after, the other way round, whole', async () => {
     const { mpv, runner, desk, holds } = rig();
     seedRoom(desk);
-    // AuxMix left switched off by somebody, so switching it on for the count — and back — is seen.
+    // Note(yoochan.kim): AuxMix left off by somebody, so switching it on for the count and back is seen.
     desk.set('/bus/08/mix/on', 0);
     desk.clearJournal();
     const touched = bandOnly().map((change) => change.address);
@@ -570,8 +559,7 @@ describe('A countdown for the band alone', () => {
     const firstOpen = applied.findIndex((message) => !blocks.has(message.address));
     assert.ok(lastBlock < firstOpen, 'every way out shut before the way in opened');
     assert.deepEqual(putBack.map((message) => message.address), [...touched].reverse(), 'the way in closed before the ways out reopened');
-    // Like powering a sound system: closed from the output end, opened from the source with
-    // the output last — and put back the other way round.
+    // Note(yoochan.kim): powering a sound system: shut from the output end, opened from the source, undone in reverse.
     assert.equal(applied[0]?.address, '/bus/08/mix/01/on', 'closing starts at the output end, AuxMix\'s matrices');
     assert.equal(applied[blocks.size]?.address, '/auxin/05/grp/mute', 'opening starts at the source, the music player\'s channel');
     assert.equal(applied.at(-1)?.address, '/bus/08/mix/on', 'AuxMix, the band\'s ears, switched on last');
@@ -630,8 +618,7 @@ describe('A countdown for the band alone', () => {
     holds.dispose();
   });
 
-  // Note(yoochan.kim): in a service the music player goes to the room: aux 5/6 on, to the main,
-  // in no muted group. A count still sounding as that is put back would be heard in the room.
+  // Note(yoochan.kim): aux 5/6 live to the room as in a service, where a count sounding at put-back is heard.
   test('stopped mid-count with the music player live to the room: cut at once, silent before any of the desk goes back', async () => {
     const { mpv, runner, desk, holds } = rig();
     seedRoom(desk);
@@ -656,7 +643,7 @@ describe('A countdown for the band alone', () => {
     const cut = mpv.calls.find((call) => call.at >= stopping && call.call === 'pause=yes');
     assert.ok(cut, 'the count was stopped');
     assert.ok(cut.at - stopping < SLACK_MS, `stopped ${cut.at - stopping}ms after the stop, not faded`);
-    // By order, not by time: the song put back after the cut can land in the same millisecond.
+    // Note(yoochan.kim): by order, not by time: the song put back after the cut can land in the same millisecond.
     const faded = mpv.calls.slice(0, mpv.calls.indexOf(cut)).filter((call) => call.at >= stopping && call.call.startsWith('volume='));
     assert.deepEqual(faded, [], `no fade steps before it stopped: ${mpv.calls.filter((call) => call.at >= stopping - 600)
       .map((call) => `${call.at - stopping}:${call.call.slice(0, 24)}`).join(' ')}`);

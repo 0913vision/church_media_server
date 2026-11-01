@@ -1,18 +1,8 @@
 import { faderFromDb, sendLevelFromDb, FADER_STEPS, SEND_STEPS } from './faderLevel.ts';
 
-/**
- * The words for saying what to do to the desk: strips, values, and changes made
- * of them. Pure — nothing here talks to a desk — so a change is a value that can
- * be built, mapped over a list of strips, compared and written down.
- *
- * Addresses, counts and steps are the unofficial X32 OSC protocol's (v4.09).
- */
+/** Desk changes as pure values, to be mapped, compared and journalled; per the unofficial X32 OSC protocol v4.09. */
 
-/**
- * One value on the desk's wire, typed the way the desk types it: switches are
- * ints, levels are floats. Kept with its type so that putting a value back sends
- * exactly what the desk reported.
- */
+/** Kept with its OSC type (switch int, level float) so putting a value back sends exactly what the desk reported. */
 export interface DeskValue {
   readonly type: 'i' | 'f';
   readonly value: number;
@@ -30,7 +20,6 @@ export function sameValue(a: DeskValue, b: DeskValue): boolean {
   return Math.abs(a.value - b.value) <= FADER_STEP;
 }
 
-/** A mix bus or a matrix: somewhere a send goes. */
 export type Bus = `/bus/${string}`;
 export type Mtx = `/mtx/${string}`;
 
@@ -47,22 +36,15 @@ const numbered = <P extends string>(prefix: P, count: number, width: number) =>
     return `${prefix}/${String(n).padStart(width, '0')}`;
   };
 
-/** Input channel 1–32 */
 export const ch = numbered('/ch', 32, 2);
-/** Aux input 1–8 */
 export const auxin = numbered('/auxin', 8, 2);
-/** FX return 1–8 */
 export const fxrtn = numbered('/fxrtn', 8, 2);
-/** Mix bus 1–16 */
 export const bus = numbered('/bus', 16, 2);
-/** Matrix 1–6 */
 export const mtx = numbered('/mtx', 6, 2);
-/** The stereo and mono masters */
 export const mainSt = '/main/st';
 export const mainMono = '/main/m';
-/** DCA 1–8. The desk numbers these without a leading zero. */
+/** The desk numbers DCAs without a leading zero. */
 export const dca = numbered('/dca', 8, 1);
-/** Mute group 1–6 */
 export const muteGroup = numbered('/config/mute', 6, 1);
 
 /** One address set to one value — the unit a hold remembers and puts back. */
@@ -80,11 +62,6 @@ export const off = (strip: Strip): DeskChange => ({ address: `${controls(strip)}
 export const fader = (strip: Strip, db: number): DeskChange =>
   ({ address: `${controls(strip)}/fader`, value: float(faderFromDb(db)) });
 
-/**
- * Whether a strip sends to that bus or matrix: channels, aux inputs and FX
- * returns feed the mix buses; buses and the two masters feed the matrices.
- * Matrices and DCAs send nowhere.
- */
 function routes(from: Strip, to: Bus | Mtx): boolean {
   if (/^\/(ch|auxin|fxrtn)\//.test(from)) return to.startsWith('/bus/');
   if (/^\/(bus\/|main\/)/.test(from)) return to.startsWith('/mtx/');
@@ -128,10 +105,7 @@ function members(groups: readonly number[], count: number): number {
   return bits;
 }
 
-/**
- * The mute groups (1–6) a strip is in, all at once; none takes it out of every one.
- * Written whole, so putting it back restores every group it was in.
- */
+/** The mute groups (1–6) a strip is in, written whole so a put-back restores each; none takes it out of every one. */
 export const muteGroupsOf = (strip: Strip, groups: readonly number[]): DeskChange =>
   ({ address: `${mixed(strip)}/grp/mute`, value: int(members(groups, 6)) });
 /** The DCAs (1–8) a strip is in, all at once; none takes it out of every one. */
@@ -156,10 +130,7 @@ const DCAS: DeskAddress = { kind: 'groups', count: 8 };
 
 const upTo = <T>(count: number, make: (n: number) => T): T[] => Array.from({ length: count }, (_, i) => make(i + 1));
 
-/**
- * Every address the words above can build, and what each holds — built by those
- * same words, so the two can never disagree about what the desk has.
- */
+/** Built by the same words that build changes, so the two can never disagree about what the desk has. */
 const ADDRESSES: ReadonlyMap<string, DeskAddress> = (() => {
   const strips: Strip[] = [
     ...upTo(32, ch), ...upTo(8, auxin), ...upTo(8, fxrtn), ...upTo(16, bus), ...upTo(6, mtx),
@@ -185,11 +156,7 @@ const ADDRESSES: ReadonlyMap<string, DeskAddress> = (() => {
   return all;
 })();
 
-/**
- * What an address holds, or null when the desk has no such address — a typo, a
- * strip past the desk's count, a send the desk does not route. For something
- * standing in for the desk.
- */
+/** For a stand-in desk: what an address holds, or null for one the X32 lacks (a typo, a strip past its count). */
 export function deskAddress(address: string): DeskAddress | null {
   return ADDRESSES.get(address) ?? null;
 }

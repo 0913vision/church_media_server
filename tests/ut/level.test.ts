@@ -10,10 +10,7 @@ after(() => stopServer());
 const auxIs = (patch: StatePatch, on: boolean): boolean =>
   patch.console?.some((input) => input.id === 'aux' && input.state.kind === 'read' && input.state.on === on) === true;
 
-// Note(yoochan.kim): the mock desk sends no meters, so over the wire a measurement is
-// accepted, sets the music player's input aside and keeps the deck for as long as
-// it waits for one, then ends without playing anything. That window is what this
-// looks at; the measurement itself is level.unit.test.ts's.
+// Note(yoochan.kim): the mock desk has no meters, so only the wait shows here; level.unit.test.ts does the measuring.
 describe('Level measurement over the wire', () => {
   test('keeps the deck and the music player\'s input while it runs, and on a desk without meters plays nothing', async () => {
     const admin = new SocketTestHelper();

@@ -11,7 +11,6 @@ import { measureMp3 } from './probe.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
-/** The header an upload carries the admin password in */
 export const PASSWORD_HEADER = 'x-admin-password';
 
 interface Reply {
@@ -21,14 +20,7 @@ interface Reply {
 
 class TooLarge extends Error {}
 
-/**
- * POST /uploads — takes in an mp3 and holds it for addTrack.
- *
- * Note(yoochan.kim): a door for bytes and nothing else, because a socket message is no
- * place for a file. Whether the file becomes a track is addTrack's to say,
- * through the protocol, so this never touches the library. The password rides a
- * header because the one caller is the admin web's backend, which holds it.
- */
+/** Note(yoochan.kim): bytes only, since a socket message is no place for a file; addTrack decides what it becomes. */
 export function createUploadDoor(library: TrackLibrary, uploads: Uploads) {
   return (req: IncomingMessage, res: ServerResponse): boolean => {
     if (req.method !== 'POST' || req.url !== '/uploads') return false;
@@ -39,8 +31,7 @@ export function createUploadDoor(library: TrackLibrary, uploads: Uploads) {
         return { status: 500 };
       })
       .then((reply) => {
-        // Note(yoochan.kim): a body refused before it was read is still on its way;
-        // reading it out lets the sender finish and hear the answer.
+        // Note(yoochan.kim): a refused body is still on its way; reading it out lets the sender hear the answer.
         if (!req.complete) req.resume();
         res.writeHead(reply.status, reply.body ? { 'content-type': 'application/json' } : {});
         res.end(reply.body ? JSON.stringify(reply.body) : undefined);
@@ -50,6 +41,7 @@ export function createUploadDoor(library: TrackLibrary, uploads: Uploads) {
 }
 
 async function receive(req: IncomingMessage, library: TrackLibrary, uploads: Uploads): Promise<Reply> {
+  // Note(yoochan.kim): a header, because the one caller is the admin web's backend, which holds the password.
   const password = req.headers[PASSWORD_HEADER];
   if (typeof password !== 'string' || !verifyPassword(password, ADMIN_CONFIG.ADMIN_PASSWORD_HASH)) {
     log.warn('uploads', null, 'Upload refused: wrong password');
@@ -82,7 +74,6 @@ async function receive(req: IncomingMessage, library: TrackLibrary, uploads: Upl
   }
 }
 
-/** Writes the body to `file`. False when it ran past `max`, having stopped writing there. */
 async function save(req: IncomingMessage, file: string, max: number): Promise<boolean> {
   let bytes = 0;
   const counter = new Transform({
@@ -92,8 +83,7 @@ async function save(req: IncomingMessage, file: string, max: number): Promise<bo
       done(null, chunk);
     },
   });
-  // Note(yoochan.kim): a sender that gives up halfway never ends the body, so the write
-  // would wait for it forever.
+  // Note(yoochan.kim): a sender that gives up halfway never ends the body, so the write would wait forever.
   req.on('close', () => {
     if (!req.complete) counter.destroy(new Error('Upload cut short'));
   });

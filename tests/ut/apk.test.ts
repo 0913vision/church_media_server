@@ -5,8 +5,7 @@ import { ensureServer, stopServer, TEST_PORT } from './test-helpers.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): only the wiring is tested — a real download would depend
-// on the Pi's file server being on the network.
+// Note(yoochan.kim): only the wiring is tested; a real download would need the Pi's file server on the network.
 describe('APK download relay', () => {
   test('a path that names no variant is 404, not a relay attempt', async () => {
     const response = await fetch(`http://localhost:${TEST_PORT}/apk/bogus`);

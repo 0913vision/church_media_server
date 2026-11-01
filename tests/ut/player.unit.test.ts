@@ -6,12 +6,8 @@ import type { PlayerConfig } from '../../server/constants/playerConfig.ts';
 import type { AudioOutput } from '../../server/hardware/AudioOutput.ts';
 import type { PersistedState } from '../../server/state/StateStore.ts';
 
-// Note(yoochan.kim): Pure unit tests: no server, no socket, no real MPV. A fake AudioOutput is
-// injected so the Player's mute / volume-memory / song-switch logic, and its
-// persistence + restore behavior, can be asserted directly — behavior that is
-// invisible at the socket level (the console never reports device volume).
+// Note(yoochan.kim): a fake output, since what the device is set to is never reported over the socket.
 
-/** Records every volume the Player pushes to the output. */
 class FakeAudioOutput implements AudioOutput {
   readonly volumeCalls: number[] = [];
   pauseCalls = 0;
@@ -46,8 +42,7 @@ class FakeAudioOutput implements AudioOutput {
   }
 }
 
-// Note(yoochan.kim): Player imports the logger, which validates LOG_LEVEL at module load, so set
-// it before importing and load Player dynamically.
+// Note(yoochan.kim): the logger checks LOG_LEVEL at load, so Player is imported once it is set.
 type PlayerCtor = typeof import('../../server/player/Player.ts').default;
 let Player: PlayerCtor;
 
@@ -56,14 +51,12 @@ before(async () => {
   Player = (await import('../../server/player/Player.ts')).default;
 });
 
-// Note(yoochan.kim): the songs and their volumes come from the manifest at
-// boot, so a unit test declares its own two rather than importing a constant.
+// Note(yoochan.kim): the songs come from the manifest at boot, so a unit test declares its own.
 const CALM = 'calm';
 const FERVENT = 'fervent';
 const SONG_VOLUMES: Record<string, number> = { [CALM]: 50, [FERVENT]: 35 };
 const BASE_CONFIG: PlayerConfig = { ...INITIAL_PLAYER_CONFIG, currentSong: CALM };
 
-/** Builds a Player with a fresh fake device and a recording persist spy. */
 function makePlayer(initial: PlayerConfig = BASE_CONFIG) {
   const device = new FakeAudioOutput();
   const saved: PersistedState[] = [];
@@ -143,8 +136,7 @@ describe('Player handing the deck over (unit)', () => {
     const { device, player } = makePlayer();
     await player.play();
 
-    // Note(yoochan.kim): a run moving to its own next track passes false. The fade there
-    // cost three seconds and the next track skipped exactly that much.
+    // Note(yoochan.kim): a run passes false between its own tracks; a fade there would skip the next one's opening.
     await player.takeDeck(false);
     assert.strictEqual(device.pauseCalls, 0, 'no fade between a run\'s own tracks');
 

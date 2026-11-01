@@ -10,17 +10,9 @@ const INPUTS = CONSOLE_CONFIG.INPUTS;
 const { MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
 const { UNMUTE, MUTE } = CONSOLE_CONFIG.OSC_VALUES;
 
-/** A mute group is either holding the room quiet or it is not. */
 const MUTE_GROUP_ENGAGED = MUTE_GROUP_RELEASED === 0 ? 1 : 0;
 
-/**
- * Somewhere for this desk to start.
- *
- * Not configuration and not a claim about the real desk, which is wherever the
- * last person left it and is never told these numbers. They are only chosen so
- * that initializing has something visible to undo: the masters somewhere a run
- * has to move them from, the group holding, the inputs down.
- */
+/** Not the real desk's state, which is never told these: chosen so initializing has something visible to undo. */
 const BOOT = { MATRIX_DB: 10, MAIN_DB: -20 };
 
 /** How far back the view can look. Enough for several runs, bounded for a long one. */
@@ -29,13 +21,7 @@ const JOURNAL_LIMIT = 200;
 /** Two touches on one fader this close together are one hand still moving it. */
 const DRAG_MS = 900;
 
-/**
- * The steps a level address has, or null for a switch.
- *
- * Note(yoochan.kim): what an address holds is desk.ts's to say, the same words the
- * server builds its changes from. A log saying `0.525` and a log saying `-9.0 dB`
- * are the same log, but only one of them can be checked against the desk.
- */
+/** From desk.ts, like the server's changes; a level is logged in dB too, since only dB can be checked on the desk. */
 const levelSteps = (address: string): number | null => {
   const held = deskAddress(address);
   return held?.kind === 'level' ? held.steps : null;
@@ -70,7 +56,6 @@ export interface MockInputView {
   channels: MockChannel[];
 }
 
-/** Everything the mock desk currently is, in one object. */
 export interface MockSnapshot {
   inputs: MockInputView[];
   muteGroup: { address: string; value: number; engaged: boolean };
@@ -79,19 +64,7 @@ export interface MockSnapshot {
   journal: MockMessage[];
 }
 
-/**
- * Mock console for development and testing.
- *
- * It answers the same OSC addresses the X32 does and keeps its state as those
- * addresses, rather than as a summary of them. That is the point: what this
- * holds is exactly what a real desk would have been sent, so a sequence checked
- * here is a sequence checked for real — including the ones the protocol never
- * reads back, like the mute group and the two masters.
- *
- * Being its own desk, it always knows its state and so never answers `unknown`.
- * It has every address desk.ts can build, as an X32 does; one nobody has set
- * yet reads 0. A level lands on the nearest of its steps, as the X32 rounds it.
- */
+/** State kept as the X32's addresses, so a sequence checked here holds on a real desk, even parts never read back. */
 class MockConsole implements ConsoleDevice {
   private readonly wire = new Map<string, number>();
   private journal: MockMessage[] = [];
@@ -120,11 +93,7 @@ class MockConsole implements ConsoleDevice {
       from,
     };
 
-    // Note(yoochan.kim): a hand dragging a fader sends a value every few pixels,
-    // and a hundred rows of one fader moving would bury the run this log exists
-    // to show. One continuous move is one row, kept at where it has reached.
-    // The server's own writes are never folded: each one is a step of a
-    // sequence, and losing one would be losing the thing under inspection.
+    // Note(yoochan.kim): a drag folds to one row so it cannot bury the run; server writes never fold, each is a step.
     const last = this.journal[this.journal.length - 1];
     if (from === 'desk' && last?.from === 'desk' && last.address === address && entry.at - last.at < DRAG_MS) {
       this.journal[this.journal.length - 1] = { ...entry, at: last.at };
@@ -148,8 +117,7 @@ class MockConsole implements ConsoleDevice {
     this.write(MATRIX.ON_ADDRESS, MUTE, 'desk');
     this.write(MAIN.ADDRESS, faderFromDb(BOOT.MAIN_DB), 'desk');
     this.write(MAIN.ON_ADDRESS, MUTE, 'desk');
-    // Note(yoochan.kim): the log starts empty. Nothing was sent here — these
-    // values are where the desk was found, not traffic anyone would recognise.
+    // Note(yoochan.kim): these are where the desk was found, not traffic anyone sent, so the log starts empty.
     this.journal = [];
   }
 
@@ -159,14 +127,7 @@ class MockConsole implements ConsoleDevice {
     this.announce();
   }
 
-  /**
-   * A hand on the desk itself.
-   *
-   * Note(yoochan.kim): the one thing a mock can do that a summary could not —
-   * put the desk somewhere the server did not, which is the situation the
-   * panel's held press exists for. Unknown addresses are refused rather than
-   * invented, so a typo in the view cannot grow the desk a channel.
-   */
+  /** A hand on the desk; unknown addresses are refused so a typo in the view cannot grow the desk a channel. */
   set(address: string, value: number): boolean {
     if (deskAddress(address) === null || !Number.isFinite(value)) return false;
     this.write(address, value, 'desk');
@@ -191,8 +152,7 @@ class MockConsole implements ConsoleDevice {
     this.wireListeners.push(listener);
   }
 
-  // Note(yoochan.kim): this desk has no audio behind it, so it never shows a meter
-  // frame — and whatever waits for one before playing never plays here.
+  // Note(yoochan.kim): no audio behind this desk, so no meter frame, and whatever waits for one never plays here.
   watchMeters(): () => void {
     return () => {};
   }
@@ -208,8 +168,7 @@ class MockConsole implements ConsoleDevice {
 
     log.info('mockConsole', null, 'Enabling console input', { input: input.ID });
     await this.delay(50);
-    // Note(yoochan.kim): the same order X32Console sends in — every channel on,
-    // then every channel's level — so the log here reads like the log there.
+    // Note(yoochan.kim): the same order X32Console sends in, so the log here reads like the log there.
     for (const channel of input.CHANNELS) this.write(channel.ON_ADDRESS, UNMUTE, 'server');
     for (const channel of input.CHANNELS) this.write(channel.FADER_ADDRESS, faderFromDb(channel.FADER_DB), 'server');
     this.announce();
@@ -226,9 +185,7 @@ class MockConsole implements ConsoleDevice {
     this.write(MATRIX.ON_ADDRESS, UNMUTE, 'server');
     this.announce();
 
-    // Note(yoochan.kim): the wait is copied from X32Console rather than skipped,
-    // because the gap between the matrix and the main is the part of this
-    // sequence most worth watching — see CONSOLE_CONFIG.INITIALIZE.
+    // Note(yoochan.kim): copied from X32Console, not skipped: the matrix-to-main gap is the part most worth watching.
     await this.delay(MAIN.DELAY_MS);
     this.write(MAIN.ADDRESS, faderFromDb(MAIN.DB), 'server');
     this.write(MAIN.ON_ADDRESS, UNMUTE, 'server');
@@ -251,7 +208,6 @@ class MockConsole implements ConsoleDevice {
     });
   }
 
-  /** The desk as the view draws it. */
   snapshot(): MockSnapshot {
     return {
       inputs: INPUTS.map((input) => ({

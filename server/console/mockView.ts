@@ -11,47 +11,19 @@ const MAX_BODY_BYTES = 1024;
 /** How often the page is told where this server is. */
 const WHERE_MS = 3000;
 
-/**
- * Where a panel would reach the server this desk belongs to.
- *
- * Note(yoochan.kim): a mock desk exists only because a media server is running
- * in mock mode, so opening this page is already knowing where that server is —
- * but only if the page says so. Written the way the app's own address box wants
- * it, so it can be read off the screen and typed straight in.
- *
- * Every address this machine answers on is listed. Which one a panel can reach
- * is not something this end can know: a laptop is usually on a LAN and a VPN at
- * once, and the two look identical from here. And a laptop moves between
- * networks, so this is worked out fresh rather than remembered.
- */
+/** Every address, worked out fresh: a LAN and a VPN look alike from here, and a laptop moves between networks. */
 function serverAddresses(): string[] {
   const found = Object.values(os.networkInterfaces())
     .flat()
     .filter((entry) => entry !== undefined && entry.family === 'IPv4' && !entry.internal)
+    // Note(yoochan.kim): written as the app's address box wants it, so it can be typed straight in.
     .map((entry) => `http://${entry!.address}:${SOCKET_CONFIG.PORT}/`);
   return found.length > 0 ? found : [`http://localhost:${SOCKET_CONFIG.PORT}/`];
 }
 
-/**
- * A face for the mock desk, at `/mock`.
- *
- * The desk this server drives is the one thing about it nobody can watch: the
- * X32 answers only two of the addresses it is sent, so a mute group released or
- * a master moved leaves no trace anywhere — and checking on the real desk means
- * a room full of people hearing the check. This draws the mock's own state
- * instead, along with every message it was sent, in order and with the pauses
- * between them, so a sequence can be watched through in silence.
- *
- * It exists only when the console is the mock. Handed a real desk there is
- * nothing here to draw, and a page that could move the masters had better not
- * be reachable when the masters are real.
- *
- * Returns whether it took the request, so the caller can go on to its own routes.
- */
+/** Mock only, as a page moving real masters must not exist; lets a run be watched in silence. True if it handled it. */
 export function createMockView(mock: MockConsole): (req: IncomingMessage, res: ServerResponse) => boolean {
-  // Note(yoochan.kim): one listener on the console, many watchers on the page.
-  // Subscribing per connection would grow the console a listener for every tab
-  // ever opened, since a listener list has no way to take one back.
+  // Note(yoochan.kim): one console listener for every page, since a listener list cannot take one back per tab.
   const watching = new Set<ServerResponse>();
   mock.onChange(() => {
     if (watching.size === 0) return;
@@ -60,10 +32,7 @@ export function createMockView(mock: MockConsole): (req: IncomingMessage, res: S
   });
 
   const whereFrame = (): string => `event: where\ndata: ${JSON.stringify(serverAddresses())}\n\n`;
-  // Note(yoochan.kim): the address is the one thing here that changes without
-  // the desk changing — joining another network moves it — so it is sent on its
-  // own beat rather than waiting for somebody to touch a fader. Unref'd: a page
-  // nobody has open must not be a reason for this process to stay alive.
+  // Note(yoochan.kim): its own beat, since a new network moves it; unref'd so it alone never keeps the process alive.
   setInterval(() => {
     if (watching.size === 0) return;
     const frame = whereFrame();
@@ -87,8 +56,7 @@ export function createMockView(mock: MockConsole): (req: IncomingMessage, res: S
         'cache-control': 'no-store',
         connection: 'keep-alive',
       });
-      // Note(yoochan.kim): the current state first, so a page that has just
-      // opened is not blank until somebody moves something.
+      // Note(yoochan.kim): the current state first, so a just-opened page is not blank until something moves.
       res.write(`data: ${JSON.stringify(mock.snapshot())}\n\n`);
       res.write(whereFrame());
       watching.add(res);

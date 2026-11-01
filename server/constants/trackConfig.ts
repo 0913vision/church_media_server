@@ -1,10 +1,7 @@
-// Note(yoochan.kim): approved 2026-09-25. 50 is where every track in the library
-// already sat — 53 since levels took the fader's shape (2026-10-25), the same
-// loudness — and the longest file here (통성기도) is 166MB.
 export const TRACK_CONFIG = {
-  /** The level a track added while the server runs starts at, until somebody sets it by ear */
+  /** Where every library track already sits (approved by the user), until somebody sets it by ear */
   NEW_TRACK_VOLUME: 53,
-  /** The largest audio file the server takes in */
+  /** The largest audio file the server takes in; the longest track here is 166MB (approved by the user) */
   MAX_BYTES: 300 * 1024 * 1024,
   /** How long an upload waits for addTrack before it is deleted */
   UPLOAD_TTL_MS: 10 * 60 * 1000,

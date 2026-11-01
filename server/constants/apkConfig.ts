@@ -1,8 +1,6 @@
 import { requireEnv } from '../utils/env.ts';
 
-// Note(yoochan.kim): APK distribution — the Pi's simple file server owns the
-// files behind a password; this server only relays them (server/update/apkProxy.ts),
-// so no client ever holds that password.
+// Note(yoochan.kim): the Pi's file server keeps the APKs behind a password; relayed here so no client holds it.
 export const APK_CONFIG = {
   FILESERVER_URL: requireEnv('FILESERVER_URL'),
   FILESERVER_PASSWORD: requireEnv('FILESERVER_PASSWORD'),

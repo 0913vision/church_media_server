@@ -5,14 +5,7 @@ import { APK_CONFIG } from '../constants/apkConfig.ts';
 import { errorMessage } from '../utils/errors.ts';
 import { log } from '../utils/logger.ts';
 
-/**
- * GET /apk/phone | /apk/tablet — the app's update link.
- *
- * The file server wants a password in a POST body, which a plain link cannot
- * carry. This relay holds the password and streams the file through, so an
- * outdated app only ever needs to open a URL it can derive from the server
- * address it already has.
- */
+/** The file server wants its password in a POST body, so this relay lets an outdated app update by a plain link. */
 export async function serveApk(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const variant = req.url === '/apk/phone' ? 'phone' : req.url === '/apk/tablet' ? 'tablet' : null;
   if (req.method !== 'GET' || variant === null) {

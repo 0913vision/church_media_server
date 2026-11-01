@@ -42,12 +42,6 @@ import type { ServerDeps } from './deps.ts';
 import { requireEnv } from './utils/env.ts';
 import { log } from './utils/logger.ts';
 
-/**
- * Composition root: builds the whole object graph explicitly (every
- * dependency is constructor-injected here), wires it into a dependency
- * context, and attaches handler registration to incoming connections.
- */
-/** Socket.IO server parameterized with this project's protocol maps */
 type TypedServer = Server<ClientToServerEventsUnsafe, ServerToClientEvents, Record<string, never>, SocketData>;
 
 class MediaServer {
@@ -63,25 +57,20 @@ class MediaServer {
   start(): void {
     log.info('server', null, 'Socket is initializing');
 
-    // Note(yoochan.kim): the console is built first because the HTTP door has to
-    // know whether there is a mock behind it. A real desk has no face to serve,
-    // and a page that can move the masters must not exist when they are real.
+    // Note(yoochan.kim): built first, because the HTTP door has to know whether a mock is behind it.
     const mockConsole = DEVICE_CONFIG.CONSOLE_MODE === 'MOCK' ? new MockConsole() : null;
     const consoleDevice: ConsoleDevice = mockConsole ?? new X32Console();
+    // Note(yoochan.kim): a page that can move the masters must not exist when they are real.
     const serveMockDesk = mockConsole ? createMockView(mockConsole) : null;
 
-    // Note(yoochan.kim): built before the HTTP server, because an upload lands in the
-    // library's folder and the door has to exist from the first request.
+    // Note(yoochan.kim): built before the HTTP server, because the upload door has to exist from the first request.
     const trackLibrary = new TrackLibrary(requireEnv('TRACKS_MANIFEST_PATH'), requireEnv('TRACKS_AUDIO_DIR'));
     const uploads = new Uploads(TRACK_CONFIG.UPLOAD_TTL_MS);
     this.uploads = uploads;
     const serveUploads = createUploadDoor(trackLibrary, uploads);
     const fetcher = new Fetcher(requireEnv('YTDLP_PATH'));
 
-    // Note(yoochan.kim): the plain-HTTP doors this server has, each moving a file and
-    // nothing else: an outdated app downloads its update, the admin web sends an
-    // mp3, and in mock mode the fake desk shows its face. Everything that changes
-    // the device speaks the socket protocol.
+    // Note(yoochan.kim): HTTP only moves files; everything that changes the device speaks the socket protocol.
     const httpServer = createServer((req, res) => {
       if (serveMockDesk?.(req, res)) return;
       if (serveUploads(req, res)) return;
@@ -98,27 +87,23 @@ class MediaServer {
     httpServer.listen(SOCKET_CONFIG.PORT);
     this.io = io;
 
-    // Note(yoochan.kim): Shared singletons (created once, reused across all connections).
-    // Only the Notifier touches io directly; everything else speaks domain.
+    // Note(yoochan.kim): only the Notifier touches io directly; everything else speaks domain.
     const notifier = new Notifier(io);
 
-    // Note(yoochan.kim): Restore persisted preferences (volume / mute / song) across restarts and
-    // reboots, but always boot PAUSED — a reboot must never auto-start audio.
     const schedule = new Schedule(requireEnv('SCHEDULE_FILE_PATH'));
     const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
     const restored = stateStore.load();
-    // Note(yoochan.kim): a song dropped from the manifest since the last run no
-    // longer exists to load, so the deck falls back to the first one that does
+    // Note(yoochan.kim): a song since dropped from the manifest cannot be loaded, so the deck takes the first.
     const restoredSong = trackLibrary.isDeckSong(restored?.currentSong) ? restored!.currentSong : undefined;
     const initialConfig: PlayerConfig = {
       ...INITIAL_PLAYER_CONFIG,
       ...(restored ?? {}),
       currentSong: restoredSong ?? trackLibrary.defaultSong(),
+      // Note(yoochan.kim): always paused at boot, so a reboot never starts sound in the room.
       state: PlaybackState.PAUSED
     };
 
-    // Note(yoochan.kim): The clock correction outlives a reboot too: it describes the building,
-    // not the run, and nobody should have to set it again after a power cut.
+    // Note(yoochan.kim): the clock correction describes the building, not the run, so it outlives a power cut.
     const clock = new Clock(restored?.clockOffsetSec ?? 0);
     let preferences: PersistedState = {
       serverVolume: initialConfig.serverVolume,
@@ -138,10 +123,7 @@ class MediaServer {
         persist();
       }
     );
-    // Note(yoochan.kim): what the deck came back with. Where each song had got to is not
-    // kept across a restart, so every song is at its beginning again — worth seeing
-    // when reading back what the room heard afterwards. The fades are said here once,
-    // since a line saying fade=in means this long.
+    // Note(yoochan.kim): positions are lost on restart; the fades are logged once so a later fade=in line has a length.
     log.info('player', null, 'Player restored', {
       song: initialConfig.currentSong,
       volume: initialConfig.serverVolume,
@@ -153,8 +135,7 @@ class MediaServer {
 
     const adminSessionManager = new AdminSessionManager();
     const lockCoordinator = new LockCoordinator(notifier);
-    // Note(yoochan.kim): whatever a hold left set aside before a stop is handed back
-    // here, and put back as soon as the desk answers.
+    // Note(yoochan.kim): a hold's journal from before a stop is handed back here and restored once the desk answers.
     const deskHolds = new DeskHolds(consoleDevice, CONSOLE_CONFIG.HOLD, (entries) => {
       deskJournal = entries;
       persist();
@@ -199,10 +180,7 @@ class MediaServer {
     }, SOCKET_CONFIG.PING_INTERVAL_MS);
 
     io.on('connection', (socket) => {
-      // Note(yoochan.kim): the transport is worth saying out loud. Socket.IO
-      // opens on HTTP long-polling and upgrades to a websocket; a client that
-      // never upgrades keeps working but feels slow, and nothing else in the
-      // log would tell you which one you are looking at.
+      // Note(yoochan.kim): a client stuck on long-polling feels slow, and nothing else in the log shows the transport.
       log.info('server', socket, 'Socket connected', {
         ip: socket.handshake.address,
         transport: socket.conn.transport.name,
@@ -214,17 +192,13 @@ class MediaServer {
       registerHandlers(socket, deps);
 
       socket.on('disconnect', (reason) => {
-        // Note(yoochan.kim): The admin lock is global state and intentionally persists past a
-        // disconnect; only the admin session is dropped (by AdminSessionManager).
+        // Note(yoochan.kim): the admin lock is global and outlives a disconnect; only the admin session is dropped.
         log.info('server', socket, 'Socket disconnected', { reason });
       });
     });
   }
 
-  /**
-   * Graceful shutdown: stop the heartbeat and close all socket connections.
-   * The MPV instance is released when the process exits.
-   */
+  /** Leaves mpv to be released when the process exits. */
   stop(): void {
     log.info('server', null, 'Shutting down');
 

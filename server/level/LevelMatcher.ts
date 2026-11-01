@@ -23,7 +23,6 @@ const SILENCE_DB = -120;
 const AUDIO_ATTEMPTS = 12;
 const AUDIO_RETRY_MS = 300;
 
-/** A measurement ending early, and why. */
 class Ended extends Error {
   constructor(readonly why: LevelFailure) {
     super(why);
@@ -49,16 +48,7 @@ interface DeckSnapshot {
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const oneDecimal = (value: number): number => Math.round(value * 10) / 10;
 
-/**
- * Measures a track on the desk and moves its level onto a target.
- *
- * Note(yoochan.kim): the order is the safety. The music player's input is switched
- * off on the desk and read back first (a DeskHolds hold); the desk has to be
- * sending meters before anything plays; and the track has stopped before the
- * hold puts the input back. So the room never hears a measurement, and a desk
- * that cannot be set aside — the mock among them, which has no meters — never
- * gets one played at it at all.
- */
+/** Note(yoochan.kim): order is the safety: input off before play, meters before play, stopped before input back. */
 class LevelMatcher {
   private status: LevelMatch = { phase: 'idle' };
   private run: Run | null = null;
@@ -139,6 +129,7 @@ class LevelMatcher {
     let ended: LevelFailure | null = null;
 
     try {
+      // Note(yoochan.kim): input off and read back before anything plays, so the room never hears a measurement.
       await this.mixer.holding([off(LEVEL_CONFIG.STRIP)], async (desk) => {
         desk.onDeskChange(() => {
           run.why ??= LevelFailure.DESK_MOVED;
@@ -151,8 +142,7 @@ class LevelMatcher {
       } else if (error instanceof DeskHeldError) {
         ended = LevelFailure.DESK_HELD;
       } else if (error instanceof DeskRestoreError) {
-        // Note(yoochan.kim): the answer stands; the desk keeps being asked to take its
-        // old value back, and the console attribute shows the input still off meanwhile.
+        // Note(yoochan.kim): the answer stands; DeskHolds keeps retrying the restore, the input showing off meanwhile.
         log.error('level', null, 'Measured, but the desk is not put back yet', { track: run.track.id });
       } else {
         log.error('level', null, 'The desk could not be set aside', { track: run.track.id, error: errorMessage(error) });
@@ -195,6 +185,7 @@ class LevelMatcher {
 
     try {
       const askedAt = Date.now();
+      // Note(yoochan.kim): nothing plays until the desk sends meters, so the mock, which has none, never plays one.
       while (lastFrameAt === 0) {
         this.check(run);
         if (Date.now() - askedAt >= this.timing.METER_WAIT_MS) throw new Ended(LevelFailure.DESK_SILENT);
@@ -258,14 +249,7 @@ class LevelMatcher {
     if (this.flowRunner.ownsDeck()) throw new Ended(LevelFailure.DECK_TAKEN);
   }
 
-  /**
-   * Puts the deck back the way the measurement found it: the user's song, or the
-   * library track a person had put on, with their loop setting.
-   *
-   * Note(yoochan.kim): unless something else has the deck by now. A run that took
-   * the gate has its own music to play, and releasing the gate has already put
-   * the song back; either way the deck is no longer the measurement's to touch.
-   */
+  /** Note(yoochan.kim): a run that took the gate, or a release that already put the song back, owns the deck by now. */
   private async giveBack(found: DeckSnapshot): Promise<void> {
     const ours = this.player.getDeck().source === 'track'
       && !this.flowRunner.ownsDeck()
@@ -280,8 +264,7 @@ class LevelMatcher {
       if (before) await this.player.selectTrack(before, before.volume, found.loop);
     };
     if (!(await this.withAudio(putBack))) {
-      // Note(yoochan.kim): the track has to stop before the desk takes the input
-      // back, and that outranks waiting for the lock.
+      // Note(yoochan.kim): the track must stop before the input comes back on the desk; that outranks the lock.
       log.error('level', null, 'The audio device stayed busy; putting the deck back without it');
       await putBack();
     }

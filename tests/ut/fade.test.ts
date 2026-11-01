@@ -8,9 +8,7 @@ import { MuteState, PlaybackState } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): whether pressing play faded is read off the audio lock, which a fade
-// holds until it ends and a start at once lets go of straight away. Muted first, so
-// nothing here reaches the speakers.
+// Note(yoochan.kim): a fade is told by how long it holds the audio lock; muted first, so nothing reaches speakers.
 const FADED_MS = 1500;
 const AT_ONCE_MS = 500;
 
@@ -21,10 +19,7 @@ async function lockFree(socket: SocketTestHelper): Promise<void> {
   assert.strictEqual((await socket.read()).audioLock, false);
 }
 
-/**
- * Presses play and says how long the audio lock was held for it. Both ends are
- * listened for before the press: a start at once lets go in the same breath.
- */
+/** Both lock ends are listened for before the press, since a start at once lets go in the same breath. */
 async function pressPlay(socket: SocketTestHelper): Promise<number> {
   await lockFree(socket);
   let takenAt = 0;
@@ -64,7 +59,7 @@ describe('Pressing play on the player', () => {
       assert.strictEqual((await muted).mute, MuteState.MUTED);
       await pause(admin);
 
-      // The panel's own song, wherever it stands.
+      // Note(yoochan.kim): the panel's own song, wherever it stands.
       assert.deepStrictEqual((await admin.read()).deck, { source: 'song' });
       const song = await pressPlay(admin);
       assert.ok(song >= FADED_MS, `the panel's song held the lock ${song}ms`);
@@ -74,7 +69,7 @@ describe('Pressing play on the player', () => {
       admin.write('adminLock', true);
       await held;
 
-      // A library track that is not one of the app's songs, at its beginning.
+      // Note(yoochan.kim): a library track that is not one of the app's songs, at its beginning.
       const scratchOn = admin.waitForState((patch) => patch.deck?.source === 'track');
       admin.invoke('selectTrack', { id: SCRATCH_TRACK_ID });
       await scratchOn;
@@ -82,7 +77,7 @@ describe('Pressing play on the player', () => {
       assert.ok(scratch < AT_ONCE_MS, `a track at its beginning held the lock ${scratch}ms`);
       await pause(admin);
 
-      // One of the app's songs, put on as a library track, at its beginning.
+      // Note(yoochan.kim): one of the app's songs, put on as a library track, at its beginning.
       const appSongOn = admin.waitForState((patch) => patch.deck?.source === 'track' && patch.deck.id === ready.songs[0]!.id);
       admin.invoke('selectTrack', { id: ready.songs[0]!.id });
       await appSongOn;

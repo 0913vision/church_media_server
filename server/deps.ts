@@ -13,21 +13,14 @@ import type AdminSession from './lock/AdminSession.ts';
 import type Clock from './clock/Clock.ts';
 import type LevelMatcher from './level/LevelMatcher.ts';
 
-/**
- * Shared dependency context built once by the composition root (server.ts) and
- * handed to the device tables and the socket handlers; each destructures only
- * what it needs. Kept in its own module so the attribute and command tables can
- * use it without importing the handlers that register them.
- */
+/** Own module, so the attribute and command tables use it without importing the handlers that register them. */
 export interface ServerDeps {
   /** Single owner of all S2C emission */
   notifier: Notifier;
   player: Player;
   lockCoordinator: LockCoordinator;
   adminSessionManager: AdminSessionManager;
-  /** Shared mixing console service */
   mixerConsole: MixerConsole;
-  /** Library of playable tracks for scheduled flows */
   trackLibrary: TrackLibrary;
   /** Audio sent to POST /uploads, waiting for addTrack */
   uploads: Uploads;
@@ -37,7 +30,6 @@ export interface ServerDeps {
   flowRunner: FlowRunner;
   /** The weekly calendar: which flows exist and when they may run */
   schedule: Schedule;
-  /** Starts the calendar's auto-start entries when their window opens */
   autoStarter: AutoStarter;
   /** Everything about a gate a person holds that runs on a clock */
   adminSession: AdminSession;

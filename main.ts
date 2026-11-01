@@ -6,8 +6,7 @@ import { errorMessage } from './server/utils/errors.ts';
 const server = new MediaServer();
 server.start();
 
-// Graceful shutdown on Ctrl-C / pm2 stop|restart (pm2 sends SIGINT, then
-// SIGKILL after kill_timeout). Shutdown is instant, so it finishes in time.
+// Note(yoochan.kim): pm2 stop and restart send SIGINT, then SIGKILL after kill_timeout; shutdown is instant.
 const shutdown = (): void => {
   server.stop();
   process.exit(0);
@@ -15,14 +14,13 @@ const shutdown = (): void => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// On an unexpected error, log it and exit non-zero so pm2 restarts the process
-// cleanly (the in-process mpv dies with it — no orphaned audio).
+// Note(yoochan.kim): exits non-zero so pm2 restarts it; mpv is in-process, so no audio is left playing.
 const crash = (label: string, error: unknown): void => {
   log.error('main', null, label, { error: errorMessage(error) });
   try {
     server.stop();
   } catch {
-    // already shutting down — ignore
+    // Note(yoochan.kim): already shutting down.
   }
   process.exit(1);
 };

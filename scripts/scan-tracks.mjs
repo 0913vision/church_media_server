@@ -1,13 +1,4 @@
-// Measures every track in the manifest and writes the real duration back.
-//
-// A flow's timeline is derived from these numbers — the sequence is laid out
-// backwards from when it must finish — so a hand-typed length is the one place
-// the whole schedule can quietly drift. This measures instead.
-//
-// Uses ffprobe, which reads the container header and never opens an audio
-// device: running it can make no sound.
-//
-// Usage: npm run scan-tracks [path-to-manifest]
+// Note(yoochan.kim): a flow's timeline is laid out from these durations, so a hand-typed one skews the schedule.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 const manifestPath = process.argv[2] ?? process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 const manifestDir = path.dirname(manifestPath);
 
+// Note(yoochan.kim): ffprobe reads only the file's header and never opens an audio device, so this makes no sound.
 function measureSeconds(file) {
   const output = execFileSync(
     'ffprobe',
@@ -26,7 +18,7 @@ function measureSeconds(file) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     throw new Error(`ffprobe reported no usable duration for ${file}`);
   }
-  // One decimal is well inside the seek tolerance and keeps the file readable.
+  // Note(yoochan.kim): one decimal is well inside the seek tolerance and keeps the file readable.
   return Math.round(seconds * 10) / 10;
 }
 

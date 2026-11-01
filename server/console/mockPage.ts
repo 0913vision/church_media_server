@@ -1,15 +1,6 @@
 import type { MockSnapshot } from './MockConsole.ts';
 
-/**
- * The mock desk's face.
- *
- * The skeleton is rendered here, once, because the desk's shape is fixed by
- * configuration and never changes while the page is open. The browser only
- * fills in values, which keeps the client free of any templating and — more to
- * the point — free of a second copy of the decibel curve: every number shown is
- * one the server worked out. A view that could disagree with the server about
- * what -9 dB is would be worse than no view at all.
- */
+/** Rendered here so the browser only fills in values and never holds a second copy of the decibel curve. */
 export function mockPage(snapshot: MockSnapshot): string {
   return `<!doctype html>
 <html lang="ko">
@@ -50,9 +41,7 @@ body {
 .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .head h1 { font-size: 17px; margin: 0; font-weight: 700; }
 .head .spacer { flex: 1; }
-/* Where a panel would reach this server. It is the whole reason this page can
-   exist, and on a laptop that moves between networks it is also the one thing
-   on screen that goes stale on its own — so it is pushed, not printed once. */
+/* Where a panel reaches this server; pushed, not printed once, as a laptop changing networks makes it stale. */
 .where { display: flex; gap: 6px; flex-wrap: wrap; }
 .where code {
   font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 6px;
@@ -73,9 +62,7 @@ button:active { transform: translateY(1px); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
 
 /* ---- channel strips ---- */
-/* Note: a group is one thing the panel offers, however many channels are behind
-   it, so the space between two groups has to read as larger than the space
-   between one group's channels — otherwise three faders look like three inputs. */
+/* Note(yoochan.kim): a group is one input however many channels, so gaps between groups read larger. */
 .strips { display: flex; gap: 34px; flex-wrap: wrap; }
 .group { display: grid; gap: 9px; padding-left: 18px; border-left: 1px solid var(--line); }
 .group:first-child { padding-left: 0; border-left: 0; }
@@ -102,8 +89,7 @@ button:active { transform: translateY(1px); }
 .master { display: grid; grid-template-columns: 92px 1fr 74px; gap: 13px; align-items: center; }
 .master__n { font-size: 13.5px; font-weight: 600; color: var(--mut); }
 .master__n b { display: block; font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--fnt); }
-/* The masters carry a level, not a state, so they stay the colour of ink —
-   green and amber are kept for what is sounding and what is holding. */
+/* Masters carry a level, not a state, so they stay ink: green and amber mean sounding and holding. */
 .master input[type=range] { width: 100%; margin: 0; accent-color: var(--mut); cursor: ew-resize; }
 .master .db { font-family: var(--mono); font-size: 13.5px; font-weight: 600; text-align: right; }
 .gate { width: 100%; background: var(--hold-soft); color: var(--hold); border-color: transparent; }
@@ -180,8 +166,7 @@ function send(address, value) { post('/mock/set', { address: address, value: val
 
 document.getElementById('clear').onclick = function () { post('/mock/clear'); };
 
-/* Note: a lamp and a gate are the desk's own switches, so pressing one sends
-   the value the desk would hold — not a request the server may refuse. */
+// Note(yoochan.kim): a lamp and a gate are the desk's own switches, so a press sends the value, not a request.
 Array.prototype.forEach.call(document.querySelectorAll('.lamp'), function (lamp) {
   lamp.onclick = function () { send(lamp.dataset.on, lamp.classList.contains('on') ? 0 : 1); };
 });
@@ -208,9 +193,7 @@ function clock(at) {
     + '.' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
-/* A pause between two messages is the thing worth seeing here — the main fader
-   waits for the matrix to land — so anything longer than a stray millisecond is
-   drawn as its own row rather than left to be worked out from the timestamps. */
+// Note(yoochan.kim): a pause is the thing worth seeing (the main waits for the matrix), so it gets its own row.
 var GAP_MS = 150;
 
 function drawLog(journal) {
@@ -296,7 +279,6 @@ function master(name: string, fader: MockSnapshot['matrix']): string {
     </div>`;
 }
 
-/** `/auxin/05/mix/fader` is the channel called `auxin/05`; the rest is the same every time. */
 function shortAddress(address: string): string {
   return address.replace(/^\//, '').replace(/\/mix\/fader$/, '');
 }

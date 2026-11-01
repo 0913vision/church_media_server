@@ -9,30 +9,26 @@ import type { DeskValue } from './desk.ts';
 
 const { UDPPort } = osc;
 
-// Note(yoochan.kim): /xremote makes the desk push changes the moment they
-// happen, but it expires after 10s and never sends current state — so it is
-// renewed on an interval, and the poll stays for initial values and liveness:
-// answers older than STALE_MS stop counting as answers.
+// Note(yoochan.kim): /xremote never sends current state, so the poll stays for initial values and liveness.
 const POLL_MS = 2000;
+// Note(yoochan.kim): an answer older than this no longer counts, so a desk gone quiet reads as unknown.
 const STALE_MS = 7000;
+// Note(yoochan.kim): /xremote expires after 10s, so it is renewed before that.
 const XREMOTE_RENEW_MS = 5000;
 // Note(yoochan.kim): when this server is the one changing something
 const ECHO_POLL_MS = [120, 400];
-// Note(yoochan.kim): a question is UDP over Wi-Fi, so one lost packet is asked
-// again rather than taken as a desk that has gone.
+// Note(yoochan.kim): UDP over Wi-Fi, so one lost question is asked again before the desk counts as gone.
 const QUERY_WAIT_MS = 250;
 const QUERY_ASKS = 3;
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
 const METER = CONSOLE_CONFIG.METER;
-// Note(yoochan.kim): the reading follows each input's first channel; the rest
-// are driven together but do not answer for it.
+// Note(yoochan.kim): the reading follows each input's first channel; the rest are driven but do not answer for it.
 const POLLED: readonly string[] = INPUTS.flatMap((input) => [
   input.CHANNELS[0]!.ON_ADDRESS,
   input.CHANNELS[0]!.FADER_ADDRESS,
 ]);
 
-/** X32 console over OSC. */
 class X32Console implements ConsoleDevice {
   private readonly client: InstanceType<typeof UDPPort>;
   private readonly heard = new Map<string, { value: number; at: number }>();
@@ -65,8 +61,7 @@ class X32Console implements ConsoleDevice {
       setInterval(() => this.subscribe(), XREMOTE_RENEW_MS);
       setInterval(() => this.poll(), POLL_MS);
     });
-    // Note(yoochan.kim): without this handler one EHOSTUNREACH from the poll
-    // kills the whole server; an absent desk is already just unknown.
+    // Note(yoochan.kim): without this, one EHOSTUNREACH from the poll kills the server; an absent desk is just unknown.
     this.client.on("error", (error) => {
       if (error.message === this.lastNetworkError) return;
       this.lastNetworkError = error.message;
@@ -160,8 +155,7 @@ class X32Console implements ConsoleDevice {
     this.client.send({ address: '/meters', args: [{ type: 's', value: METER.REQUEST }] });
   }
 
-  // Note(yoochan.kim): a meter frame is a blob of little-endian numbers — a count,
-  // then that many floats — unlike the rest of OSC, which is big-endian.
+  // Note(yoochan.kim): a meter blob is little-endian, unlike the rest of OSC, which is big-endian.
   private hearMeters(blob: Uint8Array): void {
     const data = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
     if (data.byteLength < 4) return;
@@ -205,9 +199,7 @@ class X32Console implements ConsoleDevice {
     for (const listener of this.listeners) listener();
   }
 
-  // Note(yoochan.kim): every value this project sends (mute, fader) is a number,
-  // and these go as floats — what osc.js chose for a bare number before the port
-  // carried types, kept so the desk keeps receiving exactly what it always has.
+  // Note(yoochan.kim): floats, as osc.js sent bare numbers before typed OSC, so the desk gets what it always has.
   private sendOscCommand(address: string, args: number): Promise<void> {
     return new Promise((resolve) => {
       this.client.send({
@@ -235,14 +227,11 @@ class X32Console implements ConsoleDevice {
     const { UNMUTE: OPEN } = CONSOLE_CONFIG.OSC_VALUES;
     for (const input of INPUTS) await this.enable(input.ID);
     await this.sendOscCommand(MUTE_GROUP_ADDRESS, MUTE_GROUP_RELEASED);
-    // Note(yoochan.kim): level first, then open. A master unmuted while it still
-    // holds an old level is a room hearing that level.
+    // Note(yoochan.kim): level first, then open: a master unmuted at an old level is a room hearing that level.
     await this.sendOscCommand(MATRIX.ADDRESS, faderFromDb(MATRIX.DB));
     await this.sendOscCommand(MATRIX.ON_ADDRESS, OPEN);
 
-    // Note(yoochan.kim): the main comes last and late, on purpose — see
-    // CONSOLE_CONFIG.INITIALIZE. Raising it before the matrix has come down
-    // would let the room hear everything at once.
+    // Note(yoochan.kim): main last and late: raised before the matrix has come down, the room hears everything at once.
     await new Promise((resolve) => setTimeout(resolve, MAIN.DELAY_MS));
     await this.sendOscCommand(MAIN.ADDRESS, faderFromDb(MAIN.DB));
     await this.sendOscCommand(MAIN.ON_ADDRESS, OPEN);
@@ -254,10 +243,7 @@ class X32Console implements ConsoleDevice {
     this.echoPoll();
   }
 
-  // Note(yoochan.kim): the desk pushes a change to everyone except whoever made
-  // it, so our own writes would otherwise go unnoticed until the next poll — the
-  // panel would sit there looking as if the press had missed. Ask twice: once
-  // now, once after the desk has had a moment to apply it.
+  // Note(yoochan.kim): the desk never echoes our own writes, so the press would look missed; ask now and once applied.
   private echoPoll(): void {
     this.poll();
     for (const delayMs of ECHO_POLL_MS) setTimeout(() => this.poll(), delayMs);

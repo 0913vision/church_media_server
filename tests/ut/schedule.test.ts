@@ -7,9 +7,7 @@ import type { ScheduleEntry } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): the calendar lives on the server now, so these run over the wire like
-// any other state. Every entry here is lock-only: a music part would make the
-// host audible, and the timeline is FlowRunner's to prove.
+// Note(yoochan.kim): every entry here is lock-only, since a music part would make the host audible.
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 function entry(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -68,8 +66,7 @@ describe('Schedule Tests', () => {
       assert.deepStrictEqual(list.map((each) => each.id), ['wed-test']);
       assert.deepStrictEqual(list[0]!.weekdays, ['wed']);
 
-      // Note(yoochan.kim): a known id replaces in place rather than appending, or editing
-      // a flow would quietly leave the old one behind it.
+      // Note(yoochan.kim): a known id replaces in place, or editing a flow would quietly leave the old one behind.
       const renamed = await saved(admin, entry('wed-test', { name: '이름 바뀜' }));
       assert.strictEqual(renamed.length, 1);
       assert.strictEqual(renamed[0]!.name, '이름 바뀜');
@@ -115,7 +112,7 @@ describe('Schedule Tests', () => {
     const cue = [{ id: 'no-such-track', volume: 40 }];
 
     try {
-      // A track this server does not have is its own answer, not a generic refusal.
+      // Note(yoochan.kim): a track this server does not have is its own answer, not a generic refusal.
       const unknown = admin.waitForRejected('saveFlow');
       admin.invoke('saveFlow', {
         flow: entry('music-test', { parts: [{ kind: 'music', tracks: cue, endsAt: '20:00' }] }),
@@ -130,8 +127,7 @@ describe('Schedule Tests', () => {
       });
       assert.strictEqual(await late, RejectReason.INVALID_VALUE, 'music ending after the gate opens again');
 
-      // Note(yoochan.kim): "until the music" is an intent, so this one needs no end time of
-      // its own and cannot contradict one.
+      // Note(yoochan.kim): "until the music" is an intent, so it needs no end time of its own to contradict.
       const list = await saved(admin, entry('music-test', {
         lock: { at: '19:30', until: { kind: 'music' } },
         parts: [{ kind: 'music', tracks, endsAt: '20:00' }],
@@ -194,8 +190,7 @@ describe('Schedule Tests', () => {
       admin.invoke('startScheduledFlow', { id: 'never-written' });
       assert.strictEqual(await unknown, RejectReason.UNKNOWN_FLOW);
 
-      // Note(yoochan.kim): every day but today, so this asserts the refusal without ever
-      // handing the runner a flow — nothing here reaches the deck.
+      // Note(yoochan.kim): every day but today, so the runner is never handed a flow and nothing reaches the deck.
       const today = WEEKDAYS[(new Date().getDay() + 6) % 7]!;
       await saved(admin, entry('other-days', { weekdays: WEEKDAYS.filter((day) => day !== today) }));
 
@@ -218,7 +213,7 @@ describe('Schedule Tests', () => {
     try {
       await saved(admin, entry('persisted', { name: '남아 있어야 하는 것' }));
 
-      // A second client is told the same thing, from the same file.
+      // Note(yoochan.kim): a second client is told the same thing, from the same file.
       const other = new SocketTestHelper();
       await other.open('schedule-reader');
       try {

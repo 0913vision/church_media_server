@@ -1,31 +1,19 @@
 import { requireEnvOneOf } from './env.ts';
 
-// Note(yoochan.kim): Severity order for level filtering
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 
 type LogLevel = keyof typeof LOG_LEVELS;
 const LOG_LEVEL_NAMES: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
-// Note(yoochan.kim): Minimum level to print — LOG_LEVEL is a required, validated env variable
 const MIN_LEVEL: number = LOG_LEVELS[requireEnvOneOf('LOG_LEVEL', LOG_LEVEL_NAMES)];
 
-// Note(yoochan.kim): Anything with an id — a Socket.IO socket in practice
 interface SocketLike {
   id: string;
 }
 
 type LogExtra = Record<string, unknown>;
 
-/**
- * Local wall-clock time, to the millisecond.
- *
- * Schedules are written and read in local time, so logs in UTC mean adding
- * nine hours in your head before a line means anything — and a flow that ran
- * exactly on time reads as if it ran nine hours early. The offset is kept in
- * the line so a log lifted onto another machine is still unambiguous.
- * Milliseconds, because what somebody pressed and what the deck did about it
- * usually fall in the same second.
- */
+/** Local time like the schedules, offset kept for a log read elsewhere; ms as a press and its effect share a second. */
 function timestamp(at: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   const offsetMinutes = -at.getTimezoneOffset();
@@ -49,10 +37,8 @@ function print(level: LogLevel, message: string, context: LogExtra, at: Date): v
   console.log(`[${timestamp(at)}][${level.toUpperCase()}] ${message} ${contextStr}`);
 }
 
-/** How long a run of values has to go quiet before it is written as one line. */
 const DRAG_QUIET_MS = 700;
 
-/** A value moving in a run — a fader being dragged — not yet written. */
 interface Drag {
   message: string;
   context: LogExtra;
@@ -66,11 +52,6 @@ interface Drag {
 
 const drags = new Map<string, Drag>();
 
-/**
- * Writes a run as one line, stamped with its last step: where it went, and —
- * when it moved more than once — where it came from, in how many steps, over
- * how long.
- */
 function flushDrag(key: string): void {
   const drag = drags.get(key);
   if (!drag) return;
@@ -82,8 +63,7 @@ function flushDrag(key: string): void {
   print('info', drag.message, { ...drag.context, value: drag.last, ...run }, drag.lastAt);
 }
 
-// Note(yoochan.kim): every other line waits for the runs still open, so the log
-// reads in the order things happened — a volume dragged up, then play pressed.
+// Note(yoochan.kim): open runs are written before any other line so the log keeps the order things happened in.
 function flushDrags(): void {
   for (const key of [...drags.keys()]) flushDrag(key);
 }
@@ -129,11 +109,7 @@ export const log = {
     write('error', message, createContext(module, socket, extra));
   },
 
-  /**
-   * An info line for a value that moves in runs, like a fader dragged: steps under
-   * one key are kept as one line until the run goes quiet, so fifty ticks of a
-   * drag do not push everything else off the end of the log.
-   */
+  /** Folds a dragged value's steps under one key into one info line, so a drag cannot push the rest off the log. */
   drag: (
     key: string, module: string, socket: SocketLike | null | undefined, message: string, value: unknown, extra?: LogExtra,
   ): void => {

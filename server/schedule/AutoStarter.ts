@@ -6,21 +6,13 @@ import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
 const TICK_MS = 5_000;
-// Note(yoochan.kim): only the moment itself is the runner's. Past this, starting is a
-// person's call, and the dashboard offers the start key for exactly that case.
+// Note(yoochan.kim): past this, starting is a person's call, and the dashboard offers the start key for it.
 const GRACE_SEC = 5;
 
-/**
- * Starts calendar entries marked autoStart when their window opens.
- *
- * Note(yoochan.kim): this runs here rather than in a browser because a dashboard nobody
- * has open is the normal case, and a service that runs itself has to run
- * whether or not anyone is watching.
- */
+/** Note(yoochan.kim): here rather than in a browser, since a dashboard nobody has open is the normal case. */
 class AutoStarter {
   private timer: NodeJS.Timeout | null = null;
-  // Note(yoochan.kim): one occurrence each — "flow id on this day" already started or
-  // passed over. Not persisted: a skip is about one service, not a setting.
+  // Note(yoochan.kim): flow id on a day; not persisted, since a skip is about one service, not a setting.
   private done = new Set<string>();
 
   constructor(
@@ -33,7 +25,7 @@ class AutoStarter {
     if (this.timer) return;
     this.timer = setInterval(() => {
       void this.tick().catch((error) => {
-        // A bad tick must not end the loop: next week's service depends on it.
+        // Note(yoochan.kim): a bad tick must not end the loop, since next week's service depends on it.
         log.error('autostart', null, 'Tick failed', { error: errorMessage(error) });
       });
     }, TICK_MS);
@@ -45,7 +37,6 @@ class AutoStarter {
     this.timer = null;
   }
 
-  /** Passes over today's occurrence. Next week is unaffected. */
   skip(id: string): void {
     this.done.add(occurrence(id, this.clock.now()));
   }
@@ -55,7 +46,7 @@ class AutoStarter {
   }
 
   private async tick(): Promise<void> {
-    // Only one flow runs at a time, and the runner would refuse a second.
+    // Note(yoochan.kim): only one flow runs at a time, and the runner would refuse a second.
     if (this.flowRunner.status().phase !== 'idle') return;
 
     const now = this.clock.now();
@@ -79,7 +70,7 @@ class AutoStarter {
     }
   }
 
-  /** Drops occurrences from other days so the set cannot grow forever. */
+  /** Keeps the set from growing forever. */
   private prune(now: Date): void {
     const today = dayKey(now);
     this.done = new Set([...this.done].filter((key) => key.endsWith(today)));

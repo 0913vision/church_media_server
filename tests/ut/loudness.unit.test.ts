@@ -8,8 +8,7 @@ const near = (actual: number, expected: number, what: string): void => {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${what}: ${actual}, want ${expected}`);
 };
 
-// Note(yoochan.kim): what a number on the panel sounds like in the room, so pinned
-// rather than trusted. The anchors are the X32 fader's own marks, 100 at 0 dB.
+// Note(yoochan.kim): what a panel number sounds like in the room, so pinned to the X32 fader's own marks.
 describe('A level as people hear it', () => {
   test('reads like the desk\'s fader', () => {
     near(dbFromLevel(100), 0, '100');

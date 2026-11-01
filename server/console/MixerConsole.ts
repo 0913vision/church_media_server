@@ -10,13 +10,11 @@ import type { HeldDesk } from './DeskHolds.ts';
 
 const { MUTE_GROUP_ADDRESS, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
 
-/** Every address switching this input on writes. */
 function inputAddresses(inputId: string): string[] {
   const input = CONSOLE_CONFIG.INPUTS.find((candidate) => candidate.ID === inputId);
   return (input?.CHANNELS ?? []).flatMap((channel) => [channel.ON_ADDRESS, channel.FADER_ADDRESS]);
 }
 
-/** Every address initializing the desk writes. */
 const INITIALIZE_ADDRESSES = [
   ...CONSOLE_CONFIG.INPUTS.flatMap((input) => inputAddresses(input.ID)),
   MUTE_GROUP_ADDRESS,
@@ -62,12 +60,10 @@ class MixerConsole {
     return this.holds.holding(changes, body);
   }
 
-  /** The music player's input meters until the returned function is called — see ConsoleDevice. */
   watchMeters(listener: (levels: readonly number[]) => void): () => void {
     return this.console.watchMeters(listener);
   }
 
-  /** Whether this id is one of the inputs the desk offers */
   has(inputId: unknown): inputId is string {
     return typeof inputId === 'string' && this.read().some((input) => input.id === inputId);
   }

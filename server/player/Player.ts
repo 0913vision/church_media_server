@@ -8,31 +8,17 @@ import { dbFromLevel } from '../hardware/loudness.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
-/**
- * High-level Player class that abstracts hardware control and manages player state
- */
 class Player {
   private state: PlayerConfig;
-  /** True while a scheduled library track occupies the deck (not a song) */
+  /** True while a library track occupies the deck rather than a song */
   private trackMode = false;
   private trackId = '';
   /** What the device is set to right now, mute aside. See getVolume. */
   private liveVolume: number;
-  /**
-   * Note(yoochan.kim): always on unless the gate is held. The panel's songs are meant
-   * to run under a service without ending, so this resets when the gate opens.
-   */
+  /** Note(yoochan.kim): the panel's songs run under a service without ending, so this resets when the gate opens. */
   private loop = true;
 
-  /**
-   * @param device - Audio output (injected by the composition root)
-   * @param initialConfig - Starting state (defaults, or restored preferences
-   *   with state forced to PAUSED by the composition root)
-   * @param songVolumeOf - The level a song returns to. Asked each time rather than
-   *   held, so a level someone adjusts takes effect on the next selection.
-   * @param persist - Called with the preferences snapshot whenever they change,
-   *   so they survive a restart / reboot
-   */
+  /** songVolumeOf is asked each time rather than held, so a level someone adjusts applies at the next selection. */
   constructor(
     private readonly device: AudioOutput,
     initialConfig: PlayerConfig,
@@ -41,14 +27,10 @@ class Player {
   ) {
     this.state = { ...initialConfig };
     this.liveVolume = this.state.serverVolume;
-    // Note(yoochan.kim): Initialize hardware with the starting volume (silent if muted)
     this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
   }
 
-  /**
-   * The deck as a log line reads it: what is on it, where in it, at what level —
-   * enough to tell afterwards what the room heard.
-   */
+  /** Enough of the deck for a log line to tell afterwards what the room heard. */
   private where(): Record<string, string> {
     const at = this.device.position();
     return {
@@ -64,7 +46,7 @@ class Player {
       : `${this.liveVolume} (${dbFromLevel(this.liveVolume).toFixed(1)} dB)`;
   }
 
-  /** Snapshot of the persisted preferences (no play/pause state) */
+  /** No play/pause: a restart always comes back paused. */
   private snapshot(): PersistedState {
     return {
       serverVolume: this.state.serverVolume,
@@ -73,15 +55,8 @@ class Player {
     };
   }
 
-  // Note(yoochan.kim): Volume methods
-  /**
-   * What is sounding, 0-100 — not what the user set.
-   *
-   * Note(yoochan.kim): the two part company whenever something else has the deck. A flow
-   * plays each track at the level that flow was written with, and an admin's
-   * track at its own, while the user's setting waits to come back. Reporting the
-   * setting then would have the panel showing 30 into a room hearing 48.
-   */
+  // --- volume ---
+  /** What is sounding, not what the user set: a flow's or an admin's track plays at its own level meanwhile. */
   getVolume(): number {
     return this.liveVolume;
   }
@@ -91,11 +66,6 @@ class Player {
     return this.state.serverVolume;
   }
 
-  /**
-   * Sets the volume level and updates hardware.
-   * While muted, the device stays silent — only the remembered volume changes.
-   * @param volume - Volume level (0-100)
-   */
   setVolume(volume: number): void {
     this.state.serverVolume = volume;
     this.liveVolume = volume;
@@ -103,20 +73,12 @@ class Player {
     this.persist(this.snapshot());
   }
 
-  // Note(yoochan.kim): State methods
-  /**
-   * Gets the current playback state
-   */
+  // --- state ---
   getState(): PlaybackState {
     return this.state.state;
   }
 
-  /**
-   * Plays the audio and updates state. Picked up part-way it fades in; at its very
-   * beginning it starts at once, unless `fadeFromStart` — the app's own songs, which
-   * always fade. onSounding runs as the sound starts, so whoever asked hears about
-   * it then rather than when the fade is done.
-   */
+  /** `fadeFromStart`: the app's own songs always fade; onSounding fires as sound starts, not when the fade ends. */
   async play({ onSounding, fadeFromStart = false }: { onSounding?: () => void; fadeFromStart?: boolean } = {}): Promise<void> {
     const fade = fadeFromStart || this.device.isPartWay();
     log.info('player', null, 'Play', { ...this.where(), fade: fade ? 'in' : 'none' });
@@ -132,9 +94,6 @@ class Player {
     this.state.state = PlaybackState.PLAYING;
   }
 
-  /**
-   * Pauses the audio and updates state
-   */
   async pause(): Promise<void> {
     log.info('player', null, 'Pause', { ...this.where(), fade: 'out' });
     try {
@@ -146,10 +105,7 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
-  /**
-   * Stops what is sounding at once, with no fade — a run's notice cut short. A count
-   * fading away is still a count, heard for as long as it fades.
-   */
+  /** No fade: a run's notice cut short must stop at once, since a count fading away is still heard as a count. */
   async cut(): Promise<void> {
     if (!this.isPlaying()) return;
     log.info('player', null, 'Cut', { ...this.where(), fade: 'none' });
@@ -162,44 +118,27 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
-  // Note(yoochan.kim): Mute methods
-  /**
-   * Gets the current mute status
-   */
+  // --- mute ---
   getMute(): MuteState {
     return this.state.muted;
   }
 
-  /**
-   * Sets mute status and updates hardware volume
-   */
   setMute(muted: MuteState): void {
     this.state.muted = muted;
     if (muted === MuteState.MUTED) {
       this.device.setVolume(0);
     } else {
-      // Back to what was sounding, which is not the user's setting while a flow
-      // or an admin's track has the deck.
+      // Note(yoochan.kim): what was sounding, not the user's setting, while a flow or an admin's track has the deck.
       this.device.setVolume(this.liveVolume);
     }
     this.persist(this.snapshot());
   }
 
-  // Note(yoochan.kim): Song methods
-  /**
-   * Gets the currently selected song
-   */
+  // --- song ---
   getCurrentSong(): SongId {
     return this.state.currentSong;
   }
 
-  /**
-   * Changes song, updates volume, and handles hardware switching.
-   * The player's own state decides which song is current; while muted, the
-   * device stays silent and only the remembered volume moves to the new
-   * song's default.
-   * @param newSong - Song to switch to
-   */
   async changeSong(newSong: SongId): Promise<void> {
     const currentSong = this.state.currentSong;
     const wasPlaying = this.isPlaying();
@@ -214,8 +153,7 @@ class Player {
     }
 
     try {
-      // Note(yoochan.kim): While a scheduled track occupies the deck, the live position belongs
-      // to the track — saving it would corrupt the song's time memory.
+      // Note(yoochan.kim): while a track has the deck the live position is the track's, not the song's.
       if (!this.trackMode) {
         this.device.captureSongTime(currentSong);
       }
@@ -254,16 +192,9 @@ class Player {
     });
   }
 
-  /**
-   * Hands the deck over: remembers where the user's song was, and fades out
-   * what is sounding unless the caller says not to.
-   *
-   * Kept separate from playTrackAt because a fade takes seconds, and the caller
-   * has to work out where its timeline is after that, not before.
-   */
+  /** Apart from playTrackAt: a fade takes seconds, and the caller works out where its timeline is after it. */
   async takeDeck(fade = true): Promise<void> {
-    // Note(yoochan.kim): the position is captured once — a track's position must never be
-    // written into a song's memory.
+    // Note(yoochan.kim): captured once, since a track's position must never be written into a song's memory.
     if (!this.trackMode) {
       log.info('player', null, 'Deck taken from the song', {
         ...this.where(),
@@ -283,21 +214,12 @@ class Player {
     }
   }
 
-  /**
-   * Plays a scheduled track at the level its flow asked for.
-   *
-   * The user's own volume is left untouched in state: a flow borrows the deck
-   * and hands it back, so restoreSong puts their level back with their song.
-   * Muted still means silent — a flow may take the deck, but not the decision
-   * to make noise. Joined part-way it fades in for no longer than `fadeLimitMs`.
-   */
+  /** Leaves serverVolume alone so restoreSong brings the user's level back; muted stays silent even for a flow. */
   async playTrackAt(
     track: { id: string; file: string }, offsetSec: number, volume: number, loop = false, fadeLimitMs?: number,
   ): Promise<void> {
     try {
-      // Note(yoochan.kim): the caller has already taken the deck, fading or not as it
-      // chose. Taking it again with a fade put three seconds between a run's own
-      // tracks, the last of the one before faded away under it.
+      // Note(yoochan.kim): the caller has taken the deck; a fade here would put seconds between a run's tracks.
       await this.takeDeck(false);
       this.device.setVolume(this.isMuted() ? 0 : volume);
       this.liveVolume = volume;
@@ -310,10 +232,7 @@ class Player {
     this.state.state = PlaybackState.PLAYING;
   }
 
-  /**
-   * Puts a run's cue on the deck at its level, paused at its start, so starting
-   * it on its second is only an unpause. The caller has taken the deck.
-   */
+  /** Loaded paused so starting it on its second is only an unpause; the caller has already taken the deck. */
   async cueTrack(track: { id: string; file: string }, volume: number): Promise<void> {
     try {
       await this.takeDeck(false);
@@ -328,12 +247,7 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
-  /**
-   * Puts a library track on the deck, paused at its start.
-   *
-   * Note(yoochan.kim): chosen, not started — the same as picking one of the panel's
-   * songs. Pressing a name in a list is how you say which one, not how you say go.
-   */
+  /** Note(yoochan.kim): chosen, not started, like picking a panel song: pressing a name says which, not go. */
   async selectTrack(track: { id: string; file: string }, volume: number, loop: boolean): Promise<void> {
     try {
       await this.takeDeck();
@@ -346,33 +260,24 @@ class Player {
     }
     this.trackId = track.id;
     this.state.state = PlaybackState.PAUSED;
-    // Note(yoochan.kim): no position here: the file is still loading, and mpv would give the
-    // one before. A track put on is at its start.
+    // Note(yoochan.kim): no position: the file is still loading and mpv would report the previous one's.
     log.info('player', null, 'Track put on the deck', { deck: `track ${track.id}`, level: this.levelText(), loop });
   }
 
-  /** What has the deck: the panel's own song, or a library track an admin put on. */
   getDeck(): DeckSource {
     return this.trackMode ? { source: 'track', id: this.trackId } : { source: 'song' };
   }
 
-  /**
-   * Returns the deck to the two-song system after a scheduled flow: fades out
-   * if sounding, reloads the current song at its remembered position, paused.
-   * No-op when no track has taken the deck.
-   */
   async restoreSong(fade = true): Promise<void> {
     if (!this.trackMode) return;
 
     const wasPlaying = this.isPlaying();
     try {
       if (wasPlaying) {
-        // Note(yoochan.kim): a fade covers a cut. Music that has just reached its
-        // own end has nothing to cover, and fading it costs seconds of silence.
+        // Note(yoochan.kim): music at its own end has no cut to cover, and fading it costs seconds of silence.
         await this.device.pause(fade);
       }
-      // Note(yoochan.kim): the flow played at its own level; the user's comes
-      // back with their song
+      // Note(yoochan.kim): the flow played at its own level; the user's comes back with their song.
       this.device.setVolume(this.isMuted() ? 0 : this.state.serverVolume);
       this.liveVolume = this.state.serverVolume;
       this.device.loadSong(this.state.currentSong);
@@ -395,29 +300,22 @@ class Player {
     return this.loop;
   }
 
-  /** Whether what is on the deck has run out. False for the two-song deck, which loops. */
+  /** Never true for the panel's songs, which loop. */
   hasEnded(): boolean {
     return this.device.hasEnded();
   }
 
-  /** Sets whether what is on the deck repeats, and applies it to what is playing now. */
   setLoop(loop: boolean): void {
     this.loop = loop;
     this.device.setLoop(loop);
   }
 
-  // Note(yoochan.kim): Utility methods
+  // --- utility ---
 
-  /**
-   * Checks if the player is currently playing
-   */
   isPlaying(): boolean {
     return this.state.state === PlaybackState.PLAYING;
   }
 
-  /**
-   * Checks if the player is currently muted
-   */
   isMuted(): boolean {
     return this.state.muted === MuteState.MUTED;
   }

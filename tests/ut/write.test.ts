@@ -6,8 +6,7 @@ import { MuteState, PlaybackState, RejectReason } from '../../server/protocol.ts
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): a level is state now, not a manifest constant, so the test sets the
-// one it is about to assert rather than mirroring a file.
+// Note(yoochan.kim): a level is state an admin moves, so the test sets the one it asserts instead of mirroring a file.
 const TEST_LEVEL = 37;
 
 async function connectAuthedAdmin(): Promise<SocketTestHelper> {
@@ -19,8 +18,7 @@ async function connectAuthedAdmin(): Promise<SocketTestHelper> {
   return admin;
 }
 
-// Note(yoochan.kim): Safety net: pins the write -> state contract, and the refusal reasons a
-// client relies on to explain why nothing happened.
+// Note(yoochan.kim): pins the write-to-state contract and the refusal reasons clients use to explain doing nothing.
 describe('Write Tests', () => {
   test('a volume write reaches every client', async () => {
     const actor = new SocketTestHelper();
@@ -67,8 +65,7 @@ describe('Write Tests', () => {
     try {
       await actor.open();
 
-      // Note(yoochan.kim): Server state is shared and persistent: switch to whichever song is not
-      // current so the test is robust across reruns.
+      // Note(yoochan.kim): server state is shared and persists, so switch to whichever song is not current.
       const current = (await actor.read()).song;
       const target = current === 'calm' ? 'fervent' : 'calm';
 
@@ -81,8 +78,7 @@ describe('Write Tests', () => {
       const observed = actor.waitForState((patch) => patch.song !== undefined);
       actor.write('song', target);
 
-      // Note(yoochan.kim): Switching a song changes three things at once, and one patch carrying
-      // all of them is what keeps a client from rendering a half-applied state.
+      // Note(yoochan.kim): one patch carries all three, so a client never renders a half-applied song change.
       const patch = await observed;
       assert.strictEqual(patch.song, target);
       assert.strictEqual(patch.volume, TEST_LEVEL, 'the level it was set to is the level it returns to');
@@ -92,9 +88,7 @@ describe('Write Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): a volume write is instant and holds no lock of its own —
-  // per-write flaps made every client's controls flicker during a drag. It only
-  // stays out of a running fade, which audio-lock.test covers.
+  // Note(yoochan.kim): a lock per write would flicker every client's controls during a drag.
   test('a volume write leaves the audio lock alone', async () => {
     const actor = new SocketTestHelper();
     const observer = new SocketTestHelper();

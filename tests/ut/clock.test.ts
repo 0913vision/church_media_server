@@ -59,8 +59,7 @@ describe('Church clock', () => {
     }
   });
 
-  // Note(yoochan.kim): a correction set on the wall clock's flip is rarely whole seconds,
-  // and rounded to one it could be half a second off.
+  // Note(yoochan.kim): a correction set on the wall clock's flip, rounded to whole seconds, could be half a second off.
   test('the offset is kept to the millisecond', async () => {
     const admin = await connectAuthedAdmin();
     try {
@@ -74,9 +73,7 @@ describe('Church clock', () => {
     }
   });
 
-  // Note(yoochan.kim): The offset is not decoration: scheduling is judged against it. A window
-  // still half an hour away by the wall clock is already gone once the church
-  // clock runs an hour ahead of it.
+  // Note(yoochan.kim): scheduling is judged against the offset, so a window still ahead by the wall clock can be gone.
   test('a flow is scheduled against church time, not standard time', async () => {
     const admin = await connectAuthedAdmin();
     const soon = {
@@ -129,8 +126,7 @@ describe('Church clock', () => {
     }
   });
 
-  // Note(yoochan.kim): The rule that makes the whole feature safe: a flow holds the gate for its
-  // entire run, so refusing here means the clock can never move under music.
+  // Note(yoochan.kim): a flow holds the gate all its run, so this refusal keeps the clock from moving under music.
   test('the clock cannot move while the admin gate is held', async () => {
     const admin = await connectAuthedAdmin();
 

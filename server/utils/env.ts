@@ -1,10 +1,4 @@
-/**
- * Explicit, fail-fast environment access.
- *
- * Every required variable must be present (and valid) at startup — there are
- * no silent defaults. A missing or malformed value aborts boot with a message
- * naming the exact variable, instead of running with surprising behavior.
- */
+/** No silent defaults: a missing or malformed value stops boot naming the variable, rather than running oddly. */
 
 export function requireEnv(name: string): string {
   const value = process.env[name];

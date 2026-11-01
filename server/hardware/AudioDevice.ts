@@ -6,52 +6,34 @@ import { errorMessage } from '../utils/errors.ts';
 import type { AudioOutput } from './AudioOutput.ts';
 import { dbFromLevel, fadeInDb, fadeOutDb, mpvVolumeFromDb } from './loudness.ts';
 
-/**
- * High-level device controller that manages audio playback operations
- */
 class AudioDevice implements AudioOutput {
   private readonly playlist: Record<SongId, string>;
   /** The level last set, 0–100; fades move around it. mpv's own 100 until someone sets one. */
   private level = 100;
   private readonly currentSongTimes: Record<SongId, number>;
 
-  /**
-   * @param mpv - Low-level MPV client (injected by the composition root)
-   * @param initialSong - Song to load on startup (the player's initial current
-   *   song, injected so this layer isn't coupled to player defaults)
-   * @param playlist - Audio file per song, from the track manifest — the one
-   *   place every audio asset is registered
-   */
+  /** initialSong and playlist are handed in: the player's defaults and the track manifest own them. */
   constructor(
     private readonly mpv: MpvClient,
     private readonly initialSong: SongId,
     playlist: Record<SongId, string>,
   ) {
     this.playlist = { ...playlist };
-    // Note(yoochan.kim): every song starts at its beginning; which songs there
-    // are is the manifest's answer, arriving here as the playlist
     this.currentSongTimes = Object.fromEntries(Object.keys(playlist).map((song) => [song, 0]));
     this.initialize();
   }
 
-  // Note(yoochan.kim): song ids come from the manifest, so the lookup is only
-  // as total as the caller's; an unknown one is a bug, not a silent no-op
+  // Note(yoochan.kim): song ids come from the manifest, so an unknown one is a caller's bug, not a silent no-op.
   private fileOf(song: SongId): string {
     const file = this.playlist[song];
     if (file === undefined) throw new Error(`No audio file for song '${song}'`);
     return file;
   }
 
-  /**
-   * Whether the file on the deck has run out.
-   *
-   * Note(yoochan.kim): asked of mpv rather than worked out from a duration and a clock,
-   * since a track can sit paused part-way. `idle-active` rather than the
-   * `eof-reached` you would reach for first: at the end of a file mpv unloads it,
-   * and a property of a file that is gone reads as null, never as yes.
-   */
+  /** Note(yoochan.kim): asked of mpv rather than worked out from a clock, since a track can sit paused part-way. */
   hasEnded(): boolean {
     try {
+      // Note(yoochan.kim): not eof-reached: mpv unloads a file at its end, and a gone file's property reads null.
       return this.mpv.getProperty("idle-active") === "yes";
     } catch (error) {
       log.error('audioDevice', null, 'Failed to read idle-active', { error: errorMessage(error) });
@@ -68,9 +50,6 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Initializes the device with default settings and loads the initial song.
-   */
   private initialize(): void {
     try {
       this.mpv.setProperty("loop", "inf");
@@ -91,18 +70,11 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Creates a delay for smooth transitions
-   */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /**
-   * Gets current playback time, or null if it can't be read.
-   * Returning null (rather than 0) lets callers keep the previously saved
-   * position instead of clobbering it with a bogus value.
-   */
+  /** null rather than 0, so a caller keeps the position it saved instead of overwriting it with a bogus one. */
   private getCurrentSongTime(): number | null {
     try {
       const response = this.mpv.getProperty("playback-time");
@@ -114,14 +86,10 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Whether the deck is past the opening of what it holds — only then is starting
-   * it a cut a fade should cover. Past SEEK_AUDIBLE_SEC, the line a run uses for
-   * the same question. A position mpv cannot give yet is a file still opening,
-   * which is at its start.
-   */
+  /** SEEK_AUDIBLE_SEC is the line a run uses to tell a track joined part-way, so both answer alike. */
   isPartWay(): boolean {
     const at = this.getCurrentSongTime();
+    // Note(yoochan.kim): a position mpv cannot give yet is a file still opening, which is at its start.
     return at !== null && at > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
   }
 
@@ -134,10 +102,7 @@ class AudioDevice implements AudioOutput {
     this.mpv.setProperty("volume", mpvVolumeFromDb(db).toString());
   }
 
-  /**
-   * Walks a fade, a step every FADE_STEP_MS, with the level it moves around taken
-   * as it stands each step — so a level moved during a fade is the one it lands on.
-   */
+  /** The level is read every step, so one moved during a fade is the one it lands on. */
   private async fadeAlong(curve: typeof fadeInDb, durationMs: number): Promise<void> {
     const step = DEVICE_CONFIG.FADE_STEP_MS;
     let t = 0;
@@ -149,10 +114,6 @@ class AudioDevice implements AudioOutput {
     await this.delay(durationMs - t);
   }
 
-  /**
-   * Pauses playback, fading out unless told otherwise — over `durationMs`, any
-   * length. See `resume` for when a fade is wanted and when it is only a delay.
-   */
   async pause(fade = true, durationMs: number = DEVICE_CONFIG.FADE_OUT_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "yes");
@@ -163,14 +124,6 @@ class AudioDevice implements AudioOutput {
     this.setDb(dbFromLevel(this.level));
   }
 
-  /**
-   * Resumes playback, fading in unless told otherwise.
-   *
-   * A fade covers a cut: sound appearing part-way through a piece, or leaving
-   * before it is over. A song that begins at its own beginning has nothing to
-   * cover, and fading it in only mutes the opening the arranger wrote — except the
-   * app's own songs, which the player fades from their beginning too (Player.play).
-   */
   async resume(fade = true, onSounding?: () => void, durationMs: number = DEVICE_CONFIG.FADE_IN_MS): Promise<void> {
     if (!fade) {
       this.mpv.setProperty("pause", "no");
@@ -184,18 +137,12 @@ class AudioDevice implements AudioOutput {
     this.setDb(dbFromLevel(this.level));
   }
 
-  /**
-   * Sets the level, 0–100 on the X32 fader's shape (see loudness.ts); 0 is silence.
-   */
+  /** 0–100 on the X32 fader's shape (see loudness.ts); 0 is silence. */
   setVolume(volume: number): void {
     this.level = volume;
     this.setDb(dbFromLevel(volume));
   }
 
-  /**
-   * Saves a song's live playback position into its time memory — keeps the
-   * existing saved value if the position can't be read.
-   */
   captureSongTime(song: SongId): void {
     const currentTime = this.getCurrentSongTime();
     if (currentTime !== null) {
@@ -203,12 +150,8 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Loads a song onto the two-song deck. The deck loops forever (a scheduled
-   * track may have switched looping off, so it is restored here). Position
-   * saving is the caller's decision via captureSongTime().
-   */
   loadSong(song: SongId): void {
+    // Note(yoochan.kim): the panel's songs loop forever, and a library track may have switched looping off.
     this.mpv.setProperty("loop", "inf");
 
     try {
@@ -223,11 +166,7 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Sets the playback position with retry + tolerance verification: the
-   * read-back can be off by a frame/block, and right after a track switch it
-   * may be null (NaN) — both must retry, never pass as success.
-   */
+  /** The read-back can be a frame off, and null right after a load; both retry, never pass as success. */
   private async setPlaybackTime(targetTime: number): Promise<void> {
     let attempts = 0;
     let succeeded = false;
@@ -246,9 +185,6 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Loads the saved playback time for a song
-   */
   async loadLastSongTime(song: SongId): Promise<void> {
     const targetTime = this.currentSongTimes[song] ?? 0;
     try {
@@ -263,16 +199,7 @@ class AudioDevice implements AudioOutput {
     }
   }
 
-  /**
-   * Plays an arbitrary library file from an offset (scheduled flows): loads it
-   * paused, seeks, and starts. It fades in only when the offset put it past the
-   * opening — a song beginning at its beginning has no cut to cover.
-   *
-   * A flow's track runs once and ends on time; an admin may ask for one to
-   * repeat, so looping is the caller's to say. changeSong() restores it either
-   * way for the two-song deck.
-   */
-  /** Puts a library file on the deck and leaves it there, paused at its start. */
+  /** Looping is the caller's: a flow's track runs once and ends on time, but an admin may want one repeated. */
   loadFile(filePath: string, loop: boolean): void {
     this.mpv.setProperty("pause", "yes");
     this.mpv.setProperty("loop", loop ? "inf" : "no");
@@ -295,9 +222,7 @@ class AudioDevice implements AudioOutput {
       throw error;
     }
 
-    // Note(yoochan.kim): joined part-way only past SEEK_AUDIBLE_SEC. A timer due at
-    // 20:05:00.000 fires a millisecond or two after it; that is a start on time,
-    // which neither seeks — the retries cost tens of milliseconds — nor fades.
+    // Note(yoochan.kim): a timer firing a ms or two late is on time: no seek, which costs tens of ms, and no fade.
     const joined = offsetSec > DEVICE_CONFIG.SEEK_AUDIBLE_SEC;
     if (joined) {
       try {
@@ -308,9 +233,7 @@ class AudioDevice implements AudioOutput {
       }
     }
 
-    // Note(yoochan.kim): a seek means the run joined this song part-way through, so the
-    // fade covers a cut — but never past the song's own end: joined in its last two
-    // seconds, a full fade held the deck after it and the next thing started late.
+    // Note(yoochan.kim): joined part-way the fade covers a cut, but never past the end, or the next thing starts late.
     await this.resume(joined, undefined, Math.min(DEVICE_CONFIG.FADE_IN_MS, fadeLimitMs));
   }
 }

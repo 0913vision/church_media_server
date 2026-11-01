@@ -5,9 +5,7 @@ import { RejectReason } from '../../server/protocol.ts';
 
 before(() => ensureServer());
 
-// Note(yoochan.kim): The admin lock is global state that persists across disconnects, so clear it
-// after this file — otherwise a leftover lock would block writes in other test
-// files sharing the server.
+// Note(yoochan.kim): the lock is global and outlives disconnects, so a leftover would block other files' writes.
 after(async () => {
   try {
     const admin = await connectAuthedAdmin();
@@ -127,11 +125,9 @@ describe('Admin Lock Tests', () => {
     let adminB: SocketTestHelper | null = null;
 
     try {
-      // Note(yoochan.kim): A turns the lock on — everyone, including the observer, sees it
       adminA.write('adminLock', true);
       assert.strictEqual((await observer.waitForState((p) => p.adminLock !== undefined)).adminLock, true);
 
-      // Note(yoochan.kim): The setter disconnects: the global lock must persist, with no auto-release
       adminA.disconnect();
       assert.strictEqual(
         (await observer.read()).adminLock,
@@ -139,7 +135,6 @@ describe('Admin Lock Tests', () => {
         'lock persists after the setting admin disconnects',
       );
 
-      // Note(yoochan.kim): A different admin can release it, and everyone is told
       adminB = await connectAuthedAdmin();
       const released = observer.waitForState((patch) => patch.adminLock !== undefined);
       adminB.write('adminLock', false);
@@ -166,16 +161,14 @@ describe('Admin Lock Tests', () => {
       const engagedAt = hold.kind === 'at' ? minutesUntil(hold.at) : NaN;
       assert.ok(Math.abs(engagedAt - 60) < 1, `an hour out, got ${engagedAt}`);
 
-      // Note(yoochan.kim): pressing extend with nearly an hour left cannot buy an hour and a
-      // half — the clamp is what makes "releases within the hour" true at every moment.
+      // Note(yoochan.kim): the clamp keeps "releases within the hour" true even when pressed with an hour left.
       const extended = admin.waitForState((patch) => patch.adminHold !== undefined);
       admin.invoke('extendAdminHold', {});
       const after = (await extended).adminHold!;
       const extendedTo = after.kind === 'at' ? minutesUntil(after.at) : NaN;
       assert.ok(extendedTo <= 60.1, `still inside the hour, got ${extendedTo}`);
 
-      // Note(yoochan.kim): the lock announces itself in a patch of its own, so this waits on
-      // what the write returned rather than expecting both in one.
+      // Note(yoochan.kim): the lock comes in a patch of its own, so this does not expect both in one.
       const opened = admin.waitForState((patch) => patch.adminHold?.kind === 'none');
       admin.write('adminLock', false);
       await opened;
@@ -205,8 +198,7 @@ describe('Admin Lock Tests', () => {
       admin.write('adminLock', true);
       await held;
 
-      // Note(yoochan.kim): a scheduled service outranks an ad-hoc hold, so the run is
-      // accepted rather than refused — and the hold is over from that moment.
+      // Note(yoochan.kim): a scheduled service outranks an ad-hoc hold, so the run is accepted and the hold ends.
       const running = admin.waitForState((patch) => patch.flow?.phase === 'holding');
       admin.invoke('startFlow', {
         id: 'takeover', name: '겹친 예배',
@@ -226,8 +218,7 @@ describe('Admin Lock Tests', () => {
         assert.strictEqual(await refused, RejectReason.FLOW_ACTIVE, `${field} was not refused`);
       }
 
-      // Note(yoochan.kim): loop is not one of them. It describes the deck, and a run that
-      // only holds the gate is not using the deck — the panel still is.
+      // Note(yoochan.kim): loop describes the deck, and a run only holding the gate leaves the deck to the panel.
       const looped = admin.waitForState((patch) => patch.loop !== undefined);
       admin.write('loop', false);
       assert.strictEqual((await looped).loop, false, 'the deck is still the panel\'s');
@@ -258,8 +249,7 @@ describe('Admin Lock Tests', () => {
       admin.write('adminLock', true);
       await held;
 
-      // Note(yoochan.kim): an end already gone by would fire the instant it landed, which
-      // reads as the panel unlocking itself for no reason.
+      // Note(yoochan.kim): an end already gone by would fire at once and read as the panel unlocking for no reason.
       const past = admin.waitForRejected('musicEndsAt');
       admin.write('musicEndsAt', { kind: 'at', at: soon(-60_000) });
       assert.strictEqual(await past, RejectReason.INVALID_VALUE);

@@ -6,8 +6,7 @@ import {
 } from '../../server/console/desk.ts';
 import { dbFromFader } from '../../server/console/faderLevel.ts';
 
-// Note(yoochan.kim): every address here is the unofficial X32 OSC protocol's (v4.09),
-// copied from its tables rather than from the code, so a slip in either shows.
+// Note(yoochan.kim): addresses come from the X32 OSC v4.09 tables, not the code, so a slip in either shows.
 describe('Strips, as the desk numbers them', () => {
   test('each kind of strip has its switch and fader where the desk keeps them', () => {
     assert.deepEqual(on(ch(1)), { address: '/ch/01/mix/on', value: int(1) });
@@ -55,13 +54,13 @@ describe('Sends, where the desk routes them', () => {
 
   test('a send level is on one of the 161 steps a send has, read as the desk\'s own table reads', () => {
     const at = (db: number): number => sendLevel(auxin(5), bus(3), db).value.value;
-    // Pairs from the protocol's 161-step level table.
+    // Note(yoochan.kim): pairs from the protocol's 161-step level table.
     assert.equal(at(-87), 1 / 160);
     assert.equal(at(-20), 0.375);
     assert.equal(at(-8.5), 0.5375);
     assert.equal(at(3), 0.825);
     assert.equal(at(-90), 0);
-    // Between two steps it takes the nearer: +0.7 dB is 0.7675 on a fader, 123/160 on a send.
+    // Note(yoochan.kim): between two steps it takes the nearer: +0.7 dB is 0.7675 on a fader, 123/160 on a send.
     assert.equal(at(0.7), 123 / 160);
     for (let tenths = -900; tenths <= 100; tenths += 1) {
       const steps = at(tenths / 10) * 160;
@@ -80,7 +79,7 @@ describe('A strip\'s main send and groups', () => {
   });
 
   test('group membership is one bitmap, group 1 in the lowest bit, as the desk reads it back', () => {
-    // As read on the room's desk on 2026-10-30: aux 5 in DCA 7 ("%01000000") and mute group 1 ("%000001").
+    // Note(yoochan.kim): as read on the room's desk: aux 5 in DCA 7 ("%01000000") and mute group 1 ("%000001").
     assert.deepEqual(dcasOf(auxin(5), [7]), { address: '/auxin/05/grp/dca', value: int(0b1000000) });
     assert.deepEqual(muteGroupsOf(auxin(5), [1]), { address: '/auxin/05/grp/mute', value: int(0b000001) });
     assert.deepEqual(muteGroupsOf(auxin(6), [1, 3, 6]), { address: '/auxin/06/grp/mute', value: int(0b100101) });

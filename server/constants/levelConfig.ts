@@ -18,9 +18,7 @@ export interface LevelTiming {
 
 // Note(yoochan.kim): measuring a track's level on the desk (level/LevelMatcher.ts)
 export const LEVEL_CONFIG = {
-  // Note(yoochan.kim): the strip the music player comes in on. Aux 5 is linked to
-  // aux 6 on the desk, so switching 5 off switches the pair — and holding 6 as
-  // well would read the desk following the link as somebody's hand.
+  // Note(yoochan.kim): aux 5 drives the linked 5/6 pair; holding 6 too would take the link moving it for a hand.
   STRIP: auxin(5),
   TARGET_DB: { MIN: -60, MAX: 0 },
   VOLUME: { MIN: 1, MAX: 100 },

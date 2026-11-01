@@ -7,8 +7,7 @@ before(() => ensureServer());
 after(() => stopServer());
 
 describe('Console readback', () => {
-  // Note(yoochan.kim): the inputs are the desk's configuration, so a client
-  // takes both the list and the names from here rather than holding its own.
+  // Note(yoochan.kim): the inputs are the desk's configuration, so a client takes the list and names from here.
   test('the console reports its inputs, named, in order', async () => {
     const sock = new SocketTestHelper();
     try {
@@ -48,9 +47,7 @@ describe('Console readback', () => {
     }
   });
 
-  // Note(yoochan.kim): the mute group and the masters have no reading to assert
-  // against — the desk is never asked what its matrix is at — so what this pins
-  // is the part a client can see: every input ends up on, from one call.
+  // Note(yoochan.kim): the mute group and masters are never read back, so this pins what a client sees: every input on.
   test('initializing the console leaves every input on', async () => {
     const admin = new SocketTestHelper();
     try {

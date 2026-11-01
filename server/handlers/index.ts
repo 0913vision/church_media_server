@@ -8,7 +8,6 @@ import { COMMAND_IMPL, IMPLEMENTED_COMMANDS } from '../device/commands.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
-/** Narrows an untrusted payload to a plain object, or null */
 function asObject(payload: unknown): Record<string, unknown> | null {
   return typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : null;
 }
@@ -18,11 +17,7 @@ function who(socket: ServerSocket): { client: string } {
   return { client: socket.data.client ?? 'unknown' };
 }
 
-/**
- * A value as one log field. What a client sends is cut to a length, and anything
- * named like a password is masked, since the log is shown on the admin web. Its
- * commas become spaces: a log line already separates its fields with commas.
- */
+/** Masked because the admin web shows the log; commas become spaces since a log line separates fields with them. */
 function brief(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
   const text = JSON.stringify(value, (key, inner: unknown) => (/password/i.test(key) ? '***' : inner)).replace(/,/g, ' ');
@@ -34,21 +29,10 @@ function permissionOf(name: AttributeName): string {
   return (ATTRIBUTES[name] as { permission?: string }).permission ?? 'any';
 }
 
-/**
- * The protocol versions this server answers, newest first.
- *
- * PROTOCOL_VERSION is what it speaks and what it reports; this is who it is
- * willing to speak to. The two are usually the same list of one — an older
- * version belongs here only while a panel that cannot be updated yet is still
- * on it, and only while the difference is additive.
- */
+/** An older version belongs here only while a panel stuck on it remains, and only if the change is additive. */
 const ACCEPTED_VERSIONS: readonly number[] = [PROTOCOL_VERSION];
 
-/**
- * hello: identify the client and negotiate the protocol version, then answer
- * with what this server implements followed by the full state, so a client is
- * one round trip from a complete render.
- */
+/** Answers with ready then the full state, so a client is one round trip from a complete render. */
 const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
   socket.on(C2S.HELLO, (payload: unknown) => {
     try {
@@ -68,8 +52,7 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
           serverVersion: PROTOCOL_VERSION,
         });
       } else if (!current) {
-        // Note(yoochan.kim): said out loud every time, so the older entry in
-        // ACCEPTED_VERSIONS is not forgotten once the wall has been quiet.
+        // Note(yoochan.kim): warned every time, so the older entry in ACCEPTED_VERSIONS is not forgotten.
         log.warn('hello', socket, 'Client identified on an older protocol', {
           client,
           ip: socket.handshake.address,
@@ -77,8 +60,7 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
           serverVersion: PROTOCOL_VERSION,
         });
       } else {
-        // Note(yoochan.kim): the address rides along, so a name in the log can
-        // be matched to a device on the network without a second search
+        // Note(yoochan.kim): the address rides along, so a name in the log can be matched to a device on the network.
         log.info('hello', socket, 'Client identified', { client, ip: socket.handshake.address });
       }
 
@@ -87,11 +69,9 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
         accepted,
         attributes: [...IMPLEMENTED_ATTRIBUTES],
         commands: [...IMPLEMENTED_COMMANDS],
-        // Note(yoochan.kim): The catalogue clients render from: the server names what a song is
-        // called, so a rename never means a client release.
+        // Note(yoochan.kim): the server names the songs, so a rename never means a client release.
         songs: deps.trackLibrary.deckSongs(),
-        // Note(yoochan.kim): Printed on a client's error screens, so whoever is on duty can
-        // change without anyone shipping a new app.
+        // Note(yoochan.kim): printed on clients' error screens, so the person on duty changes without an app release.
         contact: ADMIN_CONTACT,
       });
       deps.notifier.stateTo(socket, readState(deps, socket));
@@ -101,11 +81,7 @@ const registerHello = (socket: ServerSocket, deps: ServerDeps): void => {
   });
 };
 
-/**
- * read: answer with the requested attributes, or all of them. Unknown names
- * are ignored rather than refused — answering the understood part of a
- * question beats answering none of it.
- */
+/** Unknown names are ignored rather than refused: answering the understood part beats answering none. */
 const registerRead = (socket: ServerSocket, deps: ServerDeps): void => {
   socket.on(C2S.READ, () => {
     try {
@@ -116,17 +92,13 @@ const registerRead = (socket: ServerSocket, deps: ServerDeps): void => {
   });
 };
 
-/**
- * write: set one attribute. Every refusal is reported back with a reason, so a
- * client can say why it did nothing instead of looking broken.
- */
+/** Every refusal goes back with a reason, so a client can say why it did nothing instead of looking broken. */
 const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
   socket.on(C2S.WRITE, async (payload: unknown) => {
     const parsed = asObject(payload);
     const field = parsed?.field;
     const target = typeof field === 'string' ? field : C2S.WRITE;
-    // Note(yoochan.kim): every refusal is written down with who asked, so "I pressed it and
-    // nothing happened" can be answered from the log afterwards.
+    // Note(yoochan.kim): refusals are logged with who asked, so "I pressed it and nothing happened" can be answered.
     const refuse = (reason: RejectReason, message = 'Write refused', extra: Record<string, unknown> = {}): void => {
       log.warn('write', socket, message, { ...who(socket), field: target, ...extra, reason });
       deps.notifier.rejected(socket, target, reason);
@@ -158,23 +130,20 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
         return;
       }
 
-      // Note(yoochan.kim): The attribute decides why it said no: usually the value, but it may
-      // also be something only it knows, like a flow owning the admin lock.
+      // Note(yoochan.kim): the attribute names its own reason, which may be a flow owning the admin lock.
       const plan = spec.write.prepare(parsed?.value, deps);
       if (!plan.ok) {
         refuse(plan.reason, 'Write denied', { value: brief(parsed?.value) });
         return;
       }
 
-      // Note(yoochan.kim): The gate decides who may start work; the audio lock decides whether the
-      // device is free. They are checked separately so the client learns which.
+      // Note(yoochan.kim): the gate and the audio lock are checked apart, so the client learns which one said no.
       if (!deps.lockCoordinator.passesAdminGate(isAdmin)) {
         refuse(RejectReason.ADMIN_LOCKED);
         return;
       }
 
-      // Note(yoochan.kim): what was let through, by whom, before it acts — so the deck's own
-      // lines that follow read as its answer. Volume is dragged by a hand: a drag is one line.
+      // Note(yoochan.kim): logged before it acts, so the deck's lines read as its answer; a volume drag is one line.
       if (field === 'volume') {
         log.drag(`${socket.id}:${field}`, 'write', socket, 'Write', parsed?.value, { ...who(socket), field });
       } else {
@@ -204,7 +173,6 @@ const registerWrite = (socket: ServerSocket, deps: ServerDeps): void => {
   });
 };
 
-/** invoke: run one command, reporting any refusal back to the caller. */
 const registerInvoke = (socket: ServerSocket, deps: ServerDeps): void => {
   socket.on(C2S.INVOKE, async (payload: unknown) => {
     const parsed = asObject(payload);
@@ -249,7 +217,6 @@ const registerInvoke = (socket: ServerSocket, deps: ServerDeps): void => {
   });
 };
 
-/** Registers every socket event handler for a connection. */
 export const registerHandlers = (socket: ServerSocket, deps: ServerDeps): void => {
   registerHello(socket, deps);
   registerRead(socket, deps);

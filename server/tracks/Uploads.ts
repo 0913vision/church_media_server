@@ -8,20 +8,12 @@ interface Held {
   timer: NodeJS.Timeout;
 }
 
-/**
- * Audio that came in through POST /uploads and is waiting to become a track.
- *
- * Note(yoochan.kim): an upload changes nothing about the device. addTrack is what makes
- * it a track, through the protocol like every other change. One nobody claims
- * is deleted when its time runs out, and any still here when the server stops
- * are cleared at the next boot with the rest of the staging files.
- */
+/** Note(yoochan.kim): an upload changes nothing on the device; only addTrack, over the protocol, makes it a track. */
 class Uploads {
   private readonly held = new Map<string, Held>();
 
   constructor(private readonly ttlMs: number) {}
 
-  /** Keeps a measured mp3 for addTrack, and answers the id to claim it with. */
   hold(file: string, durationSec: number): string {
     const id = `u-${randomBytes(8).toString('hex')}`;
     const timer = setTimeout(() => {
@@ -29,12 +21,13 @@ class Uploads {
       fs.rmSync(file, { force: true });
       log.info('uploads', null, 'Unclaimed upload deleted', { id });
     }, this.ttlMs);
+    // Note(yoochan.kim): one still here when the server stops is cleared at the next boot with the other staging files.
     timer.unref();
     this.held.set(id, { file, durationSec, timer });
     return id;
   }
 
-  /** Hands an upload over, once. The file is the caller's from here. */
+  /** The file is the caller's from here. */
   take(id: string): { file: string; durationSec: number } | undefined {
     const held = this.held.get(id);
     if (!held) return undefined;

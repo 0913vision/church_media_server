@@ -10,7 +10,6 @@ import { log } from '../utils/logger.ts';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']);
 
-/** Whether an address is YouTube's */
 export function isYoutube(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -26,14 +25,7 @@ export type Fetched = { ok: true; file: string; durationSec: number } | { ok: fa
 const DOWNLOADING = /^\[download\]\s+(\d+(?:\.\d+)?)%/;
 const CONVERTING = /^\[ExtractAudio\]/;
 
-/**
- * Fetches a YouTube video's audio as an mp3, one video at a time.
- *
- * Note(yoochan.kim): yt-dlp does the fetching. It is the one tool that keeps up with
- * YouTube, and when fetching stops working, updating it is usually the fix. It
- * writes only under a staging name in the audio folder, so a fetch cut short by
- * a restart is cleared at the next boot like any other.
- */
+/** Note(yoochan.kim): yt-dlp is the one tool that keeps up with YouTube; when fetching breaks, update it first. */
 class Fetcher {
   private current: { title: string; progress: FetchProgress } | undefined;
   private reportedAt = 0;
@@ -50,13 +42,9 @@ class Fetcher {
     return this.current !== undefined;
   }
 
-  /**
-   * Fetches `url` into `base`.mp3. Claims the one fetch slot before it first
-   * waits, so status() says fetching as soon as this is called. The caller
-   * has checked the address and that the slot was free. `onProgress` is called
-   * when the stage changes, and at most once a second while a download counts up.
-   */
+  /** The caller has checked the address and that the slot was free. */
   async fetch(url: string, title: string, base: string, onProgress: () => void): Promise<Fetched> {
+    // Note(yoochan.kim): the slot is claimed before the first wait, so status() says fetching from this call on.
     this.current = { title, progress: { stage: 'starting' } };
     this.reportedAt = 0;
     try {
@@ -86,6 +74,7 @@ class Fetcher {
         '--no-playlist', '--newline',
         '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0',
         '--max-filesize', String(TRACK_CONFIG.MAX_BYTES),
+        // Note(yoochan.kim): a staging name, so a fetch cut short by a restart is cleared at the next boot.
         '--output', `${base}.%(ext)s`,
         '--', url,
       ], { timeout: TRACK_CONFIG.FETCH_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (failed, stdout, stderr) => {

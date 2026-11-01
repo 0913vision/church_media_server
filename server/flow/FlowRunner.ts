@@ -15,13 +15,10 @@ import { log } from '../utils/logger.ts';
 import { formatInstant, isWireInstant } from '../utils/instant.ts';
 import { errorMessage } from '../utils/errors.ts';
 
-/** Result of checking part of a request */
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 
 
-// Note(yoochan.kim): A flow's own audio work can collide with an admin writing at the same
-// moment. Contention lasts at most one fade, so retry across that window
-// rather than dropping a track.
+// Note(yoochan.kim): an admin's write holds the audio lock up to one fade; retry across it rather than drop a track.
 const AUDIO_LOCK_ATTEMPTS = 12;
 const AUDIO_LOCK_RETRY_MS = 300;
 
@@ -31,27 +28,17 @@ type ScheduledEntry = LibraryEntry;
 /** How long before zero each notice starts. */
 const NOTICE_LEAD_SEC: Record<Notice, number> = { oneMinute: 60, thirtySeconds: 30 };
 
-/** One clip of a countdown, played on its own second: 1분 남았습니다, the count. */
+/** One clip of a countdown, played on its own second. */
 export interface CuePlan {
   track: ScheduledEntry;
   at: Date;
 }
 
-/**
- * A countdown: the count, always, and whichever notices were ticked ahead of it
- * (1분 전, 30초 전), each played on its own second. It is one block, from
- * `reserveMs(timing)` before its first notice to the end of the count: nothing
- * else sounds in it, and a flow that holds one is never started once under way.
- * Not on the wire yet.
- */
+/** The count and the notices ticked ahead of it, one block in which nothing else sounds. */
 export interface CountdownPlan {
   kind: 'countdown';
   cues: CuePlan[];
-  /**
-   * The desk for the whole block, in the order to set it — CONSOLE_CONFIG.BAND_ONLY.
-   * Set and read back as the block opens, put back newest first once the count has
-   * ended. A countdown whose desk cannot be set is not played.
-   */
+  /** Held for the whole block, in the order to set it; a countdown whose desk cannot be set is not played. */
   desk?: readonly DeskChange[];
 }
 
@@ -59,10 +46,10 @@ export interface CountdownPlan {
 class CueFailed extends Error {}
 
 type MusicPlan = { kind: 'music'; tracks: ScheduledEntry[]; startsAt: Date; endsAt: Date };
-/** A part of a validated plan: the protocol's FlowPart, and the countdown, which it does not carry yet */
+/** A part of a validated plan: the protocol's FlowPart. */
 export type PartPlan = MusicPlan | CountdownPlan;
 
-/** The window this run holds the admin gate for. Every run has one. */
+/** Every run holds the gate for this window, or its music on an open panel could be taken over from the tablet. */
 interface LockPlan {
   at: Date;
   until: Date;
@@ -89,19 +76,9 @@ interface ActiveRun {
   lockEngaged: boolean;
   playing: { track: FlowTrack; endsAt: Date } | undefined;
   finished: Promise<void>;
-  /**
-   * The deck as it was when this run was accepted, and what it goes back to.
-   *
-   * Note(yoochan.kim): taken once, at the start — not read again at the end. The panel is
-   * usable while a run is only holding the gate, and anything done there belongs
-   * to the person who did it, not to what the service should return to. Someone
-   * putting a track on during the quiet half must not decide what plays after.
-   */
+  /** Note(yoochan.kim): taken at acceptance, not at the end: what someone does on the panel mid-run is theirs. */
   restorePoint: { song: SongId; volume: number };
-  /**
-   * Whether the run has the deck: from its first sound until its last has ended,
-   * the quiet between them included, so nothing else plays in a gap it keeps.
-   */
+  /** From the run's first sound until its last has ended, gaps included, so nothing else plays in between. */
   deckHeld: boolean;
   /** Parts still to finish sounding; the one that brings this to none puts the deck back. */
   partsLeft: number;
@@ -109,17 +86,9 @@ interface ActiveRun {
   cueSounding: boolean;
 }
 
-/**
- * An absolute instant, or a refusal.
- *
- * Only ISO 8601 with a date is accepted. A bare "19:30" would leave the server
- * deciding which day it meant, and that guess is the caller's to make: the
- * calendar lives on the client that submitted the run.
- */
+/** Only ISO 8601 with a date: which day a bare time means is the caller's to decide, not the runner's. */
 function instantOf(value: unknown): Checked<Date> {
-  // Note(yoochan.kim): one spelling only — see server/utils/instant.ts. Date
-  // would happily take "2026-08-05" and a dozen other forms, and every one it
-  // accepts is a form some client could come to depend on.
+  // Note(yoochan.kim): one spelling only; every form Date accepts is one some client could come to depend on.
   if (!isWireInstant(value)) return { ok: false, reason: RejectReason.INVALID_VALUE };
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return { ok: false, reason: RejectReason.INVALID_VALUE };
@@ -132,21 +101,7 @@ function asObject(value: unknown): Record<string, unknown> {
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Runs one flow at a time and owns it from the moment it is accepted until it
- * is finished, stopped, or fails. The schedule a flow came from is none of the
- * server's business: it holds no definitions and no calendar, only the run.
- *
- * Every run holds the admin gate for a window it names: music playing on an
- * open panel could be taken over from the tablet mid-run, so the gate is not
- * optional. Music must finish inside that window, but its timeline may begin
- * earlier — sound waits for the lock and joins the timeline where it already
- * is, the opening cut exactly like a late start. Within the window the lock
- * and the music timeline each keep to the wall clock on their own, and the
- * run ends when both are done. Whatever ends it, cleanup restores the user's
- * song and releases the lock, so a lock can never outlive the client that asked
- * for it.
- */
+/** Runs one flow at a time from acceptance to cleanup; it knows only the run, never the calendar it came from. */
 class FlowRunner {
   private active: ActiveRun | undefined;
   private readonly waiters = new Set<Waiter>();
@@ -156,8 +111,7 @@ class FlowRunner {
     private readonly trackLibrary: TrackLibrary,
     private readonly lockCoordinator: LockCoordinator,
     private readonly notifier: Notifier,
-    // Note(yoochan.kim): Every instant in a plan is church time, so the runner never reads the
-    // system clock directly.
+    // Note(yoochan.kim): every instant in a plan is church time, so the runner never reads the system clock.
     private readonly clock: Clock,
     private readonly mixer: Pick<MixerConsole, 'holding'>,
     /** The desk while a countdown runs, in the order to set it. */
@@ -165,10 +119,7 @@ class FlowRunner {
     private readonly timing: FlowTiming,
   ) {}
 
-  /**
-   * What the flow slot is doing. Derived from the run rather than stored, so
-   * it cannot drift from what is actually happening.
-   */
+  /** Derived from the run rather than stored, so it cannot drift from what is actually happening. */
   status(): FlowStatus {
     const run = this.active;
     if (!run) return { phase: 'idle' };
@@ -183,33 +134,20 @@ class FlowRunner {
     return { phase: 'waiting', id, name, startsAt: formatInstant(run.startsAt) };
   }
 
-  /** Whether a running flow is the one holding the admin lock */
   ownsAdminLock(): boolean {
     return this.active?.lockEngaged ?? false;
   }
 
-  /**
-   * Whether a run has the deck right now.
-   *
-   * Note(yoochan.kim): from its first sound until its last has ended, not merely while
-   * the gate is held. A flow that only holds the gate is keeping the panel out;
-   * the deck is still free until the run's own sound begins.
-   */
+  /** Note(yoochan.kim): from the run's first sound to its last; holding only the gate leaves the deck free. */
   ownsDeck(): boolean {
     return this.active?.deckHeld ?? false;
   }
 
-  /**
-   * Whether the run in flight names this track.
-   *
-   * Note(yoochan.kim): a run copied its tracks when it was accepted, so a calendar edited
-   * since then no longer says what the run is about to play.
-   */
+  /** Note(yoochan.kim): a run copied its tracks at acceptance, so an edited calendar cannot say what it will play. */
   uses(trackId: string): boolean {
     return this.active?.plan.parts.some((part) => tracksOf(part).some((track) => track.id === trackId)) ?? false;
   }
 
-  /** Accepts a flow and starts running it. */
   async start(args: unknown): Promise<{ ok: true } | { ok: false; reason: RejectReason }> {
     if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };
 
@@ -226,7 +164,6 @@ class FlowRunner {
     return conflict ? { ok: false, reason: conflict } : { ok: true };
   }
 
-  /** Runs a plan, refused when its window has passed, its timeline does not fit, or its countdown is under way. */
   startPlan(plan: Plan): { ok: true } | { ok: false; reason: RejectReason } {
     if (this.active) return { ok: false, reason: RejectReason.FLOW_ACTIVE };
     const now = this.clock.now().getTime();
@@ -235,9 +172,7 @@ class FlowRunner {
     const ordered = { ...plan, parts: plan.parts.map(inTimeOrder) };
     const conflict = timelineConflict(ordered, this.timing);
     if (conflict) return { ok: false, reason: conflict };
-    // Note(yoochan.kim): a flow may start late and join its music part-way, but never
-    // inside its countdown's block: the count would begin in the middle, or its desk be
-    // set in a hurry. Once the block is over it may start; the countdown is behind it.
+    // Note(yoochan.kim): never inside its countdown's block: the count would start mid-way, its desk set in a hurry.
     const block = countdownBlock(ordered, this.timing);
     if (block && now >= block.opens && now < block.ends) return { ok: false, reason: RejectReason.COUNTDOWN_UNDERWAY };
     this.begin(ordered);
@@ -247,8 +182,7 @@ class FlowRunner {
   private begin(plan: Plan): void {
     this.active = {
       plan,
-      // Note(yoochan.kim): nothing sounds before the gate engages, so the run
-      // begins when the lock does, even for a timeline timed earlier.
+      // Note(yoochan.kim): nothing sounds before the gate engages, so the run begins with the lock however timed.
       startsAt: plan.lock.at,
       lockEngaged: false,
       playing: undefined,
@@ -268,14 +202,12 @@ class FlowRunner {
     });
   }
 
-  /** Ends the running flow now, and waits for its cleanup to finish. */
   async stop(): Promise<{ ok: true } | { ok: false; reason: RejectReason }> {
     const run = this.active;
     if (!run) return { ok: false, reason: RejectReason.NO_FLOW };
 
     log.info('flow', null, 'Flow stopped by request', { name: run.plan.name });
-    // Note(yoochan.kim): a notice is cut before anything unwinds. Unwinding puts its desk back,
-    // and a count still fading out as the room's sends reopen would be heard in the room.
+    // Note(yoochan.kim): cut before unwinding puts the desk back, or a count still fading would be heard in the room.
     await this.cutCue();
     this.abortWaits();
     await run.finished;
@@ -291,6 +223,7 @@ class FlowRunner {
 
   private async run(plan: Plan): Promise<void> {
     try {
+      // Note(yoochan.kim): the gate and each part keep to the wall clock on their own; the run ends when all are done.
       await Promise.all([
         this.runLock(plan.lock),
         ...plan.parts.map((part) => (part.kind === 'music' ? this.runMusic(part, plan.lock) : this.runCountdown(part))),
@@ -300,6 +233,7 @@ class FlowRunner {
         log.error('flow', null, 'Flow failed, cleaning up', { name: plan.name, error: errorMessage(error) });
       }
     } finally {
+      // Note(yoochan.kim): every way out ends here, so a lock can never outlive the client that asked for it.
       await this.cleanup();
     }
   }
@@ -320,13 +254,10 @@ class FlowRunner {
       await this.partDone();
       return;
     }
-    // Note(yoochan.kim): sound never precedes the gate. A timeline that begins
-    // earlier is joined at the lock instant, its opening cut — the same
-    // arithmetic below that lets a late start join part-way through.
+    // Note(yoochan.kim): sound never precedes the gate; an earlier timeline is joined at the lock, like a late start.
     await this.sleepUntil(part.startsAt.getTime() < lock.at.getTime() ? lock.at : part.startsAt);
 
-    // Note(yoochan.kim): Track boundaries are absolute instants off the anchor, so a late start
-    // joins the timeline where it actually is and nothing accumulates drift.
+    // Note(yoochan.kim): absolute boundaries, so a late start joins where the timeline is and nothing drifts.
     const starts = boundariesOf(part);
     const now = this.clock.now().getTime();
     const first = starts.findIndex((start, index) => now < start.getTime() + part.tracks[index]!.durationSec * 1000);
@@ -347,12 +278,7 @@ class FlowRunner {
     await this.partDone();
   }
 
-  /**
-   * Plays the countdown as one block, from `reserveMs` before its first notice to
-   * the end of the count. As it opens the deck is taken and the desk set; each
-   * notice goes on the deck paused as soon as the step before is done, and starts
-   * by an unpause; the desk goes back once the count has ended, however it ends.
-   */
+  /** Plays the countdown as one block, each notice loaded paused ahead and started by an unpause on its second. */
   private async runCountdown(part: CountdownPlan): Promise<void> {
     const first = part.cues[0];
     if (!first) {
@@ -361,10 +287,7 @@ class FlowRunner {
     }
     const opens = new Date(first.at.getTime() - reserveMs(part, this.timing));
     await this.sleepUntil(opens);
-    // Note(yoochan.kim): a flow is never started inside its countdown, so this is reached on
-    // time, or after the block is over when the flow started after it. Up to the slack
-    // late, there is still time to set the desk; later — a server stalled, a clock
-    // that leapt — the block is skipped whole rather than joined part-way.
+    // Note(yoochan.kim): within the slack the desk can still be set; later the block is skipped, never joined part-way.
     const now = this.clock.now().getTime();
     if (now > opens.getTime() + this.timing.CUE_LEAD_SLACK_MS) {
       if (now >= Math.max(...part.cues.map(endOf))) log.info('flow', null, 'Countdown already over when the flow started');
@@ -373,12 +296,9 @@ class FlowRunner {
       return;
     }
 
-    // Note(yoochan.kim): each step starts the moment the one before it is confirmed, not at a
-    // set time: the deck taken (a person's song fading out rather than being cut by a
-    // send switching off under it), then the desk set and read back, then the first
-    // notice put on the deck — each one logged with how long it took, so the lead can
-    // be judged against the real desk.
+    // Note(yoochan.kim): each step is logged with its time, so the lead can be judged against the real desk.
     const elapsed = (): string => `${this.clock.now().getTime() - opens.getTime()}ms`;
+    // Note(yoochan.kim): deck before desk, so a person's song fades out rather than being cut by a send switching off.
     const taken = await this.withAudio(async () => {
       await this.player.takeDeck(!this.holdsDeck());
       this.holdDeck();
@@ -395,11 +315,11 @@ class FlowRunner {
         for (let index = 0; index < part.cues.length; index++) {
           const cue = part.cues[index]!;
           if (this.missed(cue)) continue;
-          // Put on the deck now — straight after the step before — and started on its second.
+          // Note(yoochan.kim): put on the deck straight after the step before, and started on its second.
           if (!(await this.playCue(cue, { index: index + 1, total: part.cues.length }))) throw new CueFailed();
         }
       } finally {
-        // Silent before the desk goes back, however this ends.
+        // Note(yoochan.kim): silent before the desk goes back, however this ends, or the room hears the count.
         await this.cutCue();
       }
     };
@@ -418,17 +338,14 @@ class FlowRunner {
     await this.partDone();
   }
 
-  /**
-   * Note(yoochan.kim): a clip is words true at their moment, so one whose second has gone
-   * by — the desk took longer than its lead — is skipped rather than joined part-way.
-   */
+  /** Note(yoochan.kim): a clip's words are true only at their second, so a late one is skipped, not joined part-way. */
   private missed(cue: CuePlan): boolean {
     if (this.clock.now().getTime() <= cue.at.getTime() + this.timing.CUE_GRACE_MS) return false;
     log.warn('flow', null, 'Cue time already passed, skipping', { title: cue.track.title });
     return true;
   }
 
-  /** Puts a cue on the deck now, starts it on its second, and waits for it to end. False when the deck could not be had. */
+  /** Loads a cue now, starts it on its second and waits for its end; false when the deck could not be had. */
   private async playCue(cue: CuePlan, place: { index: number; total: number }): Promise<boolean> {
     const loaded = await this.withAudio(async () => {
       await this.player.takeDeck(!this.holdsDeck());
@@ -476,18 +393,14 @@ class FlowRunner {
     run.cueSounding = false;
   }
 
-  /**
-   * A part has played its last. The deck goes back only when no part has more to
-   * play — music then cues is one stretch the run holds, not two.
-   */
+  /** The deck goes back only after the last part: music then countdown is one stretch the run holds, not two. */
   private async partDone(): Promise<void> {
     const run = this.active;
     if (!run) return;
     run.playing = undefined;
     run.partsLeft -= 1;
     if (run.partsLeft === 0 && run.deckHeld) {
-      // Note(yoochan.kim): the last sound reached its own end here, so there is nothing to
-      // fade. A run cut short goes out through cleanup instead, which does fade.
+      // Note(yoochan.kim): the last sound ended by itself, so no fade; a run cut short fades out through cleanup.
       await this.restoreDeck(false);
       run.deckHeld = false;
     }
@@ -502,12 +415,6 @@ class FlowRunner {
     if (this.active) this.active.deckHeld = true;
   }
 
-  /**
-   * Starts one track of the sequence. Taking the deck fades the user's song
-   * out first, which takes seconds — so where this track should be is worked
-   * out after that fade, not before it, or the seek would land where the music
-   * was when the fade began.
-   */
   private async playTrack(
     track: LibraryEntry,
     startedAt: Date,
@@ -515,12 +422,12 @@ class FlowRunner {
     total: number,
     endsAt: Date,
   ): Promise<boolean> {
-    // Note(yoochan.kim): no fade once the run has the deck. A fade between its own tracks
-    // takes three seconds, and each track after the first started that much late.
+    // Note(yoochan.kim): no fade once the run holds the deck; a fade between its own tracks would start each 3s late.
     let seekSec = 0;
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck(!this.holdsDeck());
       this.holdDeck();
+      // Note(yoochan.kim): after takeDeck's fade, which takes seconds, or the seek lands where the music was before it.
       seekSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
       await this.player.playTrackAt(track, seekSec, track.volume, false, (track.durationSec - seekSec) * 1000);
     });
@@ -532,8 +439,7 @@ class FlowRunner {
     if (this.active) {
       this.active.playing = { track: { title: track.title, index: index + 1, total }, endsAt };
     }
-    // Note(yoochan.kim): where the track was started, and how long after that point was
-    // due the sound began — the plan, and what the room heard.
+    // Note(yoochan.kim): seek is the plan, lag how long after that point was due the room heard it begin.
     const lagSec = (this.clock.now().getTime() - startedAt.getTime()) / 1000 - seekSec;
     log.info('flow', null, 'Track started', {
       track: `${index + 1}/${total}`,
@@ -565,13 +471,13 @@ class FlowRunner {
     log.info('flow', null, 'Flow finished', { name: run.plan.name });
   }
 
-  /** Returns the deck to the two-song system; a no-op when no track took it. */
+  /** Returns the deck to the user's song; a no-op when no track took it. */
   private async restoreDeck(fade = true): Promise<void> {
     const point = this.active?.restorePoint;
     const ran = await this.withAudio(async () => {
       await this.player.restoreSong(fade);
       if (!point) return;
-      // Back to the deck this run was handed, not the one it happens to find.
+      // Note(yoochan.kim): back to the deck this run was handed, not the one it happens to find.
       if (this.player.getCurrentSong() !== point.song) await this.player.changeSong(point.song);
       this.player.setVolume(point.volume);
     });
@@ -621,11 +527,7 @@ class FlowRunner {
     });
   }
 
-  /**
-   * Cancels every pending wait. Each rejects with FlowAborted, which unwinds
-   * the parts into run()'s finally — so stopping and finishing take the same
-   * cleanup path rather than two that could drift apart.
-   */
+  /** Each wait rejects with FlowAborted into run()'s finally, so stopping and finishing share one cleanup path. */
   private abortWaits(): void {
     for (const waiter of [...this.waiters]) waiter.cancel();
   }
@@ -691,8 +593,7 @@ class FlowRunner {
     const until = instantOf(lock.until);
     if (!until.ok) return until;
 
-    // Note(yoochan.kim): A window has to have room in it. Crossing midnight needs no special case
-    // now that both ends carry their own date.
+    // Note(yoochan.kim): a window needs room in it; one crossing midnight needs no special case, both ends have a date.
     if (until.value.getTime() <= at.value.getTime()) {
       return { ok: false, reason: RejectReason.INVALID_VALUE };
     }
@@ -703,9 +604,7 @@ class FlowRunner {
     const cues = part.tracks;
     if (!Array.isArray(cues) || cues.length === 0) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    // Note(yoochan.kim): every cue carries its own level. The caller decided how
-    // loud this flow sounds when they wrote it, rather than inheriting whatever
-    // the panel happened to be left at.
+    // Note(yoochan.kim): each cue carries its own level, so the flow sounds as written, not as the panel was left.
     const tracks: ScheduledEntry[] = [];
     for (const cue of cues) {
       const { id, volume } = (cue ?? {}) as Record<string, unknown>;
@@ -722,17 +621,12 @@ class FlowRunner {
     const finish = instantOf(part.endsAt);
     if (!finish.ok) return finish;
 
-    // Note(yoochan.kim): The anchor is the finish, so the start is derived: this is what lets a
-    // late start join part-way through instead of running long.
+    // Note(yoochan.kim): the finish anchors the start, so a late start joins part-way instead of running long.
     const endsAt = finish.value;
     const totalMs = tracks.reduce((sum, track) => sum + track.durationSec, 0) * 1000;
     const startsAt = new Date(endsAt.getTime() - totalMs);
 
-    // Note(yoochan.kim): only the finish is bound to the window. Running past
-    // the unlock would sound on an open panel, and ending before the gate
-    // engages could never sound — both refused, because the caller wrote those
-    // times on purpose. A start before the window is fine: the sound begins
-    // with the lock, its opening cut.
+    // Note(yoochan.kim): only the finish is bound: past the unlock it sounds on an open panel, before the gate never.
     if (endsAt.getTime() > lock.until.getTime() || endsAt.getTime() <= lock.at.getTime()) {
       return { ok: false, reason: RejectReason.MUSIC_OUTSIDE_LOCK };
     }
@@ -756,17 +650,12 @@ function inTimeOrder(part: PartPlan): PartPlan {
   return part.kind === 'countdown' ? { ...part, cues: [...part.cues].sort((a, b) => a.at.getTime() - b.at.getTime()) } : part;
 }
 
-/**
- * How long before its first notice a countdown's block begins: room to fade out
- * what is playing and to absorb a late arrival, time to set the desk, and time to
- * put the notice on the deck. Nothing else may sound in it.
- */
+/** How long before its first notice a countdown's block opens; the slack is for a fade out and a late arrival. */
 export function reserveMs(part: CountdownPlan, timing: FlowTiming): number {
   const desk = part.desk && part.desk.length > 0 ? timing.CUE_DESK_LEAD_MS : 0;
   return timing.CUE_LEAD_SLACK_MS + desk + timing.CUE_PRELOAD_MS;
 }
 
-/** When a plan's countdown block begins and ends, or null for a plan without one. */
 export function countdownBlock(plan: Pick<Plan, 'parts'>, timing: FlowTiming): { opens: number; ends: number } | null {
   const part = plan.parts.find((candidate): candidate is CountdownPlan => candidate.kind === 'countdown');
   if (!part || part.cues.length === 0) return null;
@@ -774,13 +663,7 @@ export function countdownBlock(plan: Pick<Plan, 'parts'>, timing: FlowTiming): {
   return { opens: cues[0]!.at.getTime() - reserveMs(part, timing), ends: Math.max(...cues.map(endOf)) };
 }
 
-/**
- * Whether the countdown can be heard on its own. Its block — from `reserveMs`
- * before its first notice to the end of the count — lies inside the gate's
- * window and in no stretch the run's music is playing, and no notice begins
- * before the one ahead of it has ended. That is how a flow keeps other music off
- * it. Music is counted from when it can first sound, the lock.
- */
+/** Whether the countdown is heard on its own; music timed before the gate counts from the lock, its first sound. */
 export function timelineConflict(plan: Pick<Plan, 'lock' | 'parts'>, timing: FlowTiming): TimelineConflict | null {
   const lockAt = plan.lock.at.getTime();
   const music = plan.parts.flatMap((part) => (part.kind === 'music'
@@ -802,7 +685,6 @@ export function timelineConflict(plan: Pick<Plan, 'lock' | 'parts'>, timing: Flo
   return null;
 }
 
-/** Absolute instant each track of a music part begins */
 function boundariesOf(part: MusicPlan): Date[] {
   const starts: Date[] = [];
   let offsetMs = 0;

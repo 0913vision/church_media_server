@@ -4,9 +4,7 @@ import { MuteState, PlaybackState } from '../../server/protocol.ts';
 import type MpvClient from '../../server/hardware/MpvClient.ts';
 import { dbFromLevel, fadeInDb, fadeOutDb, mpvVolumeFromDb } from '../../server/hardware/loudness.ts';
 
-// Note(yoochan.kim): a stand-in for mpv that only writes down what it was told, so
-// nothing here can make a sound. The device and player read env-backed config
-// and log at module load, so they are loaded once that is set.
+// Note(yoochan.kim): the device and player read env-backed config at module load, so they are loaded once it is set.
 type PlayerCtor = typeof import('../../server/player/Player.ts').default;
 type DeviceCtor = typeof import('../../server/hardware/AudioDevice.ts').default;
 let Player: PlayerCtor;
@@ -28,6 +26,7 @@ before(async () => {
 /** The deck's level in deck(), 0–100. */
 const LEVEL = 40;
 
+/** A stand-in for mpv that only writes down what it was told, so nothing here can make a sound. */
 class FakeMpv {
   calls: string[] = [];
   readonly props: Record<string, string> = { volume: '50', 'playback-time': '0', 'idle-active': 'no', pause: 'yes' };
@@ -65,10 +64,10 @@ describe('A run moving from one of its tracks to the next', () => {
     await player.playTrackAt({ id: 'first', file: '/audio/first.mp3' }, 0, 60);
     mpv.calls = [];
 
-    // Note(yoochan.kim): what FlowRunner does at a boundary between its own tracks. The
-    // timer fires a few milliseconds late, which is not a seek.
+    // Note(yoochan.kim): what FlowRunner does at a boundary between its own tracks.
     const boundary = Date.now();
     await player.takeDeck(false);
+    // Note(yoochan.kim): its timer fires a few milliseconds late, which is not a seek.
     await player.playTrackAt({ id: 'second', file: '/audio/second.mp3' }, 0.004, 60);
     const took = Date.now() - boundary;
 
@@ -126,8 +125,7 @@ describe('Pressing play', () => {
     assert.deepStrictEqual(mpv.calls, ['pause=no']);
   });
 
-  // Note(yoochan.kim): 통성기도 started from its beginning with no fade came in at full level and
-  // startled the room (2026-10-30). The app's own songs fade wherever they are.
+  // Note(yoochan.kim): an app song started unfaded from its beginning comes in at full level and startles the room.
   test('one of the app\'s own songs fades in from its very beginning too', async () => {
     const { mpv, player } = deck();
     mpv.calls = [];
@@ -159,7 +157,7 @@ describe('Pressing play', () => {
     const curve = fadeDb(mpv.calls);
     assert.strictEqual(curve.length, FADE_IN_MS / STEP_MS + 1);
     curve.forEach((db, i) => near(db, fadeInDb(i * STEP_MS, FADE_IN_MS, EDGE_DB), `${i * STEP_MS}ms`));
-    // Heard a tenth of the way in; on the old curve it was all but silent for half a second.
+    // Note(yoochan.kim): heard a tenth of the way in, or a press of play seems not to land.
     const heard = Math.ceil(Math.min(300, FADE_IN_MS / 10) / STEP_MS);
     assert.ok(curve[heard]! >= EDGE_DB - 1e-6, `${curve[heard]} dB at ${heard * STEP_MS}ms`);
   });

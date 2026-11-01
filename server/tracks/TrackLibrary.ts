@@ -18,39 +18,15 @@ export interface LibraryEntry extends Track {
   userSelectable: boolean;
 }
 
-/**
- * How a file still arriving in the audio folder is named, so a boot can tell it
- * apart — whatever comes after the base, since a fetcher writes its own steps.
- */
+/** Whatever follows the base matches, since a fetcher writes intermediate files of its own. */
 const STAGING = /^\.incoming-[0-9a-f]+\./;
 
-/**
- * Track library: loads a JSON manifest at boot
- * (`[{ id, title, file, durationSec, volume, userSelectable?, role? }]`, file paths
- * relative to the manifest) and fails fast on any invalid entry, matching the
- * server's no-defaults policy.
- *
- * Every entry is a piece of audio a flow can schedule, and carries the volume
- * it sounds at unless a flow says otherwise. `userSelectable` marks the ones a
- * person may also pick at the panel: those, in manifest order, are the deck's
- * songs. So the deck's size, order, names, files and levels are all data.
- * `role` marks a countdown's audio, one track per role; without it an entry is music.
- *
- * Note(yoochan.kim): the manifest is the server's file, not a checked-in one — it is
- * kept out of git and rewritten here when a track is renamed or deleted or its
- * level changes. A level is the one
- * thing about a track somebody adjusts by ear, and putting it anywhere else
- * would leave two answers to "how loud is this song" free to disagree.
- */
+/** Note(yoochan.kim): the manifest is the server's file, rewritten here, and the one place a track's level is kept. */
 class TrackLibrary {
   private readonly tracks = new Map<string, LibraryEntry>();
   private readonly audioDir: string;
 
-  /**
-   * @param audioDir - Where the server keeps audio it owns. Deleting a track
-   *   deletes its file only from here: a manifest may name audio anywhere, and
-   *   what the server did not put there is not the server's to remove.
-   */
+  /** @param audioDir - deleting a track removes its file only from here, as audio elsewhere is not the server's. */
   constructor(private readonly manifestPath: string, audioDir: string) {
     this.audioDir = path.resolve(audioDir);
     if (!fs.statSync(this.audioDir, { throwIfNoEntry: false })?.isDirectory()) {
@@ -108,8 +84,7 @@ class TrackLibrary {
       });
     }
 
-    // Note(yoochan.kim): with nothing user-selectable the panel has no song to
-    // offer and the deck no file to load, so that is a broken manifest
+    // Note(yoochan.kim): with nothing user-selectable the panel has no song to offer and the deck no file to load.
     if (this.songs().length === 0) {
       throw new Error(`Track manifest declares no userSelectable track: ${manifestPath}`);
     }
@@ -135,7 +110,6 @@ class TrackLibrary {
     return role !== undefined && role !== TrackRole.MUSIC;
   }
 
-  /** The track that plays one part of a countdown, if the library has one. */
   countdownTrack(role: Exclude<TrackRole, 'music'>): LibraryEntry | undefined {
     return [...this.tracks.values()].find((entry) => entry.role === role);
   }
@@ -145,10 +119,7 @@ class TrackLibrary {
     return Object.fromEntries(this.songs().map((entry) => [entry.id, entry.file]));
   }
 
-  /**
-   * The level a track sounds at when nobody says otherwise: what a song returns
-   * to when it is chosen, and what a library track is put on at.
-   */
+  /** What a song returns to when it is chosen, and what a library track is put on at. */
   volumeOf(id: string): number {
     const entry = this.tracks.get(id);
     if (!entry) {
@@ -157,7 +128,7 @@ class TrackLibrary {
     return entry.volume;
   }
 
-  /** Sets the level a track sounds at, from now on. The caller checks the id exists. */
+  /** The caller checks the id exists. */
   setVolume(id: string, volume: number): void {
     const entry = this.tracks.get(id);
     if (!entry || !isLevel(volume)) {
@@ -167,19 +138,11 @@ class TrackLibrary {
     this.persist();
   }
 
-  /**
-   * A fresh name in the audio folder for a file on its way in, without an
-   * extension: the caller adds its own, and everything under it is cleared at boot.
-   */
+  /** No extension: the caller adds its own, and everything under it is cleared at boot. */
   stagingBase(): string {
     return path.join(this.audioDir, `.incoming-${randomBytes(6).toString('hex')}`);
   }
 
-  /**
-   * Makes a new track of a file waiting at a staging path: the file moves into
-   * the audio folder under the track's id, and the manifest is written, so the
-   * next boot has it too. Starts at the level every new track starts at.
-   */
   add(staged: string, title: string, durationSec: number): LibraryEntry {
     const id = this.freshId();
     const file = path.join(this.audioDir, `${id}.mp3`);
@@ -197,15 +160,12 @@ class TrackLibrary {
     return entry;
   }
 
-  /**
-   * Whether another track is already called this. A title is how a person picks a
-   * track out of a list, so two the same would be two rows nobody can tell apart.
-   */
+  /** A title is how a person picks a track out of a list, so two the same could not be told apart. */
   titleTaken(title: string, except?: string): boolean {
     return [...this.tracks.values()].some((entry) => entry.title === title && entry.id !== except);
   }
 
-  /** Renames a track. The caller checks the id exists and is not a deck song. */
+  /** The caller checks the id exists and is not a deck song. */
   rename(id: string, title: string): void {
     const entry = this.tracks.get(id);
     if (!entry) return;
@@ -213,17 +173,13 @@ class TrackLibrary {
     this.persist();
   }
 
-  /**
-   * Takes a track out of the library, then deletes its audio. The caller checks
-   * that nothing still needs it.
-   */
+  /** The caller checks that nothing still needs it. */
   remove(id: string): void {
     const entry = this.tracks.get(id);
     if (!entry) return;
     this.tracks.delete(id);
 
-    // Note(yoochan.kim): a manifest that failed to save still names the file, and the
-    // next boot refuses a track whose file is gone
+    // Note(yoochan.kim): an unsaved manifest still names the file, and a boot refuses a track whose file is missing.
     if (!this.persist()) return;
     if (!this.owns(entry.file)) return;
     try {
@@ -246,7 +202,6 @@ class TrackLibrary {
     return [...this.tracks.values()].filter((entry) => entry.userSelectable);
   }
 
-  /** An id nothing uses yet, which also names its file. */
   private freshId(): string {
     for (;;) {
       const id = `track-${randomBytes(4).toString('hex')}`;
@@ -261,12 +216,7 @@ class TrackLibrary {
     return ![...this.tracks.values()].some((entry) => entry.file === file);
   }
 
-  /**
-   * Writes the manifest back: temp file then rename, the way the state file is
-   * written, so a crash mid-write cannot leave a manifest that refuses the next
-   * boot. Best-effort like that one — a level that failed to save still sounds.
-   * Says whether it was written, for a change that must not outrun the disk.
-   */
+  /** Says whether it was written, for a change that must not outrun the disk. */
   private persist(): boolean {
     const entries = [...this.tracks.values()].map((entry) => ({
       id: entry.id,
@@ -278,11 +228,13 @@ class TrackLibrary {
       ...(entry.role !== TrackRole.MUSIC ? { role: entry.role } : {}),
     }));
     try {
+      // Note(yoochan.kim): temp file then rename, so a crash mid-write cannot leave a manifest the next boot refuses.
       const tmp = `${this.manifestPath}.tmp`;
       fs.writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
       fs.renameSync(tmp, this.manifestPath);
       return true;
     } catch (error) {
+      // Note(yoochan.kim): best-effort, like the state file: a level that failed to save still sounds.
       log.error('trackLibrary', null, 'Failed to write track manifest', { error: errorMessage(error) });
       return false;
     }

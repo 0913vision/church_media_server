@@ -14,8 +14,7 @@ import type { Track } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): every file sent here is a one-second silent mp3 or plain junk, and
-// nothing is ever played, so none of this reaches the room.
+// Note(yoochan.kim): every file sent is a silent mp3 or junk, and nothing is played, so none of this reaches the room.
 const SILENCE = fs.readFileSync(path.resolve('./tests/fixtures/silence.mp3'));
 
 async function send(body: Buffer, password = TEST_ADMIN_PASSWORD): Promise<{ status: number; upload?: string }> {
@@ -49,7 +48,6 @@ function declareTooLarge(): Promise<number> {
   });
 }
 
-/** Files still waiting in the audio folder for addTrack */
 function waiting(): string[] {
   return fs.readdirSync(TEST_AUDIO_DIR).filter((name) => name.startsWith('.incoming-'));
 }

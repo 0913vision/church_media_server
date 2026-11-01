@@ -2,9 +2,7 @@ import { test, describe } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { faderFromDb, dbFromFader } from '../../server/console/faderLevel.ts';
 
-// Note(yoochan.kim): these numbers end up on a mixing desk in a room with
-// people in it, so they are pinned rather than trusted. The anchors are the
-// corners of the X32's own fader curve.
+// Note(yoochan.kim): these end up on a desk in a room with people in it, so they are pinned at the curve's corners.
 describe('Decibels as the desk wants them', () => {
   test('the curve meets its corners', () => {
     assert.equal(faderFromDb(10), 1);

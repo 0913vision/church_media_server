@@ -8,14 +8,9 @@ import { hashPassword } from '../../server/auth/password.ts';
 import { C2S, PROTOCOL_VERSION, S2C } from '../../server/protocol.ts';
 import type { RejectReason, S2CPayloads, StatePatch } from '../../server/protocol.ts';
 
-// Note(yoochan.kim): the test client Socket stays UNTYPED (no protocol event
-// maps) on purpose — rejection tests must be able to emit invalid payloads
-// (e.g. changeVolume('loud')), which a protocol-typed emit would reject at
-// compile time. The server side is fully protocol-typed instead.
+// Note(yoochan.kim): the client Socket stays untyped so rejection tests can emit payloads a typed emit would refuse.
 
-// Note(yoochan.kim): Explicit test environment. These are declared test parameters — not hidden
-// fallbacks — and may be overridden via env when targeting an externally
-// running server.
+// Note(yoochan.kim): declared test parameters, not hidden fallbacks; env overrides them for an external server.
 export const TEST_PORT = Number(process.env.PORT ?? '4000');
 export const TEST_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 const TEST_CONSOLE_MODE = process.env.CONSOLE_MODE ?? 'MOCK';
@@ -27,27 +22,20 @@ const TEST_X32_REMOTE_PORT = process.env.X32_REMOTE_PORT ?? '10023';
 const TEST_MPV_LIBRARY_PATH = process.env.MPV_LIBRARY_PATH ?? '/opt/homebrew/lib/libmpv.dylib';
 // Note(yoochan.kim): Isolate persisted state to a temp file so tests never read/write the real one.
 const TEST_STATE_FILE_PATH = process.env.STATE_FILE_PATH ?? path.join(os.tmpdir(), 'cms-test-state.json');
-// Note(yoochan.kim): the manifest is the server's own file and gets rewritten when a level
-// changes, so tests run against a copy. Pointed at the real one, a test that
-// sets a level would edit the library this building plays from.
+// Note(yoochan.kim): a copy, since a test setting a level would otherwise edit the library this building plays from.
 const TEST_TRACKS_SOURCE = process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 export const TEST_TRACKS_MANIFEST_PATH = path.join(os.tmpdir(), `cms-test-tracks-${process.pid}.json`);
-// Note(yoochan.kim): deleting a track deletes its file from here, so it is a temp
-// folder: the manifest copy still names the real audio, which lives outside it.
+// Note(yoochan.kim): a temp folder, since a deleted track's file goes from here and the real audio lives outside it.
 export const TEST_AUDIO_DIR = path.join(os.tmpdir(), `cms-test-audio-${process.pid}`);
 /** The one track a test may delete: silent, and in the test's own folder. */
 export const SCRATCH_TRACK_ID = 'test-scratch';
 export const SCRATCH_TRACK_FILE = path.join(TEST_AUDIO_DIR, 'scratch.mp3');
-// Note(yoochan.kim): the calendar starts empty for the same reason — a test that saves a
-// flow must not write the one this building runs on.
+// Note(yoochan.kim): starts empty for the same reason, so a saved flow never writes the one this building runs on.
 const TEST_SCHEDULE_FILE_PATH = path.join(os.tmpdir(), `cms-test-schedule-${process.pid}.json`);
-// Note(yoochan.kim): Who clients are told to call. Required like everything else, so it has to be
-// declared here too — the bootstrap lists the environment rather than reading
-// .env, which is what keeps a developer's own config out of the test run.
+// Note(yoochan.kim): declared here, not read from .env, which keeps a developer's own config out of the test run.
 const TEST_ADMIN_CONTACT_NAME = process.env.ADMIN_CONTACT_NAME ?? '테스트 담당자';
 const TEST_ADMIN_CONTACT_PHONE = process.env.ADMIN_CONTACT_PHONE ?? '010-0000-0000';
-// Note(yoochan.kim): The APK relay's upstream. Points at a port nothing answers,
-// so a test that reached it would fail fast instead of downloading a real APK.
+// Note(yoochan.kim): a port nothing answers, so a test reaching the APK relay fails fast instead of downloading.
 const TEST_FILESERVER_URL = process.env.FILESERVER_URL ?? 'http://localhost:1';
 const TEST_FILESERVER_PASSWORD = process.env.FILESERVER_PASSWORD ?? 'test';
 // Note(yoochan.kim): a stand-in, so no test reaches YouTube. The video id picks its answer.
@@ -55,11 +43,7 @@ const TEST_YTDLP_PATH = path.resolve('./tests/fixtures/fake-yt-dlp.mjs');
 
 const DEFAULT_TEST_URL = `http://localhost:${TEST_PORT}`;
 
-/**
- * Copies the manifest somewhere the run may write to. File paths are resolved
- * on the way, since the copy no longer sits beside the audio it names. The
- * scratch track goes on the end, so the first track stays the manifest's own.
- */
+/** Paths resolved, as the copy no longer sits by its audio; added tracks go last so the first stays the manifest's. */
 function copyManifest(): void {
   const dir = path.dirname(TEST_TRACKS_SOURCE);
   const entries = JSON.parse(fs.readFileSync(TEST_TRACKS_SOURCE, 'utf8')) as Record<string, unknown>[];
@@ -67,7 +51,7 @@ function copyManifest(): void {
   fs.mkdirSync(TEST_AUDIO_DIR, { recursive: true });
   fs.copyFileSync(path.resolve('./tests/fixtures/silence.mp3'), SCRATCH_TRACK_FILE);
   resolved.push({ id: SCRATCH_TRACK_ID, title: '테스트 곡', file: SCRATCH_TRACK_FILE, durationSec: 1.1, volume: 50 });
-  // A countdown's three tracks, silent, for whichever role the manifest has none of.
+  // Note(yoochan.kim): a countdown's three tracks, silent, for whichever role the manifest has none of.
   for (const role of ['oneMinute', 'thirtySeconds', 'count']) {
     if (resolved.some((entry) => entry.role === role)) continue;
     const file = path.join(TEST_AUDIO_DIR, `${role}.mp3`);
@@ -94,18 +78,11 @@ function isPortOpen(port: number): Promise<boolean> {
   });
 }
 
-/**
- * Makes `npm test` self-contained: when nothing is listening on the test
- * port, starts an in-process MOCK-console server (real mpv stays paused, so
- * it is silent). An externally running dev server is used as-is.
- * Call from a top-level before() hook; pair with stopServer() in after().
- */
+/** In-process MOCK server when the port is free (mpv stays paused, so silent); an external server is used as-is. */
 export async function ensureServer(): Promise<void> {
   if (await isPortOpen(TEST_PORT)) return;
 
-  // Note(yoochan.kim): The server requires every env variable explicitly (fail-fast, no
-  // defaults), so the test bootstrap supplies its declared test environment
-  // before the server module graph is loaded.
+  // Note(yoochan.kim): every env variable is required, so the test environment is set before the server modules load.
   process.env.PORT = String(TEST_PORT);
   process.env.CONSOLE_MODE = TEST_CONSOLE_MODE;
   // Note(yoochan.kim): The server stores only a hash; auth tests send the matching plaintext.
@@ -140,10 +117,7 @@ export async function ensureServer(): Promise<void> {
   throw new Error(`Test server failed to start on port ${TEST_PORT}`);
 }
 
-/**
- * Whether the server under test is the in-process one, whose files are the
- * ones named above. A server started elsewhere keeps its own.
- */
+/** Whether the server under test is in-process, so its files are the temp ones above, not an external server's. */
 export function ownsServer(): boolean {
   return startedServer !== null;
 }
@@ -186,8 +160,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Note(yoochan.kim): T has no default on purpose — every call site must
-  // state the expected payload type explicitly (no silent `unknown`).
+  // Note(yoochan.kim): T has no default on purpose, so every call site states the payload type it expects.
   emitAndWaitFor<T>(event: string, responseEvent: string, ...args: unknown[]): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No response for ${event}`)), 5000);
@@ -199,7 +172,6 @@ export class SocketTestHelper {
     });
   }
 
-  // Note(yoochan.kim): Wait for an event (e.g. a broadcast) without emitting anything.
   waitFor<T>(responseEvent: string, ms = 5000): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No ${responseEvent}`)), ms);
@@ -210,8 +182,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Note(yoochan.kim): Collect every payload of an event for `ms`, then resolve the array
-  // (used to assert an ordered sequence of broadcasts, e.g. lock true/false).
+  // Note(yoochan.kim): for asserting an ordered sequence of broadcasts, such as the lock going true then false.
   collectFor<T>(event: string, ms: number): Promise<T[]> {
     return new Promise((resolve) => {
       const received: T[] = [];
@@ -224,8 +195,7 @@ export class SocketTestHelper {
     });
   }
 
-  // Note(yoochan.kim): Emit an event and resolve true if responseEvent does NOT arrive within ms
-  // (used to assert that an operation was blocked).
+  // Note(yoochan.kim): resolves true when no responseEvent arrives in time, to assert an operation was blocked.
   emitAndExpectNoResponse(event: string, responseEvent: string, ms: number, ...args: unknown[]): Promise<boolean> {
     return new Promise((resolve) => {
       let received = false;
@@ -241,11 +211,7 @@ export class SocketTestHelper {
 
   // --- protocol v1 helpers ---
 
-  /**
-   * Connects and completes the handshake. A client must say hello before the
-   * server accepts writes or invokes, so nearly every test starts here.
-   * Returns the ready payload and the full state that follows it.
-   */
+  /** A client must say hello before the server takes writes or invokes, so nearly every test starts here. */
   async open(client = 'test-client'): Promise<{ ready: S2CPayloads['ready']; state: StatePatch }> {
     await this.connect();
     const readyP = this.waitFor<S2CPayloads['ready']>(S2C.READY);
@@ -267,11 +233,7 @@ export class SocketTestHelper {
     this.socket!.emit(C2S.INVOKE, { command, args });
   }
 
-  /**
-   * Waits for the first state patch that satisfies `matches`. State is one
-   * event carrying only what changed, so tests say which change they mean
-   * rather than which event they expect.
-   */
+  /** State is one event carrying only what changed, so a test names the change it means, not the event. */
   waitForState(matches: (patch: StatePatch) => boolean, ms = 5000): Promise<StatePatch> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -288,12 +250,10 @@ export class SocketTestHelper {
     });
   }
 
-  /** Collects every state patch for `ms`, for asserting an ordered sequence. */
   collectStates(ms: number): Promise<StatePatch[]> {
     return this.collectFor<StatePatch>(S2C.STATE, ms);
   }
 
-  /** Waits for a refusal of `target`, resolving its reason. */
   waitForRejected(target: string, ms = 2000): Promise<RejectReason> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -310,7 +270,6 @@ export class SocketTestHelper {
     });
   }
 
-  /** True when no state patch satisfying `matches` arrives within `ms`. */
   expectNoState(matches: (patch: StatePatch) => boolean, ms: number): Promise<boolean> {
     return new Promise((resolve) => {
       let seen = false;

@@ -11,8 +11,7 @@ import { RejectReason } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): yt-dlp is a stand-in here (tests/fixtures/fake-yt-dlp.mjs), so
-// nothing reaches YouTube, and what it lands is the one-second silent fixture.
+// Note(yoochan.kim): yt-dlp is fake-yt-dlp.mjs here, so nothing reaches YouTube; what lands is the silent fixture.
 
 async function connectAuthedAdmin(client: string): Promise<SocketTestHelper> {
   const admin = new SocketTestHelper();
@@ -33,7 +32,6 @@ function fromYoutube(title: string, url: string): Record<string, unknown> {
   return { title, source: { kind: 'youtube', url } };
 }
 
-/** Files a fetch left in the audio folder */
 function leftovers(): string[] {
   return fs.readdirSync(TEST_AUDIO_DIR).filter((name) => name.startsWith('.incoming-'));
 }
@@ -73,9 +71,7 @@ describe('Fetching a track from YouTube', () => {
       const patch = await arrived;
       assert.deepStrictEqual(patch.trackFetch, { kind: 'idle' }, 'the fetch ends in the patch that brings the track');
 
-      // Note(yoochan.kim): the stand-in prints 10%, 60% and 100% within a second, then
-      // converts. A new stage is told at once and a percentage at most once a second,
-      // so every screen hears exactly this.
+      // Note(yoochan.kim): a stage is told at once, a percentage at most once a second, so 60% and 100% go unheard.
       const told = (await heard).flatMap((each) => (each.trackFetch ? [each.trackFetch] : []));
       assert.deepStrictEqual(told, [
         { kind: 'fetching', title: '유튜브 곡', progress: { stage: 'starting' } },

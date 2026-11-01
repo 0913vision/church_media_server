@@ -1,10 +1,7 @@
 import { test, describe } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-// Note(yoochan.kim): the console config reads required env the moment it loads,
-// even for a desk that is a fiction — so the environment is declared before the
-// module is brought in, and the import has to be the dynamic kind to stay below
-// this line rather than being hoisted above it.
+// Note(yoochan.kim): the console config reads required env on load, so it is set first and the import is dynamic.
 process.env.X32_REMOTE_ADDRESS ??= '127.0.0.1';
 process.env.X32_REMOTE_PORT ??= '10023';
 process.env.LOG_LEVEL ??= 'warn';
@@ -15,10 +12,7 @@ const { CONSOLE_CONFIG } = await import('../../server/constants/consoleConfig.ts
 const { MUTE_GROUP_ADDRESS, MATRIX, MAIN } = CONSOLE_CONFIG.INITIALIZE;
 const FIRST_CHANNEL = CONSOLE_CONFIG.INPUTS[1]!.CHANNELS[0]!;
 
-// Note(yoochan.kim): the mock is the only place the whole desk can be looked at.
-// The protocol reads back two addresses; the rest of what a run sends — the mute
-// group, the two masters, the order and the pause between them — is visible
-// nowhere else without a room full of people hearing it.
+// Note(yoochan.kim): only the mock shows the mute group, masters, order and pause without a room hearing it.
 describe('Mock desk', () => {
   test('a run reaches the desk in order, with the main held back until the matrix has landed', async () => {
     const desk = new MockConsole();
@@ -33,7 +27,7 @@ describe('Mock desk', () => {
       }
     }
     assert.ok(addresses.indexOf(MUTE_GROUP_ADDRESS) < addresses.indexOf(MATRIX.ADDRESS));
-    // A master is levelled before it is opened, and the main is opened last of all.
+    // Note(yoochan.kim): a master is levelled before it is opened, and the main is opened last of all.
     assert.ok(addresses.indexOf(MATRIX.ADDRESS) < addresses.indexOf(MATRIX.ON_ADDRESS));
     assert.ok(addresses.indexOf(MAIN.ADDRESS) < addresses.indexOf(MAIN.ON_ADDRESS));
     assert.equal(addresses[addresses.length - 1], MAIN.ON_ADDRESS);
@@ -64,7 +58,7 @@ describe('Mock desk', () => {
     assert.equal(after.state.kind === 'read' && after.state.db, -25.2);
     assert.notEqual(before.state.kind === 'read' && before.state.db, -25.2);
 
-    // The panel's held press is what puts it back — the point of the whole gesture.
+    // Note(yoochan.kim): the panel's held press is what puts it back, the point of the whole gesture.
     await desk.enable(CONSOLE_CONFIG.INPUTS[1]!.ID);
     const restored = desk.read().find((input) => input.id === CONSOLE_CONFIG.INPUTS[1]!.ID)!;
     assert.equal(restored.state.kind === 'read' && restored.state.db, after.nominalDb);
@@ -81,7 +75,7 @@ describe('Mock desk', () => {
     await desk.initialize();
     const sent = desk.snapshot().journal.length - beforeRun;
     const channels = CONSOLE_CONFIG.INPUTS.reduce((count, input) => count + input.CHANNELS.length, 0);
-    // every channel on and levelled, the mute group, then each master levelled and opened
+    // Note(yoochan.kim): every channel on and levelled, the mute group, then each master levelled and opened.
     assert.equal(sent, channels * 2 + 5, 'every step of a run is its own line');
   });
 

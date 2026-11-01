@@ -1,7 +1,4 @@
-/**
- * Turning a desk meter into one number for a whole song, and that number into a
- * volume. Pure — no desk, no player — so it can be checked with made-up readings.
- */
+/** A song's meter average and the volume it implies; pure, so it can be checked with made-up readings. */
 
 import { dbFromLevel, levelFromDb } from '../hardware/loudness.ts';
 
@@ -16,16 +13,7 @@ const dbOf = (power: number): number => 10 * Math.log10(power);
 const powerOf = (db: number): number => 10 ** (db / 10);
 const mean = (values: readonly number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length;
 
-/**
- * The average level of what passed a meter, in dB relative to the desk's full
- * scale.
- *
- * Note(yoochan.kim): a song has loud and quiet parts, so a plain average lets the
- * quiet ones drag it down and the silence around it drag it further. This gates
- * the way EBU R128 does — silence out first, then the passages well under the
- * song's own average — and averages power, not decibels. The desk meter is not
- * K-weighted, so this is the R128 method on the desk's reading, not a LUFS figure.
- */
+/** Note(yoochan.kim): dBFS, R128-gated on power so silence and quiet parts don't drag it; no K-weighting, not LUFS. */
 export class MeterAverage {
   private readonly blocks: number[] = [];
   private blockStart: number | null = null;
@@ -67,13 +55,7 @@ export class MeterAverage {
   }
 }
 
-/**
- * The volume that moves a measured level onto a target.
- *
- * Note(yoochan.kim): a level is decibels on a known curve (loudness.ts), so one
- * measurement at a known volume is enough; there is nothing to chase. Past 100 it
- * keeps going along the fader, so a target out of reach says by how much.
- */
+/** Note(yoochan.kim): a known dB curve needs one measurement; unclamped past 100 so out of reach says by how much. */
 export function volumeFor(measuredAtVolume: number, measuredDb: number, targetDb: number): number {
   return levelFromDb(dbFromLevel(measuredAtVolume) + (targetDb - measuredDb));
 }

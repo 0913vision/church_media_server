@@ -9,18 +9,11 @@ export interface ConsoleDevice {
   send(address: string, value: DeskValue): Promise<void>;
   /** Every value the desk reports, for any address and whoever moved it — answers to questions included. */
   onWire(listener: (address: string, value: DeskValue) => void): void;
-  /**
-   * Listens to the music player's input meters (CONSOLE_CONFIG.METER) until the
-   * returned function is called. Each frame is the linear readings, 1 = full scale.
-   */
+  /** Music player input meters (CONSOLE_CONFIG.METER) as linear readings, 1 = full scale; call the result to stop. */
   watchMeters(listener: (levels: readonly number[]) => void): () => void;
   /** Switches one input on, by an id from read(). Unknown ids are the caller's bug. */
   enable(inputId: string): Promise<void>;
-  /**
-   * Puts the desk into the state a service starts from: every input on, the
-   * mute group released, and the masters at their levels. Ordered and paced —
-   * see CONSOLE_CONFIG.INITIALIZE for why the main fader comes last.
-   */
+  /** Service-start state (inputs on, mute group released, masters levelled), paced so the main fader comes last. */
   initialize(): Promise<void>;
   /** Every input this server drives, as the desk last answered. Starts unknown; never guesses. */
   read(): ConsoleInput[];

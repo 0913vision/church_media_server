@@ -1,7 +1,6 @@
 import { hashPassword } from '../server/auth/password.ts';
 
-// CLI: print the scrypt hash for a plaintext admin password, for ADMIN_PASSWORD_HASH.
-//   npm run hash-password -- 'your-password'
+// Note(yoochan.kim): prints the value ADMIN_PASSWORD_HASH takes in .env.
 const plain = process.argv[2];
 if (!plain) {
   console.error("Usage: npm run hash-password -- '<password>'");

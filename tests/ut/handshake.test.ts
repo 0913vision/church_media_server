@@ -35,21 +35,18 @@ describe('Handshake and Read Tests', () => {
       const { ready } = await helper.open();
 
       assert.deepStrictEqual([...ready.attributes].sort(), [...EXPECTED_ATTRIBUTES].sort());
-      // Note(yoochan.kim): Commands are advertised only when implemented, so a client can hide
-      // controls for the rest instead of guessing.
+      // Note(yoochan.kim): only implemented commands are advertised, so a client hides the rest instead of guessing.
       assert.ok(ready.commands.includes('authenticate'));
       assert.ok(ready.commands.includes('enableConsoleInput'));
 
-      // Note(yoochan.kim): Songs are named by the server, so renaming one never means a client
-      // release — the catalogue arrives with the handshake.
+      // Note(yoochan.kim): songs are named by the server, so a rename never means a client release.
       assert.ok(ready.songs.length > 0);
       for (const song of ready.songs) {
         assert.strictEqual(typeof song.id, 'string');
         assert.ok(song.title.length > 0, 'every song carries a name to show');
       }
 
-      // Note(yoochan.kim): Clients print this on their error screens, so it has to be there
-      // before anything goes wrong.
+      // Note(yoochan.kim): clients print this on their error screens, so it must arrive before anything goes wrong.
       assert.ok(ready.contact.name.length > 0, 'someone is named as responsible');
       assert.ok(ready.contact.phone.length > 0, 'and can be called');
     } finally {
@@ -84,8 +81,7 @@ describe('Handshake and Read Tests', () => {
       await helper.open();
       const state = await helper.read();
 
-      // Note(yoochan.kim): Absence is spelled out, so a client cannot mistake "no flow" for
-      // "this field was not sent".
+      // Note(yoochan.kim): absence is spelled out, so "no flow" cannot be mistaken for "this field was not sent".
       assert.deepStrictEqual(state.flow, { phase: 'idle' });
     } finally {
       helper.disconnect();
@@ -113,8 +109,7 @@ describe('Handshake and Read Tests', () => {
     }
   });
 
-  // Note(yoochan.kim): every panel is on the current version now, so an older one
-  // is refused again. ACCEPTED_VERSIONS is where a temporary exception would go.
+  // Note(yoochan.kim): ACCEPTED_VERSIONS is where a temporary exception for a panel left behind would go.
   test('a panel one version behind is refused', async () => {
     const helper = new SocketTestHelper();
 

@@ -10,10 +10,7 @@ import type { ConsoleDevice } from '../../server/console/ConsoleDevice.ts';
 import type { DeskValue } from '../../server/console/desk.ts';
 import type { LevelTiming } from '../../server/constants/levelConfig.ts';
 
-// Note(yoochan.kim): nothing here can make a sound. mpv is a stand-in that only
-// writes down what it was told, and the desk's meter is worked out from that —
-// what the meter would read if the room could hear it. Env first, imports after,
-// since the modules read it as they load.
+// Note(yoochan.kim): mpv only records and the meter is derived from it, so nothing sounds; modules read env on load.
 process.env.LOG_LEVEL ??= 'warn';
 process.env.CONSOLE_MODE ??= 'MOCK';
 process.env.MPV_LIBRARY_PATH ??= '/opt/homebrew/lib/libmpv.dylib';
@@ -174,7 +171,7 @@ describe('Averaging a meter', () => {
     const meter = new MeterAverage();
     const amplitude = (db: number): number => 10 ** (db / 20);
     let at = 0;
-    // A frame every 50ms, both channels alike, as the desk sends them.
+    // Note(yoochan.kim): a frame every 50ms, both channels alike, as the desk sends them.
     const play = (db: number | null, sec: number): void => {
       for (let frame = 0; frame < sec * 20; frame += 1, at += 50) {
         const level = db === null ? 0 : amplitude(db);
@@ -188,7 +185,7 @@ describe('Averaging a meter', () => {
     play(-18, 30);
     play(null, 5);
 
-    // The loud halves alone, power-averaged: 10·log10((10^-2 + 10^-1.8) / 2) = -18.9 dB.
+    // Note(yoochan.kim): the loud halves alone, power-averaged: 10·log10((10^-2 + 10^-1.8) / 2) = -18.9 dB.
     const average = meter.averageDb()!;
     assert.ok(Math.abs(average - -18.9) < 0.2, `averaged ${average.toFixed(2)} dB`);
   });

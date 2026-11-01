@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Note(yoochan.kim): TrackLibrary writes the manifest, so it imports the logger, which
-// validates LOG_LEVEL at module load. Set it first and load the class dynamically.
+// Note(yoochan.kim): TrackLibrary's logger checks LOG_LEVEL on load, so it is set first and the class loaded later.
 type TrackLibraryCtor = typeof import('../../server/tracks/TrackLibrary.ts').default;
 type Library = InstanceType<TrackLibraryCtor>;
 let TrackLibrary: TrackLibraryCtor;
@@ -15,21 +14,18 @@ before(async () => {
   TrackLibrary = (await import('../../server/tracks/TrackLibrary.ts')).default;
 });
 
-// Note(yoochan.kim): how many songs the deck offers is the manifest's answer,
-// not the code's — these build manifests on disk and read the answer back.
+// Note(yoochan.kim): the deck's songs are the manifest's answer, not the code's, so these build manifests on disk.
 
 const AUDIO = path.resolve('./assets/audio/music_slow.mp3');
 const OTHER_AUDIO = path.resolve('./assets/audio/music_fast.mp3');
 const SILENCE = path.resolve('./tests/fixtures/silence.mp3');
 
-// Note(yoochan.kim): deleting a track deletes its file from here, so the library gets
-// a temp folder of its own. The real audio above lives outside it.
+// Note(yoochan.kim): deleting a track deletes its file from here, so a temp folder keeps the real audio out of reach.
 const AUDIO_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-deck-audio-'));
 after(() => fs.rmSync(AUDIO_DIR, { recursive: true, force: true }));
 
 let written = 0;
 
-/** Writes a manifest to a temp file and loads a library from it. */
 function library(entries: unknown[]): Library {
   const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);
   fs.writeFileSync(file, JSON.stringify(entries));
@@ -40,7 +36,7 @@ function library(entries: unknown[]): Library {
   }
 }
 
-/** Writes a manifest and keeps it, so what the library writes back can be read. */
+/** Keeps the manifest, so what the library writes back can be read. */
 function onDisk(entries: unknown[]): { file: string; lib: Library } {
   const file = path.join(os.tmpdir(), `cms-deck-${process.pid}-${written++}.json`);
   fs.writeFileSync(file, JSON.stringify(entries));
@@ -135,8 +131,7 @@ describe('Deck songs come from the manifest', () => {
       lib.setVolume('special', 70);
       assert.strictEqual(lib.volumeOf('special'), 70);
 
-      // Note(yoochan.kim): read back from disk rather than from the object that wrote it.
-      // What the write is for is the boot after this one.
+      // Note(yoochan.kim): read from disk, not from the object that wrote it: the write is for the next boot.
       assert.strictEqual(new TrackLibrary(file, AUDIO_DIR).volumeOf('special'), 70);
 
       const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>[];

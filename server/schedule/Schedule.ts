@@ -9,11 +9,10 @@ import { errorMessage } from '../utils/errors.ts';
 /** Monday first, the way `Date.getDay()` is not. */
 export const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
-// Note(yoochan.kim): seconds are optional. Track lengths are not whole minutes, so a
-// finish that could only be set to the minute cannot say when the music stops.
+// Note(yoochan.kim): seconds are optional, as a finish set only to the minute cannot say when the music stops.
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/;
 
-/** What a flow needs to be handed to the runner: the same shape startFlow takes. */
+/** The same shape startFlow takes. */
 export interface RunArgs {
   id: string;
   name: string;
@@ -26,17 +25,7 @@ export interface RunArgs {
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
 
-/**
- * The weekly calendar: which flows exist and when they may run.
- *
- * Note(yoochan.kim): this used to live in the admin web, on the principle that the server
- * is a device and a device has no calendar. It moved because a track cannot be
- * deleted while a flow still names it, and only whoever holds both the library
- * and the calendar can answer that. Everything that outlives a restart is the
- * server's now.
- *
- * Entries are wall-clock ("19:30"); which 19:30 is decided when one is started.
- */
+/** Note(yoochan.kim): beside the library, since only whoever holds both can refuse deleting a track a flow names. */
 class Schedule {
   private entries: ScheduleEntry[] = [];
 
@@ -66,22 +55,19 @@ class Schedule {
     return found ? copy(found) : undefined;
   }
 
-  /** Every entry whose music names this track — what makes deleting it refusable. */
+  /** What makes deleting a track refusable. */
   usedBy(trackId: string): ScheduleEntry[] {
     return this.entries.filter((entry) => tracksOf(entry).includes(trackId)).map(copy);
   }
 
-  /**
-   * Writes one entry, replacing a known id in place so the calendar keeps its
-   * order. Validated exactly as the file is at boot: what is saved here has to
-   * be something the next boot will accept.
-   */
+  /** Validated as the file is at boot, so nothing saved here can be refused by the next boot. */
   save(entry: unknown): Checked<ScheduleEntry> {
     const checked = validate(entry);
     if (!checked.ok) return checked;
 
     const at = this.entries.findIndex((each) => each.id === checked.value.id);
     const next = [...this.entries];
+    // Note(yoochan.kim): a known id is replaced in place, so the calendar keeps its order.
     if (at >= 0) next[at] = checked.value; else next.push(checked.value);
     this.entries = next;
     this.persist();
@@ -96,13 +82,7 @@ class Schedule {
     return true;
   }
 
-  /**
-   * Turns an entry into a run, against the day it is being started on.
-   *
-   * The runner takes instants only — it will not decide which day a bare
-   * "19:30" belongs to. That decision belongs here, where the weekly calendar
-   * is. `now` is church time, as every instant on the wire is.
-   */
+  /** The runner takes instants only, so the day a wall-clock entry falls on is decided here; `now` is church time. */
   toRunArgs(entry: ScheduleEntry, now: Date): RunArgs {
     const opensAt = onDay(now, entry.lock.at);
 
@@ -110,7 +90,7 @@ class Schedule {
     let lastSound: Date | null = null;
     for (const part of entry.parts) {
       const ends = onDay(now, part.kind === 'music' ? part.endsAt : part.at);
-      // An end before the gate opens is tomorrow's: a run crossing midnight.
+      // Note(yoochan.kim): an end before the gate opens is tomorrow's, a run crossing midnight.
       if (ends < opensAt) ends.setDate(ends.getDate() + 1);
       if (!lastSound || ends > lastSound) lastSound = ends;
       parts.push(part.kind === 'music'
@@ -120,9 +100,7 @@ class Schedule {
 
     let closesAt: Date;
     if (entry.lock.until.kind === 'music') {
-      // Note(yoochan.kim): stated as an intent rather than a copied time, so moving the
-      // music moves the gate with it — or the countdown, when the last sound is its zero.
-      // Validation guarantees there is one.
+      // Note(yoochan.kim): an intent, so moving the last sound moves the gate; validation ensures there is one.
       closesAt = lastSound!;
     } else {
       closesAt = onDay(now, entry.lock.until.at);
@@ -149,18 +127,15 @@ class Schedule {
   }
 }
 
-/** Whether an entry may run on a given church-time day. */
 export function runsOn(entry: ScheduleEntry, day: Date): boolean {
-  // getDay() counts Sunday first; the calendar counts Monday first.
+  // Note(yoochan.kim): getDay() counts Sunday first; the calendar counts Monday first.
   return entry.weekdays.includes(WEEKDAY_KEYS[(day.getDay() + 6) % 7]!);
 }
 
-/** Every track id an entry's music names, in play order; a countdown names none. */
 export function tracksOf(entry: ScheduleEntry): string[] {
   return entry.parts.flatMap((part) => (part.kind === 'music' ? part.tracks.map((track) => track.id) : []));
 }
 
-/** Seconds since midnight, from HH:MM or HH:MM:SS. */
 export function secondsOf(clock: string): number {
   const parts = clock.split(':').map(Number);
   return parts[0]! * 3600 + parts[1]! * 60 + (parts[2] ?? 0);
@@ -184,13 +159,7 @@ function copy(entry: ScheduleEntry): ScheduleEntry {
   };
 }
 
-/**
- * One entry, checked the same way whether it came from the file or the wire.
- *
- * Note(yoochan.kim): the reasons are sentences rather than codes because they are read
- * twice — in a boot failure, where the file has to say what is wrong with it,
- * and by whoever is editing, where the caller turns them into a refusal.
- */
+/** Note(yoochan.kim): reasons are sentences, read both in a boot failure and by whoever is editing the entry. */
 export function validate(value: unknown): Checked<ScheduleEntry> {
   if (typeof value !== 'object' || value === null) return bad('an entry must be an object');
   const entry = value as Record<string, unknown>;
@@ -214,8 +183,7 @@ export function validate(value: unknown): Checked<ScheduleEntry> {
     checkedParts.push(checked.value);
   }
 
-  // Note(yoochan.kim): every flow holds the gate. Music on an open panel can be taken over
-  // from the tablet mid-run, so a flow without a lock is not a flow.
+  // Note(yoochan.kim): every flow holds the gate, since music on an open panel can be taken over from the tablet.
   const checkedLock = validateLock(id, lock, checkedParts);
   if (!checkedLock.ok) return checkedLock;
 
@@ -235,14 +203,7 @@ export function validate(value: unknown): Checked<ScheduleEntry> {
   };
 }
 
-/**
- * Whether the music finishes, and the countdown reaches zero, inside the gate window.
- *
- * Note(yoochan.kim): measured as distance after the gate opens, not as clock times, so a
- * window that runs past midnight is one interval rather than two. The runner
- * refuses this too, but only when start is pressed — which is during a service.
- * The same rule here catches it while somebody is still editing.
- */
+/** Note(yoochan.kim): offsets from the gate keep midnight one interval; the runner checks too, but only mid-service. */
 function partsAreCovered(id: string, lock: ScheduleEntry['lock'], parts: SchedulePart[]): Checked<true> {
   if (parts.length === 0) return { ok: true, value: true };
 
@@ -296,8 +257,7 @@ function validatePart(id: string, value: unknown): Checked<SchedulePart> {
     if (typeof track !== 'object' || track === null) return bad(`${id}: each music track must be an object`);
     const cue = track as Record<string, unknown>;
     if (typeof cue.id !== 'string' || cue.id.length === 0) return bad(`${id}: each music track needs an id`);
-    // Note(yoochan.kim): the level is always given. A run should sound the way it was
-    // written, not inherit whatever the panel was left at.
+    // Note(yoochan.kim): always given, so a run sounds as written rather than at whatever the panel was left at.
     if (typeof cue.volume !== 'number' || !Number.isInteger(cue.volume) || cue.volume < 0 || cue.volume > 100) {
       return bad(`${id}: track ${cue.id} needs a volume between 0 and 100`);
     }

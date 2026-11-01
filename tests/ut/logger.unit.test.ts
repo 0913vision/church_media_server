@@ -1,8 +1,7 @@
 import { test, describe, before, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-// Note(yoochan.kim): the logger reads LOG_LEVEL when it is loaded, so it is loaded after the
-// level is set. Lines are caught on their way to console.log.
+// Note(yoochan.kim): the logger reads LOG_LEVEL on load, so it is imported after the level is set.
 type Log = typeof import('../../server/utils/logger.ts').log;
 let log: Log;
 

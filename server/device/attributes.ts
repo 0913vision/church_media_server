@@ -5,32 +5,20 @@ import type { ServerDeps } from '../deps.ts';
 import { isWireInstant } from '../utils/instant.ts';
 import { HOLD_LIMIT_MS } from '../lock/AdminSession.ts';
 
-/**
- * The outcome of checking a value: either work to run, or a refusal with its
- * reason. Tagged rather than "a thunk, or nothing", so the caller has to look
- * at which it is — and so an attribute can say *why* it said no.
- */
+/** Tagged so the caller must look at which it is, and so an attribute can say why it said no. */
 export type WritePlan = { ok: true; apply: () => Promise<StatePatch> } | { ok: false; reason: RejectReason };
 
-/**
- * How a writable attribute is applied. The value arrives untrusted, so parsing
- * and applying are kept together behind `prepare`: it narrows the value once
- * and hands back the work to run. That keeps each attribute's own type private
- * to its entry while the table stays uniform for the write handler.
- */
+/** The value arrives untrusted, so prepare narrows it once and hands back the work to run. */
 export interface WriteSpec {
-  /** Whether the change must hold the audio resource lock while it runs */
   holdsAudioLock: boolean;
   prepare(value: unknown, deps: ServerDeps): WritePlan;
 }
 
 export interface AttributeSpec {
   read(deps: ServerDeps, socket: ServerSocket): State[AttributeName];
-  /** Absent for read-only attributes */
   write?: WriteSpec;
 }
 
-/** A checked value, or a refusal — the parse half of a write */
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 
 function accept<T>(value: T): Checked<T> {
@@ -39,13 +27,9 @@ function accept<T>(value: T): Checked<T> {
 function reject(reason: RejectReason): Checked<never> {
   return { ok: false, reason };
 }
-/** The usual refusal: the value itself does not check out */
 const BAD_VALUE = reject(RejectReason.INVALID_VALUE);
 
-/**
- * Builds a write entry, closing over the attribute's own value type so the
- * table below can stay uniform in the value position.
- */
+/** Closes over the attribute's own value type, so the table stays uniform for the write handler. */
 function writable<T>(
   holdsAudioLock: boolean,
   check: (value: unknown, deps: ServerDeps) => Checked<T>,
@@ -60,48 +44,26 @@ function writable<T>(
   };
 }
 
-/**
- * Note(yoochan.kim): rounded here rather than demanded of the caller. A fader sends the
- * ratio of a pixel to a width, so 44.599303135888505 is what arrives and what
- * was being stored; track levels are integers, and two names for the same kind
- * of value should not disagree about what one is. Rounded rather than refused,
- * because the panel app is installed by hand and must not start being refused.
- */
+/** A fader sends fractions: rounded to integers like track levels, not refused, as panels are installed by hand. */
 function checkVolume(value: unknown): Checked<number> {
   const { min, max } = ATTRIBUTES.volume.range;
   const valid = typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
   return valid ? accept(Math.round(value)) : BAD_VALUE;
 }
 
-/**
- * Note(yoochan.kim): while a run is sounding music the deck is its own — it was handed
- * the deck and puts it back itself. Not merely while the gate is held: a flow
- * holding the gate without music is keeping the panel out, and the deck is free.
- * The gate alone cannot say this anyway, since an admin passes it.
- */
+/** Note(yoochan.kim): only while a run's music sounds; a run merely holding the gate leaves the deck free. */
 function deckIsFlows(deps: ServerDeps): boolean {
   return deps.flowRunner.ownsDeck();
 }
 
-/**
- * Who has the deck when the panel does not: a run's music, or a level
- * measurement — each was handed the deck and puts it back itself.
- */
+/** Who holds the deck instead of the panel; whoever it is puts it back itself. */
 function deckTakenBy(deps: ServerDeps): Checked<never> | null {
   if (deckIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
   if (deps.levelMatcher.ownsDeck()) return reject(RejectReason.LEVEL_MATCHING);
   return null;
 }
 
-/**
- * Whether the gate belongs to a run rather than to a person.
- *
- * Note(yoochan.kim): "the gate is held" and "it is yours to act on" are different
- * questions, and reading the first as the second is the same bug four times
- * over — a run holds the gate, so `adminLock` is true and every check written
- * that way waves a person through into the middle of a service. Named so the
- * next setting added here has to say which of the two it means.
- */
+/** Note(yoochan.kim): a run holds the gate too, so "adminLock is true" never means a person may act mid-service. */
 function gateIsFlows(deps: ServerDeps): boolean {
   return deps.flowRunner.ownsAdminLock();
 }
@@ -111,10 +73,6 @@ function personHoldsGate(deps: ServerDeps): boolean {
   return deps.adminSession.adminHold().kind === 'at';
 }
 
-/**
- * A Deadline off the wire. `none` clears it; an instant has to be in the future
- * and inside the day, since an end already gone by would fire the moment it landed.
- */
 function asMusicEnd(value: unknown, deps: ServerDeps): Checked<MusicEnd> {
   if (typeof value !== 'object' || value === null) return BAD_VALUE;
   const { kind, at } = value as Record<string, unknown>;
@@ -123,20 +81,14 @@ function asMusicEnd(value: unknown, deps: ServerDeps): Checked<MusicEnd> {
 
   const when = new Date(at);
   const now = deps.clock.now();
-  // An end already gone by would fire the moment it landed, and one further out
-  // than the hour would be an end the gate is made to wait for past its limit.
+  // Note(yoochan.kim): an end already gone by would fire the moment it landed.
   if (Number.isNaN(when.getTime()) || when <= now) return BAD_VALUE;
+  // Note(yoochan.kim): one past the hour would make the gate wait beyond its limit.
   if (when.getTime() - now.getTime() > HOLD_LIMIT_MS) return BAD_VALUE;
   return accept({ kind: 'at', at });
 }
 
-/**
- * The device's attribute table: one entry per attribute in the protocol, so an
- * attribute cannot be declared without being implemented. Each entry owns its
- * validation and its side effects; the permission, access and range rules come
- * from the generated ATTRIBUTES metadata, and locking is applied by the write
- * handler.
- */
+/** Permission, access and range come from ATTRIBUTES and locking from the write handler; entries own the rest. */
 export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
   playback: {
     read: (deps) => deps.player.getState(),
@@ -150,12 +102,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       async (playback, deps) => {
         if (playback === deps.player.getState()) return {};
         if (playback === PlaybackState.PLAYING) {
-          // Note(yoochan.kim): told the moment it sounds, not when its fade is done — every
-          // screen sat on 일시정지 for three seconds after a press. The fade still
-          // holds the audio lock until it ends.
-          // The app's own songs (통성기도, 피아노 찬송가) fade in from their very beginning
-          // too, put on by the panel or as a library track: one started there at full
-          // level startled the room (2026-10-30).
+          // Note(yoochan.kim): app songs fade in even from the start: one begun at full level startles the room.
           const deck = deps.player.getDeck();
           const appSong = deck.source === 'song' || deps.trackLibrary.isDeckSong(deck.id);
           await deps.player.play({ onSounding: () => deps.notifier.state({ playback }), fadeFromStart: appSong });
@@ -169,14 +116,13 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   volume: {
     read: (deps) => deps.player.getVolume(),
-    // Note(yoochan.kim): an instant write needs no lock of its own — it only
-    // has to stay out of a running fade. Holding the lock per write made
-    // audioLock flap on every drag tick, for every client.
+    // Note(yoochan.kim): no lock per write, or audioLock would flap for every client on every drag tick.
     write: writable(
       false,
       (value, deps) => {
         const taken = deckTakenBy(deps);
         if (taken) return taken;
+        // Note(yoochan.kim): an instant write only has to stay out of a running fade.
         if (deps.lockCoordinator.getLockState().audio) return reject(RejectReason.DEVICE_BUSY);
         return checkVolume(value);
       },
@@ -209,8 +155,6 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.player.getCurrentSong(),
     write: writable(
       true,
-      // Note(yoochan.kim): the manifest decides which ids are songs, so only it
-      // can say whether this one is
       (value, deps) => {
         const taken = deckTakenBy(deps);
         if (taken) return taken;
@@ -218,11 +162,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       },
       async (song, deps) => {
         if (song === deps.player.getCurrentSong() && deps.player.getDeck().source === 'song') return {};
-        // Note(yoochan.kim): Switching songs also pauses the deck and moves the volume to that
-        // song's default, so all three are reported together. It also takes the deck
-        // back from any track an admin put on, which is what restores looping.
+        // Note(yoochan.kim): takes the deck back from any track an admin put on, which also restores looping.
         await deps.player.restoreSong();
         await deps.player.changeSong(song);
+        // Note(yoochan.kim): a song change also pauses and moves the volume, so one patch carries them all.
         return {
           song,
           playback: PlaybackState.PAUSED,
@@ -240,13 +183,9 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       false,
       (value, deps) => {
         if (typeof value !== 'boolean') return BAD_VALUE;
-        // Note(yoochan.kim): only while the gate is held. With the panel open its two
-        // songs must run without ending, and nobody there should be able to
-        // stop that.
+        // Note(yoochan.kim): the panel's songs must run without ending, so only a held gate may change it.
         if (!deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_UNLOCKED);
-        // Note(yoochan.kim): this moves what is on the deck, so it follows the deck. Set
-        // during a run's music it would make that run's track repeat, and a
-        // track that never ends is a timeline that never finishes.
+        // Note(yoochan.kim): a run's track set to repeat would never end, and neither would its timeline.
         const taken = deckTakenBy(deps);
         if (taken) return taken;
         return accept(value);
@@ -285,9 +224,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
       false,
       (value, deps) => {
         if (typeof value !== 'boolean') return BAD_VALUE;
-        // Note(yoochan.kim): this is a setting *on a person's hold*, so it needs one. During
-        // a run the gate is the run's and there is no hold to arm — arming it
-        // anyway pointed the session at a gate it does not own.
+        // Note(yoochan.kim): a setting on a person's hold; a run's gate has no hold to arm.
         if (gateIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
         if (!personHoldsGate(deps)) return reject(RejectReason.ADMIN_UNLOCKED);
         return accept(value);
@@ -304,7 +241,7 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     write: writable(
       false,
       (value, deps) => {
-        // The same reasoning as unlockWhenDone: it says when *this hold's* music stops.
+        // Note(yoochan.kim): like unlockWhenDone, it belongs to a person's hold.
         if (gateIsFlows(deps)) return reject(RejectReason.FLOW_ACTIVE);
         if (!personHoldsGate(deps)) return reject(RejectReason.ADMIN_UNLOCKED);
         const parsed = asMusicEnd(value, deps);
@@ -323,22 +260,17 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   adminLock: {
     read: (deps) => deps.lockCoordinator.getLockState().admin,
-    // Note(yoochan.kim): No audio lock: the gate decides who may start work, it does not touch
-    // the device. The lock announces its own transitions, so the patch is empty.
+    // Note(yoochan.kim): no audio lock: the gate decides who may start work and never touches the device.
     write: writable(
       false,
       (value, deps) => {
         if (typeof value !== 'boolean') return BAD_VALUE;
-        // Note(yoochan.kim): A running flow owns the lock it engaged. Letting it be toggled from
-        // outside would leave the flow describing a gate that is not there;
-        // stopping the flow is the way out.
+        // Note(yoochan.kim): toggled here, a run would describe a gate that is gone; stopping the run is the way out.
         if (deps.flowRunner.ownsAdminLock()) return reject(RejectReason.FLOW_ACTIVE);
         return accept(value);
       },
       async (adminLock, deps) => {
-        // Note(yoochan.kim): whatever the gate changed goes back before it opens — fade
-        // out, stop, restore the user's song, and only then release. The panel must
-        // never open onto a deck holding something it never chose.
+        // Note(yoochan.kim): put back before the gate opens: the panel must never open onto a deck it did not choose.
         const patch: StatePatch = {};
         if (!adminLock) {
           if (deps.player.getDeck().source === 'track') {
@@ -347,17 +279,16 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
             patch.playback = deps.player.getState();
             patch.volume = deps.player.getVolume();
           }
-          // Note(yoochan.kim): the choices the gate offered go back whether or not a track
-          // was ever put on — the panel's songs run without ending again.
+          // Note(yoochan.kim): the gate's choices go back even with no track put on; the panel's songs loop again.
           deps.player.setLoop(true);
           deps.adminSession.reset();
           patch.loop = true;
           patch.unlockWhenDone = false;
         } else {
-          // Note(yoochan.kim): the hour starts here. Only a person's hold gets one — a flow
-          // names its own window, and never reaches this write.
+          // Note(yoochan.kim): the hour starts here; a flow names its own window and never reaches this write.
           deps.adminSession.engage();
         }
+        // Note(yoochan.kim): the lock announces its own change, so adminLock stays out of this patch.
         deps.lockCoordinator.setAdminLock(adminLock);
         patch.musicEndsAt = deps.adminSession.musicEndsAt();
         patch.adminHold = deps.adminSession.adminHold();
@@ -381,21 +312,16 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
   clockOffsetSec: {
     read: (deps) => deps.clock.offset(),
-    // Note(yoochan.kim): No audio lock: this moves the reference every instant is read against,
-    // not the device.
+    // Note(yoochan.kim): no audio lock: this moves the reference every instant is read against, not the device.
     write: writable(
       false,
       (value, deps) => {
         const { min, max } = ATTRIBUTES.clockOffsetSec.range;
         if (typeof value !== 'number' || !Number.isFinite(value)) return BAD_VALUE;
         if (value < min || value > max) return BAD_VALUE;
-        // Note(yoochan.kim): A flow holds the gate for its whole run, so refusing while the gate
-        // is held is what makes it impossible to move the clock out from under
-        // music that is already playing. The music timeline is derived from
-        // instants; shifting the reference would drag the next track with it.
+        // Note(yoochan.kim): a run holds the gate throughout, so this keeps the clock from moving under its music.
         if (deps.lockCoordinator.getLockState().admin) return reject(RejectReason.ADMIN_LOCKED);
-        // Note(yoochan.kim): kept to the millisecond. Rounded to whole seconds it could be
-        // half a second off the wall clock it was set against.
+        // Note(yoochan.kim): to the millisecond; whole seconds could leave it half a second off the wall clock.
         return accept(Math.round(value * 1000) / 1000);
       },
       async (clockOffsetSec, deps) => {
@@ -412,10 +338,8 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
 
 const ALL_ATTRIBUTES = Object.keys(ATTRIBUTE_IMPL) as AttributeName[];
 
-/** Attribute names this server implements, for the ready payload */
 export const IMPLEMENTED_ATTRIBUTES: readonly string[] = ALL_ATTRIBUTES;
 
-/** Reads every attribute into a full state patch. */
 export function readState(deps: ServerDeps, socket: ServerSocket): StatePatch {
   const patch: Record<string, unknown> = {};
   for (const name of ALL_ATTRIBUTES) {

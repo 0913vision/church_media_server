@@ -6,9 +6,7 @@ import { MuteState, PlaybackState } from '../../server/protocol.ts';
 before(() => ensureServer());
 after(() => stopServer());
 
-// Note(yoochan.kim): what a post-mortem has to read off the log alone — who pressed what, in
-// what order, and what the deck did about it. The in-process server's lines are caught
-// on their way out. Muted first, so nothing reaches the speakers.
+// Note(yoochan.kim): a post-mortem has only the log to say who pressed what and what the deck did; muted, so silent.
 describe('Reading back what happened from the log', () => {
   test('a volume dragged then play pressed: who, the run of values, the press, and how the deck started', async (t) => {
     if (!ownsServer() || ['warn', 'error'].includes(process.env.LOG_LEVEL ?? '')) {

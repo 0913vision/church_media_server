@@ -4,16 +4,9 @@ import net from 'node:net';
 import { requireEnv, requireIntEnv } from '../server/utils/env.ts';
 import { dbFromCubicLevel, levelFromDb } from '../server/hardware/loudness.ts';
 
-// Moves every stored level onto the fader-shaped scale (server/hardware/loudness.ts),
-// each one kept as loud as it was. A level used to be mpv's cubic volume, so 50
-// meant -18 dB; read on the new scale that is 53.
-//
-// Run once per deployment, with the media server stopped — a running one writes
-// the old numbers back from memory. Each file is copied to <file>.before-x32-scale
-// first; a copy already there means it was converted, and nothing is touched.
-//
-// Usage: npm run rescale-volumes
+// Note(yoochan.kim): once per deployment with the media server stopped, since a running one writes old levels back.
 
+// Note(yoochan.kim): a copy already there means the file was converted, so nothing is touched.
 const BACKUP = '.before-x32-scale';
 
 type Json = Record<string, unknown>;
@@ -62,7 +55,7 @@ if (await listening(port)) {
   process.exit(1);
 }
 
-// Each written back the way the server writes it.
+// Note(yoochan.kim): each written back the way the server writes it.
 const pretty = (data: unknown): string => `${JSON.stringify(data, null, 2)}\n`;
 const jobs: { file: string; convert: (data: never, changes: string[]) => void; write: (data: unknown) => string }[] = [
   { file: requireEnv('TRACKS_MANIFEST_PATH'), convert: manifest, write: pretty },
@@ -70,8 +63,7 @@ const jobs: { file: string; convert: (data: never, changes: string[]) => void; w
   { file: requireEnv('STATE_FILE_PATH'), convert: state, write: (data) => JSON.stringify(data) },
 ];
 
-// Note(yoochan.kim): every file is read and converted before any is written, so a
-// file that is already done or will not parse leaves all three as they were.
+// Note(yoochan.kim): all are converted before any is written, so one done or unreadable leaves all three alone.
 const converted: { file: string; text: string; changes: string[] }[] = [];
 for (const { file, convert, write } of jobs) {
   if (fs.existsSync(`${file}${BACKUP}`)) {

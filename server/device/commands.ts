@@ -10,11 +10,7 @@ import { isYoutube } from '../tracks/Fetcher.ts';
 import { DeskHeldError } from '../console/DeskHolds.ts';
 import { log } from '../utils/logger.ts';
 
-/**
- * What running a command produced. A tagged result rather than "a reason, or
- * nothing": the same rule the protocol follows, so success and failure are
- * both something you have to look at.
- */
+/** Tagged, as the protocol is, so success and failure are both something the caller has to look at. */
 export type CommandOutcome = { ok: true } | { ok: false; reason: RejectReason };
 
 export const DONE: CommandOutcome = { ok: true };
@@ -22,31 +18,16 @@ export function refuse(reason: RejectReason): CommandOutcome {
   return { ok: false, reason };
 }
 
-/**
- * A command's implementation. Arguments arrive untrusted, so each run narrows
- * them itself.
- *
- * Gating lives here rather than in the invoke handler because it differs per
- * command: authenticate has to work while the admin lock is held, or nobody
- * could ever release it.
- */
+/** Gating is per command: authenticate must work while the admin lock is held, or nobody could release it. */
 export interface CommandSpec {
   run(args: unknown, deps: ServerDeps, socket: ServerSocket): Promise<CommandOutcome>;
 }
 
-/** Untrusted args as a plain object; an empty one when the payload is not */
 function argsObject(args: unknown): Record<string, unknown> {
   return typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {};
 }
 
-/**
- * Track ids an unchecked calendar entry appears to name.
- *
- * Note(yoochan.kim): read off the raw payload, before the calendar has validated it, so
- * a nonexistent track is answered with unknownTrack rather than swallowed into
- * a generic invalidValue. Anything malformed simply names nothing here and the
- * calendar refuses it a moment later.
- */
+/** Note(yoochan.kim): read before the calendar validates, so a missing track is unknownTrack, not invalidValue. */
 function tracksNamedBy(entry: unknown): string[] {
   const parts = argsObject(entry).parts;
   if (!Array.isArray(parts)) return [];
@@ -57,7 +38,6 @@ function tracksNamedBy(entry: unknown): string[] {
   });
 }
 
-/** Whether a title belongs to another track already, or to the one a fetch is bringing. */
 function titleInUse(deps: ServerDeps, title: string, except?: string): boolean {
   const fetching = deps.fetcher.status();
   return deps.trackLibrary.titleTaken(title, except) || (fetching.kind === 'fetching' && fetching.title === title);
@@ -71,11 +51,7 @@ function addFrom(deps: ServerDeps, file: string, title: string, durationSec: num
   return DONE;
 }
 
-/**
- * The device's command table. Only what this server actually implements
- * appears here; the ready payload is built from these keys, so a client hides
- * controls for anything missing instead of guessing.
- */
+/** Only implemented commands appear, since ready lists these keys and clients hide whatever is missing. */
 export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   authenticate: {
     async run(args, deps, socket) {
@@ -98,12 +74,9 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   enableConsoleInput: {
     async run(args, deps, socket) {
       const input = argsObject(args).input;
-      // Note(yoochan.kim): which inputs exist is the desk's configuration, so
-      // only it can say whether this is one
       if (!deps.mixerConsole.has(input)) return refuse(RejectReason.INVALID_VALUE);
 
-      // Note(yoochan.kim): The console holds no protected state and its OSC bursts are
-      // instantaneous, so this takes no audio lock — only the admin gate.
+      // Note(yoochan.kim): no audio lock: the desk holds no protected state and its OSC bursts are instant.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       try {
         const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
@@ -124,12 +97,11 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
 
   initializeConsole: {
     async run(_args, deps, socket) {
-      // Note(yoochan.kim): gated exactly like enableConsoleInput — the desk keeps
-      // no protected state, so the admin gate is the only thing in the way. The
-      // pacing between steps belongs to the console, not here.
+      // Note(yoochan.kim): gated like enableConsoleInput: the admin gate only, no audio lock.
       const isAdmin = deps.adminSessionManager.isAdminSocket(socket);
       try {
         const allowed = await deps.lockCoordinator.withAdminGate(isAdmin, async () => {
+          // Note(yoochan.kim): the pacing between the desk's steps is the console's own, not added here.
           await deps.mixerConsole.initialize();
         });
         if (!allowed) {
@@ -146,8 +118,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   },
 
   startFlow: {
-    // Note(yoochan.kim): The whole plan arrives here; the server keeps none of it once the run
-    // is over. Validation and scheduling belong to the runner.
+    // Note(yoochan.kim): the whole plan arrives with the call, and none of it is kept once the run is over.
     async run(args, deps) {
       return deps.flowRunner.start(args);
     },
@@ -172,8 +143,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   saveFlow: {
     async run(args, deps) {
       const entry = argsObject(args).flow;
-      // Note(yoochan.kim): the calendar checks its own shape and its own arithmetic; only
-      // "is this a track we have" needs the library, so only that is asked here.
+      // Note(yoochan.kim): the calendar checks the rest; only whether each track exists needs the library.
       const named = tracksNamedBy(entry);
       for (const id of named) {
         if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
@@ -182,7 +152,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
 
       const checked = validate(entry);
       if (checked.ok) {
-        // Note(yoochan.kim): a countdown's block depends on its audio's length, so it is tried against today as a start would.
+        // Note(yoochan.kim): a countdown's block depends on its audio's length, so today is tried as a start would.
         const fits = deps.flowRunner.check(deps.schedule.toRunArgs(checked.value, deps.clock.now()));
         if (!fits.ok) return refuse(fits.reason);
       }
@@ -217,8 +187,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       const entry = deps.schedule.get(id);
       if (!entry) return refuse(RejectReason.UNKNOWN_FLOW);
 
-      // Note(yoochan.kim): which day a bare "19:30" belongs to is the calendar's decision,
-      // and it is made against the day somebody pressed start.
+      // Note(yoochan.kim): which day a bare "19:30" means is judged against the day somebody pressed start.
       const now = deps.clock.now();
       if (!runsOn(entry, now)) return refuse(RejectReason.WINDOW_PASSED);
 
@@ -255,8 +224,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   addTrack: {
     async run(args, deps) {
       const { title, source } = argsObject(args);
-      // Note(yoochan.kim): the title is checked before the upload is claimed, so a refusal
-      // here leaves the same upload to try again with a name.
+      // Note(yoochan.kim): checked before the upload is claimed, so a refused title leaves it for another try.
       if (typeof title !== 'string' || title.trim().length === 0) return refuse(RejectReason.INVALID_VALUE);
       const named = title.trim();
       if (titleInUse(deps, named)) return refuse(RejectReason.TITLE_TAKEN);
@@ -273,8 +241,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
         if (typeof from.url !== 'string' || !isYoutube(from.url)) return refuse(RejectReason.INVALID_VALUE);
         if (deps.fetcher.busy()) return refuse(RejectReason.FETCH_BUSY);
 
-        // Note(yoochan.kim): fetch() claims the slot before it first waits, so the status
-        // sent here already says fetching.
+        // Note(yoochan.kim): fetch() claims the slot before it first waits, so this status already says fetching.
         const tell = (): void => deps.notifier.state({ trackFetch: deps.fetcher.status() });
         const fetching = deps.fetcher.fetch(from.url, named, deps.trackLibrary.stagingBase(), tell);
         tell();
@@ -289,8 +256,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
           deps.notifier.state({ trackFetch: deps.fetcher.status() });
           return refuse(RejectReason.TITLE_TAKEN);
         }
-        // Note(yoochan.kim): the fetch ends in the same patch the track arrives in, so no
-        // screen sees it finished with nothing to show for it.
+        // Note(yoochan.kim): idle rides with the new track, so no screen sees a fetch end with nothing to show.
         return addFrom(deps, fetched.file, named, fetched.durationSec, { trackFetch: deps.fetcher.status() });
       }
 
@@ -305,8 +271,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       const named = title.trim();
       if (named.length === 0) return refuse(RejectReason.INVALID_VALUE);
       if (!deps.trackLibrary.get(id)) return refuse(RejectReason.UNKNOWN_TRACK);
-      // Note(yoochan.kim): the panel's songs are named once, in ready.songs, and a panel
-      // installed by hand is not asked to notice a rename.
+      // Note(yoochan.kim): a panel reads song names once from ready.songs, so a rename would never reach it.
       if (deps.trackLibrary.isDeckSong(id)) return refuse(RejectReason.DECK_SONG);
       if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
       if (titleInUse(deps, named, id)) return refuse(RejectReason.TITLE_TAKEN);
@@ -342,12 +307,9 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     async run(args, deps) {
       const id = argsObject(args).id;
       if (typeof id !== 'string') return refuse(RejectReason.INVALID_VALUE);
-      // Note(yoochan.kim): while the panel is open it shows the song it believes is
-      // playing, and a track it never chose would make that a lie.
+      // Note(yoochan.kim): an open panel shows the song it thinks is playing; a track it never chose makes that a lie.
       if (!deps.lockCoordinator.getLockState().admin) return refuse(RejectReason.ADMIN_UNLOCKED);
-      // Note(yoochan.kim): the same rule the deck's attributes follow. It was missing here,
-      // and a run holds the gate — so the one check above passes during a service
-      // and this was the one door left open onto music that is already sounding.
+      // Note(yoochan.kim): a run holds the gate too, so the check above alone would let this in mid-service.
       if (deps.flowRunner.ownsDeck()) return refuse(RejectReason.FLOW_ACTIVE);
       if (deps.levelMatcher.ownsDeck()) return refuse(RejectReason.LEVEL_MATCHING);
 
@@ -355,8 +317,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       if (!track) return refuse(RejectReason.UNKNOWN_TRACK);
       if (deps.trackLibrary.isCountdownTrack(id)) return refuse(RejectReason.NOTICE_TRACK);
 
-      // Note(yoochan.kim): a song the panel can pick is one that runs under a service,
-      // so it repeats; anything else is put on to be heard once.
+      // Note(yoochan.kim): a panel song runs under a service, so it repeats; anything else plays once.
       const loop = deps.trackLibrary.isDeckSong(id);
       const ran = await deps.lockCoordinator.withAudioLock(true, async () => {
         deps.player.setLoop(loop);
@@ -375,8 +336,7 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
     },
   },
 
-  // Note(yoochan.kim): answers once accepted; a measurement runs for minutes, and
-  // how it goes is the levelMatch attribute's to say.
+  // Note(yoochan.kim): answers once accepted; a measurement runs for minutes, and levelMatch reports how it goes.
   matchTrackLevel: {
     async run(args, deps) {
       return deps.levelMatcher.start(args);
@@ -390,5 +350,4 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
   },
 };
 
-/** Command names this server implements, for the ready payload */
 export const IMPLEMENTED_COMMANDS: readonly string[] = Object.keys(COMMAND_IMPL);

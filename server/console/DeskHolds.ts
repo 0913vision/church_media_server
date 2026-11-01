@@ -59,19 +59,7 @@ interface Hold {
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Sets part of the desk aside for a while and puts it back, whatever ends the
- * while: the body returning, throwing, or the server stopping in between.
- *
- * Note(yoochan.kim): RAII written as a function — `holding(changes, body)` — so the
- * changes are values that can be mapped over a list of strips, and putting back
- * is not something a caller can forget. The unit is one address: two settings of
- * one strip are two things to put back, one address changed twice goes back to
- * what it held before the first, and putting back runs newest first so a level
- * is restored before the switch that opens it. What is to be put back is on disk
- * before the change reaches the desk, so a server that dies halfway puts the
- * desk back when it next starts.
- */
+/** RAII for the desk per address, put back newest first so a level returns before the switch that opens it. */
 class DeskHolds {
   private readonly holds: Hold[] = [];
   /** One hold per address: two holds could not both put it back. */
@@ -104,11 +92,7 @@ class DeskHolds {
     void this.putBack(hold);
   }
 
-  /**
-   * Makes the changes, runs the body, and puts back everything changed however
-   * the body ends. Every address in `changes` is read before anything is sent, so
-   * a desk that cannot say what it holds is never touched.
-   */
+  /** Reads every address before sending anything, so a desk that cannot say what it holds is never touched. */
   async holding<T>(changes: readonly DeskChange[], body: (desk: HeldDesk) => Promise<T>): Promise<T> {
     const hold = this.open();
     try {
@@ -117,9 +101,7 @@ class DeskHolds {
       this.close(hold);
       throw error;
     }
-    // Note(yoochan.kim): the desk as it was, all of it, is written down — in the state file
-    // and in the log — before the first change is sent, so what to put back can be
-    // read from either however the changes go.
+    // Note(yoochan.kim): written down before any change is sent, so a crash halfway puts the desk back at boot.
     for (const address of new Set(changes.map((change) => change.address))) {
       hold.entries.push({ address, original: hold.originals.get(address)! });
     }
@@ -213,18 +195,9 @@ class DeskHolds {
     await this.confirm(change.address, change.value);
   }
 
-  /**
-   * Reads the address back until it holds the value. Throws when it never does.
-   *
-   * Note(yoochan.kim): the X32 often answers a read sent straight after a change with the old
-   * value — it has not applied the change yet — so the first miss is only read again.
-   * A second miss means the change was lost on the way (OSC is UDP, the Pi is on
-   * Wi-Fi), and reading would never bring it, so from then on it is sent again; the
-   * same value twice changes nothing on the desk.
-   */
+  /** First miss: X32 still applying it; later: lost on UDP, so resent, safe as the same value changes nothing. */
   private async confirm(address: string, value: DeskValue): Promise<void> {
-    // While the server is still landing its own change, the old value the desk answers with
-    // is the change not there yet, not somebody's hand.
+    // Note(yoochan.kim): an old value heard while confirming is the change not landed yet, not somebody's hand.
     this.confirming.add(address);
     try {
       for (let attempt = 1; ; attempt += 1) {
@@ -286,9 +259,7 @@ class DeskHolds {
     const expected = hold?.expected.get(address);
     if (!hold || !expected || sameValue(expected, value) || this.checking.has(address) || this.confirming.has(address)) return;
 
-    // Note(yoochan.kim): an answer to a question asked before the hold's own change
-    // can still be on its way, so a different value is asked about once more
-    // before it counts as somebody's hand.
+    // Note(yoochan.kim): a late answer to an older question looks like a hand on the desk, so it is asked once more.
     this.checking.add(address);
     this.desk.query(address)
       .then((now) => {

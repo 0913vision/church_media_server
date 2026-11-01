@@ -1,11 +1,4 @@
-// Generates the protocol bindings every service shares from protocol.json.
-// Plain .mjs so it runs before any TypeScript build (it produces one of the
-// build's inputs). Run with `npm run gen-protocol`; `npm run build` does it too.
-//
-// The spec describes a device: attributes (state) and commands (actions).
-// Three shapes are derived from those rather than written by hand — State,
-// WriteRequest and InvokeRequest — so a name cannot exist in one and not
-// another.
+// Note(yoochan.kim): plain .mjs so it runs before the TypeScript build, one of whose inputs it writes.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +22,6 @@ const unions = Object.entries(spec.unions ?? {});
 
 // --- shared helpers ---
 
-/** Splits a spec type like `Flow?` or `string[]` into its parts */
 function parseType(raw) {
   let type = raw;
   const nullable = type.endsWith('?');
@@ -89,7 +81,6 @@ function tsFields(fields, indent) {
   });
 }
 
-/** Inline object literal type for a command's arguments */
 function tsArgs(args) {
   if (!Object.keys(args).length) return 'Record<string, never>';
   return `{ ${Object.entries(args).map(([name, a]) => `${name}: ${tsType(a.type)}`).join('; ')} }`;
@@ -120,8 +111,7 @@ function generateTypeScript() {
     out.push(`export interface ${name} {`, ...tsFields(def.fields, '  '), '}', '');
   }
 
-  // Tagged unions stand in for anything that could otherwise be null: each
-  // variant carries exactly the fields that mean something in it.
+  // Note(yoochan.kim): tagged unions instead of nulls, so a variant carries only the fields that mean something in it.
   for (const [name, def] of unions) {
     out.push(tsDoc(def.description));
     out.push(`export type ${name} =`);
@@ -160,6 +150,7 @@ function generateTypeScript() {
   out.push('} as const;');
   out.push('export type CommandName = keyof typeof COMMANDS;', '');
 
+  // Note(yoochan.kim): State, WriteRequest and InvokeRequest are derived, so a name cannot be in one and not another.
   out.push('/** Attribute values. A state patch is any subset of these. */');
   out.push('export interface State {');
   for (const [name, def] of attributes) {
@@ -333,7 +324,8 @@ function generatePython() {
 
   for (const direction of ['c2s', 's2c']) {
     for (const [event, def] of Object.entries(spec.events[direction])) {
-      if (def.payloadType) continue; // reuses a type declared above
+      // Note(yoochan.kim): its payload is a type already declared above.
+      if (def.payloadType) continue;
       out.push('', '', `class ${pascal(event)}Payload(TypedDict):`);
       out.push(...pyDoc(def.description, '    '));
       out.push(...pyFields(def.payload, '    '));

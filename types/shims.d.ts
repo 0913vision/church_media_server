@@ -1,5 +1,4 @@
-// Minimal local type declarations for dependencies that ship no types.
-// Only the surface this project actually uses is declared.
+// Note(yoochan.kim): only the surface this project uses is declared.
 
 declare module 'osc' {
   export interface UdpPortOptions {
@@ -11,7 +10,6 @@ declare module 'osc' {
     metadata: true;
   }
 
-  /** One argument with its OSC type tag ('i', 'f', 's', …) */
   export interface OscArgument {
     type: string;
     value: unknown;
@@ -36,19 +34,18 @@ declare module 'osc' {
 }
 
 declare module 'ffi-napi' {
-  // A foreign function definition: [return type, argument types]
+  // Note(yoochan.kim): [return type, argument types].
   type ForeignFunctionDef = [unknown, unknown[]];
 
   const ffi: {
-    // Returns an object whose methods mirror the definition map; callers cast
-    // it to their own typed interface.
+    // Note(yoochan.kim): callers cast the result to their own interface, one method per definition.
     Library(path: string, definitions: Record<string, ForeignFunctionDef>): unknown;
   };
   export default ffi;
 }
 
 declare module 'ref-array-napi' {
-  // Returns an FFI array-type descriptor used in Library definitions
+  // Note(yoochan.kim): an FFI array-type descriptor for Library definitions.
   function array(type: string): unknown;
   export default array;
 }

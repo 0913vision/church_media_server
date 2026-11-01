@@ -12,27 +12,14 @@ import { errorMessage } from '../utils/errors.ts';
 const POLL_MS = 1000;
 /** The longest a gate a person engaged may still have to run. */
 export const HOLD_LIMIT_MS = 60 * 60 * 1000;
-/** What one press of extend buys. */
 export const EXTEND_MS = 30 * 60 * 1000;
 
 const NO_HOLD: Deadline = { kind: 'none' };
 const UNDECIDED: MusicEnd = { kind: 'undecided' };
 
-/**
- * Everything about a gate a person is holding that runs on a clock: when the
- * music stops, and when the hold itself lapses.
- *
- * Note(yoochan.kim): the two belong together because a hold has exactly one way of
- * ending badly — nobody comes back. Looping audio never runs out, so the gate
- * over it would be held until morning; and a person who locks the panel and
- * goes home has locked out everyone else in the building. One clock answers
- * both: the music has an end, and so does the hold.
- *
- * A flow's gate is none of this. A run names its own window and unwinds itself.
- */
+/** Note(yoochan.kim): looping music and a person gone home would both hold the gate forever, so both get an end. */
 class AdminSession {
   private unlockWhenDone = false;
-  /** Undecided until somebody says; an instant only in the third case. */
   private musicEnd: MusicEnd = UNDECIDED;
   private lapsesAt: Date | undefined;
   private timer: NodeJS.Timeout | undefined;
@@ -49,7 +36,6 @@ class AdminSession {
     return this.unlockWhenDone;
   }
 
-  /** Whether the music stopping should take the gate with it. */
   setUnlockWhenDone(armed: boolean): void {
     this.unlockWhenDone = armed;
     this.sync();
@@ -59,14 +45,7 @@ class AdminSession {
     return this.musicEnd;
   }
 
-  /**
-   * Says when the music stops.
-   *
-   * Note(yoochan.kim): an end past the lapse drags the lapse out with it, rather than
-   * being refused. Music that was given an end gets to reach it — the same rule
-   * a flow is held to — and the hour still binds, because an end may not be set
-   * further out than that.
-   */
+  /** Note(yoochan.kim): an end past the lapse drags it out, as with a flow; the end itself is capped at an hour. */
   setMusicEndsAt(end: MusicEnd): void {
     this.musicEnd = end;
     if (end.kind === 'at' && this.lapsesAt) {
@@ -80,16 +59,13 @@ class AdminSession {
     return this.lapsesAt ? { kind: 'at', at: formatInstant(this.lapsesAt) } : NO_HOLD;
   }
 
-  /** Starts the hour running. Called when a person engages the gate, never for a flow. */
+  /** Called when a person engages the gate, never for a flow. */
   engage(): void {
     this.lapsesAt = new Date(this.clock.now().getTime() + HOLD_LIMIT_MS);
     this.sync();
   }
 
-  /**
-   * Pushes the lapse back, clamped so it is never more than an hour away.
-   * Pressable as often as somebody is there to press it — which is the point.
-   */
+  /** Clamped to an hour from now, so it can be pressed as often as somebody is there to press it. */
   extend(): boolean {
     if (!this.lapsesAt) return false;
     const now = this.clock.now().getTime();
@@ -124,10 +100,7 @@ class AdminSession {
   }
 
   private async check(): Promise<void> {
-    // Note(yoochan.kim): a run may have engaged the gate over a hold that was already
-    // running — a scheduled service outranks somebody's ad-hoc lock. The hold is
-    // over from that moment: acting on it would release the run's gate and pull
-    // the deck out from under its music.
+    // Note(yoochan.kim): a run outranks a person's hold; acting on it would open the run's gate under its music.
     if (this.lockCoordinator.adminGateHeldBy() !== 'person') {
       if (this.lapsesAt) {
         log.info('adminSession', null, 'A run took the gate; the hold is over');
@@ -137,9 +110,7 @@ class AdminSession {
       return;
     }
 
-    // Note(yoochan.kim): a level measurement has the deck. The track on it is not the
-    // person's music, so nothing here applies to it, and the lapse waits for it the
-    // way it waits for any music with an end.
+    // Note(yoochan.kim): a measurement's track is not the person's music, and the lapse waits for its end.
     if (this.levelMatcher.ownsDeck()) return;
 
     const now = this.clock.now();
@@ -151,7 +122,7 @@ class AdminSession {
     }
 
     const musicDue = this.musicEnd.kind === 'at' && now >= new Date(this.musicEnd.at);
-    // Nothing to fade when the track has already run out.
+    // Note(yoochan.kim): nothing to fade when the track has already run out.
     const ranOut = this.unlockWhenDone && !this.player.getLoop()
       && this.player.getDeck().source === 'track' && this.player.hasEnded();
     if (!musicDue && !ranOut) return;
@@ -162,9 +133,7 @@ class AdminSession {
       return;
     }
 
-    // Note(yoochan.kim): the music was given an end but the gate was not, so only the
-    // music stops. Cleared first: the restore takes a moment, and a second tick
-    // landing inside it would run the whole thing twice.
+    // Note(yoochan.kim): cleared first, since a tick landing inside the slow restore would run all of this twice.
     this.musicEnd = UNDECIDED;
     this.sync();
     const patch = await this.restore(true);
@@ -172,23 +141,15 @@ class AdminSession {
     log.info('adminSession', null, 'The music reached its end');
   }
 
-  /**
-   * Whether music that is sounding still has an end coming, which the lapse waits for.
-   *
-   * Note(yoochan.kim): opening the panel out from under a song that is still playing is
-   * the thing this avoids — the same rule a flow is held to. It can only wait
-   * for an end that exists: a track that will run out, or one told when to stop.
-   * Repeating music nobody gave an end to is exactly the case the hour is for,
-   * so that one is let go.
-   */
+  /** Note(yoochan.kim): the lapse waits for music that will end; music looping with no end is what the hour is for. */
   private musicIsOwedItsEnd(): boolean {
     const sounding = this.player.getDeck().source === 'track' && this.player.getState() === PlaybackState.PLAYING;
     return sounding && (!this.player.getLoop() || this.musicEnd.kind === 'at');
   }
 
-  /** Puts the deck back and opens the gate — the same unwinding a manual release does. */
+  /** The same unwinding a manual release does. */
   private async release(fade: boolean): Promise<void> {
-    // Only ever this session's own gate; check() has already established that.
+    // Note(yoochan.kim): only ever this session's own gate; check() has already established that.
     this.reset();
     const patch = await this.restore(fade);
     this.lockCoordinator.setAdminLock(false);
