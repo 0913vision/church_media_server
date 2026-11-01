@@ -16,7 +16,7 @@ const { default: MockConsole } = await import('../../server/console/MockConsole.
 const { auxin, bus, ch, fader, float, int, off, sameValue, sendLevel, sendOff } = await import('../../server/console/desk.ts');
 const { faderFromDb } = await import('../../server/console/faderLevel.ts');
 
-const TIMING: HoldTiming = { CONFIRM_ATTEMPTS: 2, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 };
+const TIMING: HoldTiming = { CONFIRM_ATTEMPTS: 3, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 };
 
 const AUX_ON = '/auxin/05/mix/on';
 const AUX_FADER = '/auxin/05/mix/fader';
@@ -26,13 +26,16 @@ const settle = (ms = 0): Promise<void> => new Promise((resolve) => setTimeout(re
 
 /**
  * A desk that only remembers. It can lose its network (`unplugged`: what is sent
- * goes nowhere and nothing answers), be touched by a hand, or have an old answer
- * arrive late — the three things a hold has to survive.
+ * goes nowhere and nothing answers), lose one message on the way (`lose`), be
+ * touched by a hand, or have an old answer arrive late — the things a hold has to
+ * survive.
  */
 class FakeDesk implements ConsoleDevice {
   readonly values = new Map<string, DeskValue>();
   readonly sent: string[] = [];
   readonly silent = new Set<string>();
+  /** Addresses whose next message never arrives, as a UDP datagram can be lost. */
+  readonly lose = new Set<string>();
   unplugged = false;
   onSend: ((address: string) => void) | null = null;
   private readonly wire: ((address: string, value: DeskValue) => void)[] = [];
@@ -50,7 +53,7 @@ class FakeDesk implements ConsoleDevice {
 
   async send(address: string, value: DeskValue): Promise<void> {
     this.onSend?.(address);
-    if (this.unplugged) return;
+    if (this.unplugged || this.lose.delete(address)) return;
     this.sent.push(`${address}=${value.value}`);
     this.values.set(address, value);
   }
@@ -99,6 +102,39 @@ describe('Holding part of the desk', () => {
 
     assert.equal(result, 'measured');
     assert.deepEqual(desk.sent, [`${AUX_ON}=0`, `${AUX_FADER}=0.5`, `${AUX_FADER}=0.75`, `${AUX_ON}=1`]);
+    assert.deepEqual(journal(), []);
+    holds.dispose();
+  });
+
+  test('a change lost on the way is sent again, going and coming back, and the hold goes on', async () => {
+    const { desk, holds, journal } = rig();
+    const tries: string[] = [];
+    desk.onSend = (address) => tries.push(address);
+    desk.lose.add(AUX_ON);
+    const lines: string[] = [];
+    const print = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.join(' ')); };
+
+    let result: string;
+    try {
+      result = await holds.holding([off(auxin(5))], async () => {
+        assert.equal(desk.values.get(AUX_ON)!.value, 0, 'there, the second time');
+        desk.lose.add(AUX_ON);
+        return 'measured';
+      });
+      await settle(20);
+    } finally {
+      console.log = print;
+    }
+
+    // Note(yoochan.kim): the log says what happened — not there yet, sent again — and does not
+    // blame a hand on the desk for the old value a lost change leaves behind.
+    assert.equal(lines.filter((line) => line.includes('Desk change not there yet, sent again')).length, 2, lines.join('\n'));
+    assert.ok(lines.some((line) => line.includes(`address=${AUX_ON},wanted=0,read=1`)), 'going: wanted off, read on');
+    assert.ok(!lines.some((line) => line.includes('moved on the desk')), `no hand blamed:\n${lines.join('\n')}`);
+    assert.equal(result, 'measured', 'one lost message did not end the hold');
+    assert.deepEqual(tries, [AUX_ON, AUX_ON, AUX_ON, AUX_ON], 'sent twice each way');
+    assert.deepEqual(desk.values.get(AUX_ON), int(1), 'back as it was');
     assert.deepEqual(journal(), []);
     holds.dispose();
   });

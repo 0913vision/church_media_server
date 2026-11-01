@@ -95,9 +95,10 @@ export const CONSOLE_CONFIG = {
   // Note(yoochan.kim): setting part of the desk aside and putting it back
   // (console/DeskHolds.ts). A change counts only once the desk reads it back, and
   // a desk that does not take its old values back is asked again until it does —
-  // it may simply be switched off until the next service.
+  // it may simply be switched off until the next service. Five reads: the first miss
+  // is the desk not having applied it yet, and each one after it sends the change again.
   HOLD: {
-    CONFIRM_ATTEMPTS: 3,
+    CONFIRM_ATTEMPTS: 5,
     CONFIRM_GAP_MS: 50,
     RESTORE_RETRY_MS: 5000
   },

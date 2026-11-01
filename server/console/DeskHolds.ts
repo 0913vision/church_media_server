@@ -79,6 +79,8 @@ class DeskHolds {
   /** The server's own writes in progress, per address. They keep a hold out, but not each other. */
   private readonly writers = new Map<string, number>();
   private readonly checking = new Set<string>();
+  /** Addresses whose change the server is reading back right now. */
+  private readonly confirming = new Set<string>();
   private retry: NodeJS.Timeout | null = null;
 
   constructor(
@@ -211,13 +213,31 @@ class DeskHolds {
     await this.confirm(change.address, change.value);
   }
 
-  /** Reads the address back until it holds the value. Throws when it never does. */
+  /**
+   * Reads the address back until it holds the value. Throws when it never does.
+   *
+   * Note(yoochan.kim): the X32 often answers a read sent straight after a change with the old
+   * value — it has not applied the change yet — so the first miss is only read again.
+   * A second miss means the change was lost on the way (OSC is UDP, the Pi is on
+   * Wi-Fi), and reading would never bring it, so from then on it is sent again; the
+   * same value twice changes nothing on the desk.
+   */
   private async confirm(address: string, value: DeskValue): Promise<void> {
-    for (let attempt = 1; ; attempt += 1) {
-      const now = await this.desk.query(address);
-      if (sameValue(now, value)) return;
-      if (attempt >= this.timing.CONFIRM_ATTEMPTS) throw new Error(`${address} reads ${now.value}, not ${value.value}`);
-      await delay(this.timing.CONFIRM_GAP_MS);
+    // While the server is still landing its own change, the old value the desk answers with
+    // is the change not there yet, not somebody's hand.
+    this.confirming.add(address);
+    try {
+      for (let attempt = 1; ; attempt += 1) {
+        const now = await this.desk.query(address);
+        if (sameValue(now, value)) return;
+        if (attempt >= this.timing.CONFIRM_ATTEMPTS) throw new Error(`${address} reads ${now.value}, not ${value.value}`);
+        await delay(this.timing.CONFIRM_GAP_MS);
+        if (attempt === 1) continue;
+        log.warn('deskHolds', null, 'Desk change not there yet, sent again', { address, wanted: value.value, read: now.value });
+        await this.desk.send(address, value);
+      }
+    } finally {
+      this.confirming.delete(address);
     }
   }
 
@@ -264,7 +284,7 @@ class DeskHolds {
   private heard(address: string, value: DeskValue): void {
     const hold = this.owners.get(address);
     const expected = hold?.expected.get(address);
-    if (!hold || !expected || sameValue(expected, value) || this.checking.has(address)) return;
+    if (!hold || !expected || sameValue(expected, value) || this.checking.has(address) || this.confirming.has(address)) return;
 
     // Note(yoochan.kim): an answer to a question asked before the hold's own change
     // can still be on its way, so a different value is asked about once more
@@ -273,7 +293,7 @@ class DeskHolds {
     this.desk.query(address)
       .then((now) => {
         const still = hold.expected.get(address);
-        if (hold.phase !== 'open' || !still || sameValue(still, now)) return;
+        if (hold.phase !== 'open' || !still || sameValue(still, now) || this.confirming.has(address)) return;
         log.warn('deskHolds', null, 'A held address was moved on the desk', { address, value: now.value });
         for (const listener of hold.listeners) listener(address, now);
       })
