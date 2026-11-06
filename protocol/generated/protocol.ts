@@ -116,35 +116,6 @@ export function isLevelFailure(value: unknown): value is LevelFailure {
 }
 
 /**
- * What a track is for. Music is what people and a flow's music play. The other three
- * are a countdown's audio: the server plays them itself, inside a flow, and the player
- * never puts one on.
- */
-export const TrackRole = {
-  MUSIC: 'music',
-  ONE_MINUTE: 'oneMinute',
-  THIRTY_SECONDS: 'thirtySeconds',
-  COUNT: 'count',
-} as const;
-export type TrackRole = (typeof TrackRole)[keyof typeof TrackRole];
-export function isTrackRole(value: unknown): value is TrackRole {
-  return typeof value === 'string' && (Object.values(TrackRole) as string[]).includes(value);
-}
-
-/**
- * An announcement a countdown may play ahead of its count: oneMinute is 1분 남았습니다,
- * sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty seconds before.
- */
-export const Notice = {
-  ONE_MINUTE: 'oneMinute',
-  THIRTY_SECONDS: 'thirtySeconds',
-} as const;
-export type Notice = (typeof Notice)[keyof typeof Notice];
-export function isNotice(value: unknown): value is Notice {
-  return typeof value === 'string' && (Object.values(Notice) as string[]).includes(value);
-}
-
-/**
  * A song a user can select and leave looping. The server names these, so renaming one
  * — or adding another — needs no client release.
  */
@@ -195,9 +166,10 @@ export interface Track {
    */
   volume: number;
   /**
-   * music, or which part of a countdown it is. A countdown track is never put on the
-   * deck or used in a flow's music, and it is not renamed or deleted (noticeTrack);
-   * its level is set like any track's, and is how loud the band hears it.
+   * Music, or a countdown's count or one of its notices. A countdown track is never
+   * put on the deck or used in a flow's music, and it is not renamed or deleted
+   * (noticeTrack); its level is set like any track's, and is how loud the band hears
+   * it.
    */
   role: TrackRole;
 }
@@ -278,6 +250,26 @@ export interface ConsoleInput {
 }
 
 /**
+ * What a track is for. Music is what people and a flow's music play. A countdown's
+ * count and its notices are the server's to play, inside a flow; the player never puts
+ * one on. Which notices a countdown can have is whichever notice tracks the library
+ * holds, so adding one is a track, not a release.
+ */
+export type TrackRole =
+  /** Played by the panel, by a person, or as a flow's music. */
+  | { kind: 'music' }
+  /** The count: 카운트다운을 시작합니다, then 10 to 1, ending at zero. One in the library. */
+  | { kind: 'count' }
+  /** An announcement ahead of the count, such as 1분 남았습니다. */
+  | { kind: 'notice'; beforeSec: number }
+  ;
+export const TrackRoleKind = {
+  MUSIC: 'music',
+  COUNT: 'count',
+  NOTICE: 'notice',
+} as const;
+
+/**
  * When a scheduled flow's gate opens again. Written as an intent rather than a copied
  * time, so moving the music moves the gate with it.
  */
@@ -355,7 +347,7 @@ export type SchedulePart =
    * Count down to a moment, on the band's ears alone. Everything as in FlowPart's
    * countdown.
    */
-  | { kind: 'countdown'; at: string; notices: Notice[] }
+  | { kind: 'countdown'; at: string; notices: number[] }
   ;
 export const SchedulePartKind = {
   MUSIC: 'music',
@@ -489,7 +481,7 @@ export type FlowPart =
    * (countdownUnderway): started before it, the countdown plays whole; after it, the
    * countdown is behind it.
    */
-  | { kind: 'countdown'; at: string; notices: Notice[] }
+  | { kind: 'countdown'; at: string; notices: number[] }
   ;
 export const FlowPartKind = {
   MUSIC: 'music',

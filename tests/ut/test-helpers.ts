@@ -51,12 +51,14 @@ function copyManifest(): void {
   fs.mkdirSync(TEST_AUDIO_DIR, { recursive: true });
   fs.copyFileSync(path.resolve('./tests/fixtures/silence.mp3'), SCRATCH_TRACK_FILE);
   resolved.push({ id: SCRATCH_TRACK_ID, title: '테스트 곡', file: SCRATCH_TRACK_FILE, durationSec: 1.1, volume: 50 });
-  // Note(yoochan.kim): a countdown's three tracks, silent, for whichever role the manifest has none of.
-  for (const role of ['oneMinute', 'thirtySeconds', 'count']) {
-    if (resolved.some((entry) => entry.role === role)) continue;
-    const file = path.join(TEST_AUDIO_DIR, `${role}.mp3`);
+  // Note(yoochan.kim): a countdown's count and two notices, silent, for whichever the manifest has none of.
+  const roles = [{ kind: 'count' }, { kind: 'notice', beforeSec: 60 }, { kind: 'notice', beforeSec: 30 }];
+  for (const role of roles) {
+    if (resolved.some((entry) => JSON.stringify(entry.role) === JSON.stringify(role))) continue;
+    const name = role.kind === 'count' ? 'count' : `notice-${role.beforeSec}`;
+    const file = path.join(TEST_AUDIO_DIR, `${name}.mp3`);
     fs.copyFileSync(path.resolve('./tests/fixtures/silence.mp3'), file);
-    resolved.push({ id: `test-${role}`, title: `테스트 ${role}`, file, durationSec: 1.1, volume: 50, role });
+    resolved.push({ id: `test-${name}`, title: `테스트 ${name}`, file, durationSec: 1.1, volume: 50, role });
   }
   fs.writeFileSync(TEST_TRACKS_MANIFEST_PATH, JSON.stringify(resolved), 'utf8');
 }

@@ -79,20 +79,25 @@ class FakeMpv {
   }
 }
 
-function entry(id: string, durationSec: number, volume: number, role: LibraryEntry['role'] = 'music'): LibraryEntry {
+function entry(id: string, durationSec: number, volume: number, role: LibraryEntry['role'] = { kind: 'music' }): LibraryEntry {
   return { id, title: id, file: `/audio/${id}.mp3`, declaredFile: `./audio/${id}.mp3`, durationSec, volume, userSelectable: false, role };
 }
 
+const notice = (beforeSec: number): LibraryEntry['role'] => ({ kind: 'notice', beforeSec });
 const TRACKS = [
   entry('song', 30, 50),
-  entry('min', 1.1, 60, 'oneMinute'),
-  entry('half', 1.0, 60, 'thirtySeconds'),
-  entry('count', 12.3, 70, 'count'),
+  entry('ninety', 1.6, 60, notice(90)),
+  entry('min', 1.1, 60, notice(60)),
+  entry('half', 1.0, 60, notice(30)),
+  entry('twenty', 1.0, 60, notice(20)),
+  entry('ten', 1.0, 60, notice(10)),
+  entry('count', 12.3, 70, { kind: 'count' }),
 ];
 const LIBRARY = {
   get: (id: string) => TRACKS.find((track) => track.id === id),
-  isCountdownTrack: (id: string) => TRACKS.some((track) => track.id === id && track.role !== 'music'),
-  countdownTrack: (role: string) => TRACKS.find((track) => track.role === role),
+  isCountdownTrack: (id: string) => TRACKS.some((track) => track.id === id && track.role.kind !== 'music'),
+  countTrack: () => TRACKS.find((track) => track.role.kind === 'count'),
+  noticeTrack: (beforeSec: number) => TRACKS.find((track) => track.role.kind === 'notice' && track.role.beforeSec === beforeSec),
 } as unknown as TrackLibrary;
 
 function rig(library: TrackLibrary = LIBRARY) {
@@ -342,15 +347,24 @@ describe('A countdown as a flow asks for it', () => {
   const flow = (parts: unknown[], lockFrom = zero - 600_000) =>
     ({ id: 'f', name: 'f', lock: { at: at(lockFrom), until: at(zero) }, parts });
   const music = (endsAt: number) => ({ kind: 'music', tracks: [{ id: 'song', volume: 50 }], endsAt: at(endsAt) });
-  const countdown = (notices: string[]) => ({ kind: 'countdown', at: at(zero), notices });
+  const countdown = (notices: unknown[]) => ({ kind: 'countdown', at: at(zero), notices });
   // Note(yoochan.kim): the test timing keeps 0.8s ahead of the first sound.
   const LEAD = 800;
 
-  test('1분 전 starts sixty seconds before zero, its block that much and the lead ahead of it', () => {
+  test('a notice starts its own seconds before zero, its block that much and the lead ahead of it', () => {
     const { runner } = rig();
-    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD), countdown(['oneMinute'])])), { ok: true });
-    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD + 100), countdown(['oneMinute'])])),
+    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD), countdown([60])])), { ok: true });
+    assert.deepEqual(runner.check(flow([music(zero - 60_000 - LEAD + 100), countdown([60])])),
       { ok: false, reason: 'countdownOverlapsMusic' });
+    assert.deepEqual(runner.check(flow([music(zero - 90_000 - LEAD), countdown([90])])), { ok: true });
+    assert.deepEqual(runner.check(flow([music(zero - 90_000 - LEAD + 100), countdown([90])])),
+      { ok: false, reason: 'countdownOverlapsMusic' }, '1분 30초 전 opens its block half a minute earlier');
+  });
+
+  test('any notices the library holds, in any order; one that would start inside the count is noticesOverlap', () => {
+    const { runner } = rig();
+    assert.deepEqual(runner.check(flow([countdown([20, 90, 60, 30])])), { ok: true });
+    assert.deepEqual(runner.check(flow([countdown([10])])), { ok: false, reason: 'noticesOverlap' });
   });
 
   test('the count alone ends at zero, its block its length and the lead ahead of it', () => {
@@ -358,22 +372,24 @@ describe('A countdown as a flow asks for it', () => {
     assert.deepEqual(runner.check(flow([music(zero - 12_300 - LEAD), countdown([])])), { ok: true });
     assert.deepEqual(runner.check(flow([music(zero - 12_300 - LEAD + 100), countdown([])])),
       { ok: false, reason: 'countdownOverlapsMusic' });
-    assert.deepEqual(runner.check(flow([countdown(['thirtySeconds'])], zero - 30_000)),
+    assert.deepEqual(runner.check(flow([countdown([30])], zero - 30_000)),
       { ok: false, reason: 'countdownOutsideLock' }, '30초 전 needs its lead inside the gate too');
   });
 
   test('a countdown whose audio the library lacks is noticeMissing', () => {
-    const { runner } = rig({ ...LIBRARY, countdownTrack: (role: string) => (role === 'thirtySeconds' ? undefined : LIBRARY.countdownTrack(role as 'count')) } as unknown as TrackLibrary);
-    assert.deepEqual(runner.check(flow([countdown(['oneMinute'])])), { ok: true });
-    assert.deepEqual(runner.check(flow([countdown(['thirtySeconds'])])), { ok: false, reason: 'noticeMissing' });
+    const { runner } = rig({ ...LIBRARY, noticeTrack: (beforeSec: number) => (beforeSec === 30 ? undefined : LIBRARY.noticeTrack(beforeSec)) } as unknown as TrackLibrary);
+    assert.deepEqual(runner.check(flow([countdown([60])])), { ok: true });
+    assert.deepEqual(runner.check(flow([countdown([30])])), { ok: false, reason: 'noticeMissing' });
+    assert.deepEqual(runner.check(flow([countdown([120])])), { ok: false, reason: 'noticeMissing' }, 'no 2분 전 in this library');
   });
 
-  test('music naming a countdown track is noticeTrack; a notice unknown or twice is invalidValue', () => {
+  test('music naming a countdown track is noticeTrack; a notice not whole seconds above zero, or twice, is invalidValue', () => {
     const { runner } = rig();
     const asMusic = { kind: 'music', tracks: [{ id: 'count', volume: 50 }], endsAt: at(zero - 120_000) };
     assert.deepEqual(runner.check(flow([asMusic])), { ok: false, reason: 'noticeTrack' });
-    assert.deepEqual(runner.check(flow([countdown(['twoMinutes'])])), { ok: false, reason: 'invalidValue' });
-    assert.deepEqual(runner.check(flow([countdown(['oneMinute', 'oneMinute'])])), { ok: false, reason: 'invalidValue' });
+    for (const bad of [[0], [-30], [1.5], ['oneMinute'], [60, 60]]) {
+      assert.deepEqual(runner.check(flow([countdown(bad)])), { ok: false, reason: 'invalidValue' }, JSON.stringify(bad));
+    }
   });
 
   test('started inside its block it is refused with countdownUnderway, and nothing happens', async () => {

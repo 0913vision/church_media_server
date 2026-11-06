@@ -3,8 +3,8 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { SongId } from '../constants/songs.ts';
 import { TRACK_CONFIG } from '../constants/trackConfig.ts';
-import { TrackRole, isTrackRole } from '../protocol.ts';
-import type { Song, Track } from '../protocol.ts';
+import { TrackRoleKind } from '../protocol.ts';
+import type { Song, Track, TrackRole } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 
@@ -57,15 +57,12 @@ class TrackLibrary {
       if (userSelectable !== undefined && typeof userSelectable !== 'boolean') {
         throw new Error(`Track '${id}' has a non-boolean userSelectable: ${JSON.stringify(userSelectable)}`);
       }
-      if (role !== undefined && !isTrackRole(role)) {
-        throw new Error(`Track '${id}' has an unknown role: ${JSON.stringify(role)}`);
+      const trackRole = roleOf(id, role);
+      if (trackRole.kind !== TrackRoleKind.MUSIC && userSelectable === true) {
+        throw new Error(`Track '${id}' is a countdown's ${describe(trackRole)} and cannot be a deck song too`);
       }
-      const trackRole = role ?? TrackRole.MUSIC;
-      if (trackRole !== TrackRole.MUSIC && userSelectable === true) {
-        throw new Error(`Track '${id}' is a countdown's ${trackRole} and cannot be a deck song too`);
-      }
-      if (trackRole !== TrackRole.MUSIC && [...this.tracks.values()].some((each) => each.role === trackRole)) {
-        throw new Error(`Two tracks in the manifest are the countdown's ${trackRole}`);
+      if (trackRole.kind !== TrackRoleKind.MUSIC && [...this.tracks.values()].some((each) => sameRole(each.role, trackRole))) {
+        throw new Error(`Two tracks in the manifest are the countdown's ${describe(trackRole)}`);
       }
       if (this.tracks.has(id)) {
         throw new Error(`Duplicate track id in manifest: ${id}`);
@@ -107,11 +104,15 @@ class TrackLibrary {
   /** Whether a track is a countdown's audio, which only a flow's countdown plays. */
   isCountdownTrack(id: string): boolean {
     const role = this.tracks.get(id)?.role;
-    return role !== undefined && role !== TrackRole.MUSIC;
+    return role !== undefined && role.kind !== TrackRoleKind.MUSIC;
   }
 
-  countdownTrack(role: Exclude<TrackRole, 'music'>): LibraryEntry | undefined {
-    return [...this.tracks.values()].find((entry) => entry.role === role);
+  countTrack(): LibraryEntry | undefined {
+    return [...this.tracks.values()].find((entry) => entry.role.kind === TrackRoleKind.COUNT);
+  }
+
+  noticeTrack(beforeSec: number): LibraryEntry | undefined {
+    return [...this.tracks.values()].find((entry) => sameRole(entry.role, { kind: TrackRoleKind.NOTICE, beforeSec }));
   }
 
   /** The deck's audio files, one per song — the manifest owns these too */
@@ -153,7 +154,7 @@ class TrackLibrary {
       declaredFile: `./${path.relative(path.dirname(this.manifestPath), file)}`,
       volume: TRACK_CONFIG.NEW_TRACK_VOLUME,
       userSelectable: false,
-      role: TrackRole.MUSIC,
+      role: { kind: TrackRoleKind.MUSIC },
     };
     this.tracks.set(id, entry);
     this.persist();
@@ -225,7 +226,7 @@ class TrackLibrary {
       durationSec: entry.durationSec,
       volume: entry.volume,
       ...(entry.userSelectable ? { userSelectable: true } : {}),
-      ...(entry.role !== TrackRole.MUSIC ? { role: entry.role } : {}),
+      ...(entry.role.kind !== TrackRoleKind.MUSIC ? { role: entry.role } : {}),
     }));
     try {
       // Note(yoochan.kim): temp file then rename, so a crash mid-write cannot leave a manifest the next boot refuses.
@@ -243,6 +244,30 @@ class TrackLibrary {
 
 function isLevel(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100;
+}
+
+/** A notice's seconds before zero, as a notice track carries them. */
+export function isBeforeSec(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+/** A manifest role in the wire's shape; none is music. */
+function roleOf(id: string, value: unknown): TrackRole {
+  if (value === undefined) return { kind: TrackRoleKind.MUSIC };
+  const role = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+  if (role.kind === TrackRoleKind.MUSIC || role.kind === TrackRoleKind.COUNT) return { kind: role.kind };
+  if (role.kind === TrackRoleKind.NOTICE && isBeforeSec(role.beforeSec)) {
+    return { kind: TrackRoleKind.NOTICE, beforeSec: role.beforeSec };
+  }
+  throw new Error(`Track '${id}' has an unknown role: ${JSON.stringify(value)}`);
+}
+
+function sameRole(a: TrackRole, b: TrackRole): boolean {
+  return a.kind === b.kind && (a.kind !== TrackRoleKind.NOTICE || a.beforeSec === (b as { beforeSec: number }).beforeSec);
+}
+
+function describe(role: TrackRole): string {
+  return role.kind === TrackRoleKind.NOTICE ? `notice ${role.beforeSec}s before zero` : role.kind;
 }
 
 export default TrackLibrary;

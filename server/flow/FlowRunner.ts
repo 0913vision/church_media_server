@@ -1,9 +1,10 @@
-import { RejectReason, TrackRole, isNotice } from '../protocol.ts';
-import type { FlowStatus, FlowTrack, Notice } from '../protocol.ts';
+import { RejectReason } from '../protocol.ts';
+import type { FlowStatus, FlowTrack } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type { SongId } from '../constants/songs.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
+import { isBeforeSec } from '../tracks/TrackLibrary.ts';
 import type LockCoordinator from '../lock/LockCoordinator.ts';
 import type Notifier from '../notify/Notifier.ts';
 import type Clock from '../clock/Clock.ts';
@@ -24,9 +25,6 @@ const AUDIO_LOCK_RETRY_MS = 300;
 
 /** A library track as one flow scheduled it: same audio, that flow's level */
 type ScheduledEntry = LibraryEntry;
-
-/** How long before zero each notice starts. */
-const NOTICE_LEAD_SEC: Record<Notice, number> = { oneMinute: 60, thirtySeconds: 30 };
 
 /** One clip of a countdown, played on its own second. */
 export interface CuePlan {
@@ -98,7 +96,6 @@ function instantOf(value: unknown): Checked<Date> {
 function asObject(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 }
-
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Runs one flow at a time from acceptance to cleanup; it knows only the run, never the calendar it came from. */
@@ -566,22 +563,22 @@ class FlowRunner {
     return { ok: true, value: { id, name, lock, parts } };
   }
 
-  /** A countdown: the count ending at zero, and each notice asked for at its own lead. */
+  /** A countdown: the count ending at zero, and each notice that many seconds before it. */
   private countdownPartOf(part: Record<string, unknown>): Checked<PartPlan> {
     const zero = instantOf(part.at);
     if (!zero.ok) return zero;
     const notices = part.notices;
-    if (!Array.isArray(notices) || !notices.every(isNotice) || new Set(notices).size !== notices.length) {
+    if (!Array.isArray(notices) || !notices.every(isBeforeSec) || new Set(notices).size !== notices.length) {
       return { ok: false, reason: RejectReason.INVALID_VALUE };
     }
 
-    const count = this.trackLibrary.countdownTrack(TrackRole.COUNT);
+    const count = this.trackLibrary.countTrack();
     if (!count) return { ok: false, reason: RejectReason.NOTICE_MISSING };
     const cues: CuePlan[] = [];
-    for (const notice of notices) {
-      const track = this.trackLibrary.countdownTrack(notice);
+    for (const beforeSec of notices) {
+      const track = this.trackLibrary.noticeTrack(beforeSec);
       if (!track) return { ok: false, reason: RejectReason.NOTICE_MISSING };
-      cues.push({ track: { ...track }, at: new Date(zero.value.getTime() - NOTICE_LEAD_SEC[notice] * 1000) });
+      cues.push({ track: { ...track }, at: new Date(zero.value.getTime() - beforeSec * 1000) });
     }
     cues.push({ track: { ...count }, at: new Date(zero.value.getTime() - count.durationSec * 1000) });
     return { ok: true, value: { kind: 'countdown', cues, desk: this.countdownDesk } };

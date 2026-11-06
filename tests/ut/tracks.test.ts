@@ -135,9 +135,10 @@ describe('Renaming and deleting tracks', () => {
     const admin = await connectAuthedAdmin('tracks-admin');
     try {
       const tracks = (await admin.read()).tracks!;
-      const count = tracks.find((track) => track.role === 'count');
+      const count = tracks.find((track) => track.role.kind === 'count');
       assert.ok(count, 'the countdown has its count');
-      assert.ok(tracks.some((track) => track.role === 'music'));
+      assert.ok(tracks.some((track) => track.role.kind === 'music'));
+      assert.ok(tracks.some((track) => track.role.kind === 'notice' && track.role.beforeSec === 60), 'a notice carries its seconds');
 
       const held = admin.waitForState((patch) => patch.adminLock === true);
       admin.write('adminLock', true);

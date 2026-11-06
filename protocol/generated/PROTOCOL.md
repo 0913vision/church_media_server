@@ -266,18 +266,6 @@ Why a level measurement ended without an answer. Nothing about the track was cha
 
 `"stopped"` · `"gateReleased"` · `"deckTaken"` · `"deckFailed"` · `"deskMoved"` · `"deskSilent"` · `"deskHeld"` · `"noSignal"`
 
-### TrackRole
-
-What a track is for. Music is what people and a flow's music play. The other three are a countdown's audio: the server plays them itself, inside a flow, and the player never puts one on.
-
-`"music"` · `"oneMinute"` · `"thirtySeconds"` · `"count"`
-
-### Notice
-
-An announcement a countdown may play ahead of its count: oneMinute is 1분 남았습니다, sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty seconds before.
-
-`"oneMinute"` · `"thirtySeconds"`
-
 ## 객체
 
 ### Song
@@ -317,7 +305,7 @@ A playable library entry. File paths never leave the server.
 | `title` | `string` | Human-readable name |
 | `durationSec` | `number` | Length in seconds, measured from the file |
 | `volume` | `number` | The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written. |
-| `role` | `TrackRole` | music, or which part of a countdown it is. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it. |
+| `role` | `TrackRole` | Music, or a countdown's count or one of its notices. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it. |
 
 ### ScheduledTrack
 

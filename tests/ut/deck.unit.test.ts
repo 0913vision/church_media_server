@@ -89,27 +89,37 @@ describe('Deck songs come from the manifest', () => {
     assert.deepStrictEqual(Object.keys(lib.songFiles()), ['song'], 'the deck loads only its own');
   });
 
-  test('a countdown track carries its role, one per role, never a deck song; anything else is music', () => {
+  test('a countdown track carries its role: one count, one notice per number of seconds, never a deck song; anything else is music', () => {
+    const count = { kind: 'count' };
+    const ninety = { kind: 'notice', beforeSec: 90 };
     const { file, lib } = onDisk([
       track('song', { userSelectable: true }),
-      track('count', { role: 'count' }),
+      track('count', { role: count }),
+      track('ninety', { role: ninety }),
     ]);
     try {
-      assert.deepStrictEqual(lib.list().map(({ id, role }) => ({ id, role })), [{ id: 'song', role: 'music' }, { id: 'count', role: 'count' }]);
-      assert.strictEqual(lib.countdownTrack('count')?.id, 'count');
-      assert.strictEqual(lib.countdownTrack('oneMinute'), undefined);
-      assert.strictEqual(lib.isCountdownTrack('count'), true);
+      assert.deepStrictEqual(lib.list().map(({ id, role }) => ({ id, role })),
+        [{ id: 'song', role: { kind: 'music' } }, { id: 'count', role: count }, { id: 'ninety', role: ninety }]);
+      assert.strictEqual(lib.countTrack()?.id, 'count');
+      assert.strictEqual(lib.noticeTrack(90)?.id, 'ninety');
+      assert.strictEqual(lib.noticeTrack(60), undefined);
+      assert.strictEqual(lib.isCountdownTrack('ninety'), true);
       assert.strictEqual(lib.isCountdownTrack('song'), false);
       lib.setVolume('count', 70);
       const kept = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>[];
-      assert.deepStrictEqual(kept.map((entry) => entry.role), [undefined, 'count'], 'music stays unmarked; a role is written back');
+      assert.deepStrictEqual(kept.map((entry) => entry.role), [undefined, count, ninety], 'music stays unmarked; a role is written back');
     } finally {
       fs.rmSync(file, { force: true });
     }
 
-    assert.throws(() => library([track('song', { userSelectable: true }), track('x', { role: 'twoMinutes' })]), /unknown role/);
-    assert.throws(() => library([track('song', { userSelectable: true }), track('a', { role: 'count' }), track('b', { role: 'count' })]), /Two tracks/);
-    assert.throws(() => library([track('song', { userSelectable: true, role: 'count' })]), /cannot be a deck song/);
+    const song = track('song', { userSelectable: true });
+    for (const role of ['count', { kind: 'twoMinutes' }, { kind: 'notice' }, { kind: 'notice', beforeSec: 0 }, { kind: 'notice', beforeSec: 1.5 }]) {
+      assert.throws(() => library([song, track('x', { role })]), /unknown role/, JSON.stringify(role));
+    }
+    assert.throws(() => library([song, track('a', { role: count }), track('b', { role: count })]), /Two tracks/);
+    assert.throws(() => library([song, track('a', { role: ninety }), track('b', { role: ninety })]), /Two tracks/);
+    assert.doesNotThrow(() => library([song, track('a', { role: ninety }), track('b', { role: { kind: 'notice', beforeSec: 60 } })]));
+    assert.throws(() => library([track('song', { userSelectable: true, role: count })]), /cannot be a deck song/);
   });
 
   test('a manifest nobody can select from does not boot', () => {

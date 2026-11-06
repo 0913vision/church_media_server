@@ -98,28 +98,6 @@ class LevelFailure(str, Enum):
     NO_SIGNAL = "noSignal"
 
 
-class TrackRole(str, Enum):
-    """
-    What a track is for. Music is what people and a flow's music play. The
-    other three are a countdown's audio: the server plays them itself, inside
-    a flow, and the player never puts one on.
-    """
-    MUSIC = "music"
-    ONE_MINUTE = "oneMinute"
-    THIRTY_SECONDS = "thirtySeconds"
-    COUNT = "count"
-
-
-class Notice(str, Enum):
-    """
-    An announcement a countdown may play ahead of its count: oneMinute is 1분
-    남았습니다, sixty seconds before zero; thirtySeconds is 30초 남았습니다, thirty
-    seconds before.
-    """
-    ONE_MINUTE = "oneMinute"
-    THIRTY_SECONDS = "thirtySeconds"
-
-
 class Song(TypedDict):
     """
     A song a user can select and leave looping. The server names these, so
@@ -156,7 +134,7 @@ class Track(TypedDict):
     title: str  # Human-readable name
     durationSec: float  # Length in seconds, measured from the file
     volume: float  # The level it sounds at, 0-100. One setting serving three uses: what a song returns to when it is chosen, what a library track is put on at, and what a flow editor offers when this track joins a service. A flow carries its own level for every track it plays, so changing this never rewrites a service already written.
-    role: TrackRole  # music, or which part of a countdown it is. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it.
+    role: TrackRole  # Music, or a countdown's count or one of its notices. A countdown track is never put on the deck or used in a flow's music, and it is not renamed or deleted (noticeTrack); its level is set like any track's, and is how loud the band hears it.
 
 
 class ScheduledTrack(TypedDict):
@@ -214,6 +192,31 @@ class ConsoleInput(TypedDict):
     label: str  # What to call it on screen, e.g. '목사님 마이크'
     nominalDb: float  # Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand.
     state: ConsoleRead
+
+
+class TrackRoleMusic(TypedDict):
+    """Played by the panel, by a person, or as a flow's music."""
+    kind: Literal["music"]
+
+
+class TrackRoleCount(TypedDict):
+    """The count: 카운트다운을 시작합니다, then 10 to 1, ending at zero. One in the library."""
+    kind: Literal["count"]
+
+
+class TrackRoleNotice(TypedDict):
+    """An announcement ahead of the count, such as 1분 남았습니다."""
+    kind: Literal["notice"]
+    beforeSec: float  # How many seconds before zero it starts: a whole number above 0, one track per number.
+
+
+"""
+What a track is for. Music is what people and a flow's music play. A
+countdown's count and its notices are the server's to play, inside a flow; the
+player never puts one on. Which notices a countdown can have is whichever
+notice tracks the library holds, so adding one is a track, not a release.
+"""
+TrackRole = TrackRoleMusic | TrackRoleCount | TrackRoleNotice
 
 
 class ScheduleUntilMusic(TypedDict):
@@ -308,7 +311,7 @@ class SchedulePartCountdown(TypedDict):
     """
     kind: Literal["countdown"]
     at: str  # HH:MM or HH:MM:SS, church time: when the count reaches zero
-    notices: list[Notice]  # Which notices go ahead of the count. Empty for the count alone; at most one of each.
+    notices: list[float]  # The notices ahead of the count, each as the beforeSec of a notice track. Empty for the count alone; each number at most once.
 
 
 """
@@ -493,7 +496,7 @@ class FlowPartCountdown(TypedDict):
     """
     kind: Literal["countdown"]
     at: str  # Instant the count reaches zero
-    notices: list[Notice]  # Which notices go ahead of the count. Empty for the count alone; at most one of each.
+    notices: list[float]  # The notices ahead of the count, each as the beforeSec of a notice track, so it starts that many seconds before zero. Empty for the count alone; each number at most once.
 
 
 """

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isNotice } from '../protocol.ts';
-import type { Notice, ScheduleEntry, SchedulePart } from '../protocol.ts';
+import type { ScheduleEntry, SchedulePart } from '../protocol.ts';
+import { isBeforeSec } from '../tracks/TrackLibrary.ts';
 import { formatInstant } from '../utils/instant.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -19,7 +19,7 @@ export interface RunArgs {
   lock: { at: string; until: string };
   parts: (
     | { kind: 'music'; tracks: { id: string; volume: number }[]; endsAt: string }
-    | { kind: 'countdown'; at: string; notices: Notice[] }
+    | { kind: 'countdown'; at: string; notices: number[] }
   )[];
 }
 
@@ -272,10 +272,10 @@ function validateCountdown(id: string, part: Record<string, unknown>): Checked<S
   const notices = part.notices;
   if (!Array.isArray(notices)) return bad(`${id}: the countdown's notices must be a list`);
   for (const notice of notices) {
-    if (!isNotice(notice)) return bad(`${id}: unknown notice ${JSON.stringify(notice)} (use oneMinute or thirtySeconds)`);
+    if (!isBeforeSec(notice)) return bad(`${id}: a notice is seconds before zero, a whole number above 0, got ${JSON.stringify(notice)}`);
   }
   if (new Set(notices).size !== notices.length) return bad(`${id}: a notice appears more than once`);
-  return { ok: true, value: { kind: 'countdown', at: part.at, notices: notices as Notice[] } };
+  return { ok: true, value: { kind: 'countdown', at: part.at, notices: notices as number[] } };
 }
 
 function isClock(value: unknown): value is string {
