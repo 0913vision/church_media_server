@@ -383,6 +383,34 @@ sooner.
 LevelSpan = LevelSpanWhole | LevelSpanFirst
 
 
+class LevelMeterOutput(TypedDict):
+    """
+    The music player's own output: every way out of it is shut on the desk and
+    read back — the main, the mono and all sixteen buses, AuxMix included —
+    its strip left on at 0 dB in no group, and its input meter read. Nobody
+    hears it, the band included.
+    """
+    kind: Literal["output"]
+
+
+class LevelMeterMain(TypedDict):
+    """
+    What the main output carries: the main LR strip's meter before its fader
+    and mute, plus the main fader's gain read as it starts — what the main
+    meter by the desk's screen shows with the main on. The desk is otherwise
+    left as it is.
+    """
+    kind: Literal["main"]
+    mute: bool  # Switch the main off while it runs, so the room does not hear it, and put it back after. Without, the room hears the measurement.
+
+
+"""
+Which meter a level measurement reads, chosen before it starts and kept until
+it ends.
+"""
+LevelMeter = LevelMeterOutput | LevelMeterMain
+
+
 class LevelMatchIdle(TypedDict):
     """Nothing has been measured since the server started"""
     phase: Literal["idle"]
@@ -392,6 +420,7 @@ class LevelMatchMeasuring(TypedDict):
     """A track is being measured. Sent once a second while it runs."""
     phase: Literal["measuring"]
     track: str  # Track id
+    meter: LevelMeter  # The meter being read
     targetDb: float  # The average it was asked to land on, in dB under the desk's full scale
     elapsedSec: float  # How much has been played, whole seconds. Zero while the desk is being set aside.
     totalSec: float  # How much will be played, in seconds
@@ -405,6 +434,7 @@ class LevelMatchDone(TypedDict):
     """
     phase: Literal["done"]
     track: str  # Track id
+    meter: LevelMeter  # The meter it was read on
     targetDb: float  # The average it was asked to land on
     averageDb: float  # The average the meter read at the old level, one decimal
     volumeBefore: float  # The level it was measured at
@@ -418,6 +448,7 @@ class LevelMatchOutOfReach(TypedDict):
     """
     phase: Literal["outOfReach"]
     track: str  # Track id
+    meter: LevelMeter  # The meter it was read on
     targetDb: float  # The average it was asked to land on
     averageDb: float  # The average the meter read, one decimal
     volumeBefore: float  # The level it was measured at, and still has
@@ -428,16 +459,16 @@ class LevelMatchFailed(TypedDict):
     """Ended without an answer. Nothing was changed."""
     phase: Literal["failed"]
     track: str  # Track id
+    meter: LevelMeter  # The meter it was to be read on
     why: LevelFailure
 
 
 """
 What the server's one level measurement is doing, or how the last one ended. A
-measurement plays a track to the desk with the music player's input switched
-off there, reads that input's meter, and moves the track's level so its
-average lands on a target. It takes minutes, so it is state: every screen can
-say the deck is in use and why. What one ended with stays until the next
-starts; a restart forgets it.
+measurement plays a track to the desk, reads the meter it was given, and moves
+the track's level so its average lands on a target. It takes minutes, so it is
+state: every screen can say the deck is in use and why. What one ended with
+stays until the next starts; a restart forgets it.
 """
 LevelMatch = LevelMatchIdle | LevelMatchMeasuring | LevelMatchDone | LevelMatchOutOfReach | LevelMatchFailed
 
@@ -843,30 +874,31 @@ class SelectTrackArgs(TypedDict):
 
 class MatchTrackLevelArgs(TypedDict):
     """
-    Measure a track on the desk and move its level so the desk's meter
-    averages the target. The music player's input is switched off on the desk
-    and read back before anything plays, so the room hears nothing; the track
-    then plays from its start at its own level while the input's meter is
-    read, and the deck and the desk are put back after it has stopped —
-    however it ends. The average leaves out silence and the passages well
-    under the song's own level, so a quiet verse does not drag it down. The
-    new level is the one written down for the track, as setTrackVolume would
-    write it; a flow already saved keeps the levels it was written with.
+    Measure a track on the desk and move its level so the chosen meter
+    averages the target. Everything about it — the track, the meter, whether
+    the main is muted, the target and the span — is decided here, before it
+    starts. Whatever the meter asks of the desk is set and read back before
+    anything plays; the track then plays from its start at its own level while
+    the meter is read, and the deck and the desk are put back after it has
+    stopped — however it ends. The average leaves out silence and the passages
+    well under the song's own level, so a quiet verse does not drag it down.
+    The new level is the one written down for the track, as setTrackVolume
+    would write it; a flow already saved keeps the levels it was written with.
     Answers as soon as it is accepted; how it goes is in levelMatch. Only for
     a person holding the gate with nothing playing: refused with adminUnlocked
     when the gate is open, flowActive when the gate is a run's, deckPlaying
     while the deck plays, deckMuted while output is muted (it would measure
     silence), levelMatching while another measurement runs, unknownTrack, and
-    invalidValue for a target outside -60 to 0 or a span that is not one.
-    While it runs the deck is the measurement's — song, playback, volume,
-    mute, loop and selectTrack are refused with levelMatching — and the music
-    player's input is held on the desk, so switching it on is refused with
-    consoleHeld. Releasing the gate, a run taking it, or a hand switching the
-    input on at the desk ends it. A level change applies from the next time
-    the track is chosen.
+    invalidValue for a target outside -60 to 0, a span or a meter that is not
+    one. While it runs the deck is the measurement's — song, playback, volume,
+    mute, loop and selectTrack are refused with levelMatching — and what it
+    holds on the desk cannot be switched from here (consoleHeld). Releasing
+    the gate, a run taking it, or a hand moving what it holds at the desk ends
+    it. A level change applies from the next time the track is chosen.
     """
     track: str  # Track id from the tracks attribute
-    targetDb: float  # The average the desk's meter should read for this track, in dB under full scale, -60 to 0. Always given: there is no level the server would assume.
+    meter: LevelMeter  # Which meter to read, and for the main whether to mute it
+    targetDb: float  # The average the meter should read for this track, in dB under full scale, -60 to 0. Always given: there is no level the server would assume.
     span: LevelSpan  # How much of the track to play
 
 

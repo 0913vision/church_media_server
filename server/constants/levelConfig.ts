@@ -1,5 +1,3 @@
-import { auxin } from '../console/desk.ts';
-
 /** How a level measurement keeps time. Separate so a test can run one in milliseconds. */
 export interface LevelTiming {
   /** How often a running measurement looks at the gate, the deck and the meter */
@@ -18,8 +16,6 @@ export interface LevelTiming {
 
 // Note(yoochan.kim): measuring a track's level on the desk (level/LevelMatcher.ts)
 export const LEVEL_CONFIG = {
-  // Note(yoochan.kim): aux 5 drives the linked 5/6 pair; holding 6 too would take the link moving it for a hand.
-  STRIP: auxin(5),
   TARGET_DB: { MIN: -60, MAX: 0 },
   VOLUME: { MIN: 1, MAX: 100 },
   TIMING: {

@@ -23,8 +23,13 @@ const { default: LockCoordinator } = await import('../../server/lock/LockCoordin
 const { default: DeskHolds } = await import('../../server/console/DeskHolds.ts');
 const { default: MixerConsole } = await import('../../server/console/MixerConsole.ts');
 const { default: LevelMatcher } = await import('../../server/level/LevelMatcher.ts');
-const { int } = await import('../../server/console/desk.ts');
+const { int, float, deskAddress } = await import('../../server/console/desk.ts');
 const { MeterAverage, volumeFor } = await import('../../server/level/meterAverage.ts');
+const { CONSOLE_CONFIG } = await import('../../server/constants/consoleConfig.ts');
+const { faderFromDb } = await import('../../server/console/faderLevel.ts');
+const MEASURE = [...CONSOLE_CONFIG.MEASURE_OUTPUT.BLOCK, ...CONSOLE_CONFIG.MEASURE_OUTPUT.OPEN];
+const OUTPUT = { kind: 'output' } as const;
+const MAIN = '/main/st/mix/on';
 
 const TIMING: LevelTiming = {
   TICK_MS: 5,
@@ -37,6 +42,14 @@ const TIMING: LevelTiming = {
 const HOLD_TIMING = { CONFIRM_ATTEMPTS: 2, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 };
 
 const AUX_ON = '/auxin/05/mix/on';
+const STRIPS = ['/auxin/05', '/auxin/06'];
+const two = (n: number): string => String(n).padStart(2, '0');
+/** The music player as a service has it: on, to the room and every bus, in a mute group and DCA 7, a little down. */
+const SERVICE: [string, DeskValue][] = [[MAIN, int(1)], ['/main/st/mix/fader', float(faderFromDb(6))], ...STRIPS.flatMap((strip): [string, DeskValue][] => [
+  [`${strip}/mix/on`, int(1)], [`${strip}/mix/st`, int(1)], [`${strip}/mix/fader`, float(0.6)],
+  [`${strip}/grp/mute`, int(0b1)], [`${strip}/grp/dca`, int(0b1000000)],
+  ...Array.from({ length: 16 }, (_, i): [string, DeskValue] => [`${strip}/mix/${two(i + 1)}/on`, int(1)]),
+])];
 /** The song's meter reading at volume 100 (-6 dB). At 50, 20 dB under, it reads -26 dB. */
 const SONG_AT_FULL = 0.5;
 
@@ -67,20 +80,23 @@ class FakeMpv {
   }
 }
 
-/** A desk with the music player's input on it, sending meters every 10ms while asked to. */
+/** A desk with the music player live on it, sending meters every 10ms while asked to; what nobody set reads 0. */
 class MeterDesk implements ConsoleDevice {
-  readonly values = new Map<string, DeskValue>([[AUX_ON, int(1)]]);
+  readonly values = new Map<string, DeskValue>(SERVICE);
   sendsMeters = true;
   private readonly wire: ((address: string, value: DeskValue) => void)[] = [];
-  private readonly meters = new Set<(levels: readonly number[]) => void>();
+  /** One frame to each listener, read off the meter it asked for. */
+  private readonly meters = new Set<() => void>();
   private timer: NodeJS.Timeout | null = null;
+  /** Which meter each listener asked for. */
+  readonly watched: string[] = [];
 
   constructor(private readonly mpv: FakeMpv, private readonly events: string[]) {}
 
   async query(address: string): Promise<DeskValue> {
-    const value = this.values.get(address);
-    if (!value) throw new Error(`no ${address}`);
-    return value;
+    const known = deskAddress(address);
+    if (!known) throw new Error(`no ${address}`);
+    return this.values.get(address) ?? (known.kind === 'level' ? float(0) : int(0));
   }
 
   async send(address: string, value: DeskValue): Promise<void> {
@@ -97,16 +113,21 @@ class MeterDesk implements ConsoleDevice {
     for (const listener of this.wire) listener(address, value);
   }
 
-  watchMeters(listener: (levels: readonly number[]) => void): () => void {
-    this.meters.add(listener);
+  watchMeters(kind: 'output' | 'main', listener: (levels: readonly number[]) => void): () => void {
+    this.watched.push(kind);
+    // Note(yoochan.kim): the main's pre-fade meter has the track while the music player is sent to it, muted or not.
+    const frame = (): void => {
+      const level = kind === 'main' && this.values.get('/auxin/05/mix/st')?.value !== 1 ? 0 : this.mpv.meter();
+      listener([level, level]);
+    };
+    this.meters.add(frame);
     if (this.sendsMeters && !this.timer) {
       this.timer = setInterval(() => {
-        const level = this.mpv.meter();
-        for (const meter of this.meters) meter([level, level]);
+        for (const meter of this.meters) meter();
       }, 10);
     }
     return () => {
-      this.meters.delete(listener);
+      this.meters.delete(frame);
       if (this.meters.size === 0 && this.timer) {
         clearInterval(this.timer);
         this.timer = null;
@@ -152,7 +173,8 @@ function rig() {
   const desk = new MeterDesk(mpv, events);
   const holds = new DeskHolds(desk, HOLD_TIMING, () => {}, []);
   const flow = { owns: false, ownsDeck: () => flow.owns };
-  const matcher = new LevelMatcher(player, library, lock, notifier, new MixerConsole(desk, holds), flow, TIMING);
+  const desks = { output: MEASURE, mainMuted: CONSOLE_CONFIG.MEASURE_MAIN_MUTED };
+  const matcher = new LevelMatcher(player, library, lock, notifier, new MixerConsole(desk, holds), flow, desks, TIMING);
 
   lock.setAdminLock(true, 'person');
   const finished = async (): Promise<LevelMatch> => {
@@ -203,19 +225,36 @@ describe('Averaging a meter', () => {
 });
 
 describe('Measuring a track on the desk', () => {
-  test('plays it with the input switched off, then moves its level onto the target', async () => {
+  test('plays it with every way out of the music player shut and its strip open, then moves its level onto the target', async () => {
     const { events, patches, tracks, player, desk, holds, matcher, finished } = rig();
-    let inputWhilePlaying: number | undefined;
+    const touched = [...new Set(MEASURE.map((change) => change.address))];
+    const read = async (): Promise<Record<string, number>> =>
+      Object.fromEntries(await Promise.all(touched.map(async (address) => [address, (await desk.query(address)).value])));
+    const before = await read();
+    let whilePlaying: Record<string, number> | undefined;
     const watch = setInterval(() => {
-      if (player.isPlaying()) inputWhilePlaying = desk.values.get(AUX_ON)!.value;
+      if (player.isPlaying() && !whilePlaying) whilePlaying = Object.fromEntries(touched.map((address) => [address, desk.values.get(address)?.value ?? 0]));
     }, 2);
 
-    assert.deepEqual(matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } }), { ok: true });
+    assert.deepEqual(matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } }), { ok: true });
     const result = await finished();
     clearInterval(watch);
 
-    assert.equal(inputWhilePlaying, 0, 'the music player\'s input was off while the track played');
-    assert.equal(desk.values.get(AUX_ON)!.value, 1, 'and on again afterwards');
+    assert.ok(whilePlaying, 'it played');
+    for (const strip of STRIPS) {
+      assert.equal(whilePlaying[`${strip}/mix/st`], 0, `${strip} off the room`);
+      assert.equal(whilePlaying[`${strip}/mix/mono`], 0, `${strip} off the mono`);
+      for (let n = 1; n <= 16; n += 1) assert.equal(whilePlaying[`${strip}/mix/${two(n)}/on`], 0, `${strip} off bus ${n}, AuxMix included`);
+      assert.equal(whilePlaying[`${strip}/mix/on`], 1, `${strip} on, so its meter reads the track`);
+      assert.equal(whilePlaying[`${strip}/grp/mute`], 0, `${strip} in no mute group`);
+      assert.equal(whilePlaying[`${strip}/grp/dca`], 0, `${strip} in no DCA`);
+    }
+    assert.deepEqual(await read(), before, 'the desk as it was, the music player live to the room again');
+    const load = events.indexOf('deck load /audio/hymn.mp3');
+    assert.ok(events.findIndex((event) => event.startsWith('desk /auxin/06/mix/fader=')) < load, 'all of it set before the track loads');
+    const stopped = events.findIndex((event, at) => at > load && event === 'deck pause=yes');
+    const putBack = events.findIndex((event, at) => at > load && event.startsWith('desk '));
+    assert.ok(stopped !== -1 && stopped < putBack, 'the track stopped before any of the desk went back');
     assert.equal(result.phase, 'done');
     assert.ok(result.phase === 'done');
     assert.equal(result.volumeBefore, 50);
@@ -227,7 +266,46 @@ describe('Measuring a track on the desk', () => {
     assert.equal(told.tracks?.find((track) => track.id === 'hymn')?.volume, 43, 'the new level arrives with the result');
     assert.deepEqual(player.getDeck(), { source: 'song' });
     assert.equal(player.getState(), PlaybackState.PAUSED);
-    assert.ok(events.indexOf('desk /auxin/05/mix/on=0') < events.indexOf('deck load /audio/hymn.mp3'));
+    assert.deepEqual(desk.watched, ['output'], 'read off the music player\'s own meter');
+    assert.deepEqual(result.meter, OUTPUT);
+    holds.dispose();
+  });
+
+  test('the main, muted: only the main is switched off while it plays, then put back, and the main meter read', async () => {
+    const { events, player, desk, holds, matcher, finished } = rig();
+    let mainWhilePlaying: number | undefined;
+    const watch = setInterval(() => {
+      if (player.isPlaying() && mainWhilePlaying === undefined) mainWhilePlaying = desk.values.get(MAIN)!.value;
+    }, 2);
+
+    const meter = { kind: 'main', mute: true } as const;
+    assert.deepEqual(matcher.start({ track: 'hymn', meter, targetDb: -30, span: { kind: 'whole' } }), { ok: true });
+    const result = await finished();
+    clearInterval(watch);
+
+    assert.equal(mainWhilePlaying, 0, 'the room spared while it played');
+    assert.equal(desk.values.get(MAIN)!.value, 1, 'the main back on');
+    const sent = events.filter((event) => event.startsWith('desk ')).map((event) => event.slice(5, event.indexOf('=')));
+    assert.deepEqual([...new Set(sent)], [MAIN], 'nothing on the desk but the main');
+    assert.deepEqual(desk.watched, ['main']);
+    assert.ok(result.phase === 'done');
+    assert.deepEqual(result.meter, meter);
+    assert.equal(result.averageDb, -20, 'read before the main\'s mute, and its fader\'s +6 dB added: the output\'s -26 plus 6');
+    holds.dispose();
+  });
+
+  test('the main, heard: nothing sent to the desk, and the main meter read', async () => {
+    const { events, desk, holds, matcher, finished } = rig();
+
+    const meter = { kind: 'main', mute: false } as const;
+    matcher.start({ track: 'hymn', meter, targetDb: -30, span: { kind: 'whole' } });
+    const result = await finished();
+
+    assert.deepEqual(events.filter((event) => event.startsWith('desk ')), [], 'the desk left as it is');
+    assert.deepEqual(desk.watched, ['main']);
+    assert.ok(result.phase === 'done');
+    assert.deepEqual(result.meter, meter);
+    assert.equal(result.averageDb, -20, 'the main fader\'s +6 dB added');
     holds.dispose();
   });
 
@@ -235,10 +313,10 @@ describe('Measuring a track on the desk', () => {
     const { events, desk, holds, matcher, finished } = rig();
     desk.sendsMeters = false;
 
-    matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } });
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     const result = await finished();
 
-    assert.deepEqual(result, { phase: 'failed', track: 'hymn', why: LevelFailure.DESK_SILENT });
+    assert.deepEqual(result, { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.DESK_SILENT });
     assert.ok(!events.includes('deck load /audio/hymn.mp3'), 'the track was never loaded');
     assert.ok(!events.includes('deck pause=no'), 'and nothing ever played');
     assert.equal(desk.values.get(AUX_ON)!.value, 1);
@@ -247,10 +325,12 @@ describe('Measuring a track on the desk', () => {
 
   test('is refused unless a person holds the gate with the deck quiet and unmuted', async () => {
     const { player, lock, holds, matcher, finished } = rig();
-    const start = (args: Record<string, unknown>) => matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' }, ...args });
+    const start = (args: Record<string, unknown>) => matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' }, ...args });
 
     assert.deepEqual(start({ targetDb: 6 }), { ok: false, reason: RejectReason.INVALID_VALUE });
     assert.deepEqual(start({ span: { kind: 'first', sec: 0 } }), { ok: false, reason: RejectReason.INVALID_VALUE });
+    assert.deepEqual(start({ meter: { kind: 'main' } }), { ok: false, reason: RejectReason.INVALID_VALUE }, 'the main, its mute not chosen');
+    assert.deepEqual(start({ meter: { kind: 'aux' } }), { ok: false, reason: RejectReason.INVALID_VALUE });
     assert.deepEqual(start({ track: 'nothing' }), { ok: false, reason: RejectReason.UNKNOWN_TRACK });
 
     player.setMute(MuteState.MUTED);
@@ -269,33 +349,36 @@ describe('Measuring a track on the desk', () => {
     holds.dispose();
   });
 
-  test('a hand switching the input on at the desk ends it, the track stopped before the desk is put back', async () => {
+  test('a hand opening a way out at the desk ends it, the track stopped before the desk is put back', async () => {
     const { events, player, desk, holds, matcher, finished } = rig();
 
-    matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } });
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!player.isPlaying()) await settle(2);
-    desk.hand(AUX_ON, int(1));
+    const handAt = events.length;
+    desk.hand('/auxin/05/mix/st', int(1));
     const result = await finished();
 
-    assert.deepEqual(result, { phase: 'failed', track: 'hymn', why: LevelFailure.DESK_MOVED });
-    assert.ok(events.lastIndexOf('deck pause=yes') < events.lastIndexOf('desk /auxin/05/mix/on=1'));
+    assert.deepEqual(result, { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.DESK_MOVED });
+    const stopped = events.findIndex((event, at) => at >= handAt && event === 'deck pause=yes');
+    const putBack = events.findIndex((event, at) => at >= handAt && event.startsWith('desk '));
+    assert.ok(stopped !== -1 && stopped < putBack, 'the track stopped before any of the desk went back');
     holds.dispose();
   });
 
   test('releasing the gate ends it, and a run taking the gate keeps the deck it took', async () => {
     const released = rig();
-    released.matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } });
+    released.matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!released.player.isPlaying()) await settle(2);
     released.lock.setAdminLock(false);
-    assert.deepEqual(await released.finished(), { phase: 'failed', track: 'hymn', why: LevelFailure.GATE_RELEASED });
+    assert.deepEqual(await released.finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.GATE_RELEASED });
     released.holds.dispose();
 
     const taken = rig();
-    taken.matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } });
+    taken.matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!taken.player.isPlaying()) await settle(2);
     taken.lock.setAdminLock(true, 'flow');
     taken.flow.owns = true;
-    assert.deepEqual(await taken.finished(), { phase: 'failed', track: 'hymn', why: LevelFailure.GATE_RELEASED });
+    assert.deepEqual(await taken.finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.GATE_RELEASED });
     assert.equal(taken.player.getDeck().source, 'track', 'the run\'s deck is not the measurement\'s to put back');
     assert.equal(taken.desk.values.get(AUX_ON)!.value, 1, 'but the desk is, so the run can be heard');
     taken.holds.dispose();
@@ -304,11 +387,11 @@ describe('Measuring a track on the desk', () => {
   test('stopping it changes nothing', async () => {
     const { tracks, player, holds, matcher, finished } = rig();
 
-    matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'whole' } });
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!player.isPlaying()) await settle(2);
     assert.deepEqual(matcher.stop(), { ok: true });
 
-    assert.deepEqual(await finished(), { phase: 'failed', track: 'hymn', why: LevelFailure.STOPPED });
+    assert.deepEqual(await finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.STOPPED });
     assert.equal(tracks.get('hymn')!.volume, 50);
     assert.deepEqual(matcher.stop(), { ok: false, reason: RejectReason.NOT_MEASURING });
     holds.dispose();
@@ -317,7 +400,7 @@ describe('Measuring a track on the desk', () => {
   test('a target the deck cannot reach is reported and changes nothing', async () => {
     const { tracks, holds, matcher, finished } = rig();
 
-    matcher.start({ track: 'hymn', targetDb: 0, span: { kind: 'first', sec: 0.3 } });
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: 0, span: { kind: 'first', sec: 0.3 } });
     const result = await finished();
 
     assert.equal(result.phase, 'outOfReach');
@@ -331,7 +414,7 @@ describe('Measuring a track on the desk', () => {
     player.setLoop(false);
     await player.selectTrack(tracks.get('other')!, 30, false);
 
-    matcher.start({ track: 'hymn', targetDb: -30, span: { kind: 'first', sec: 0.3 } });
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'first', sec: 0.3 } });
     await finished();
 
     assert.deepEqual(player.getDeck(), { source: 'track', id: 'other' });

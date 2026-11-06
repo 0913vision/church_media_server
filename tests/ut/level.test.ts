@@ -12,7 +12,7 @@ const auxIs = (patch: StatePatch, on: boolean): boolean =>
 
 // Note(yoochan.kim): the mock desk has no meters, so only the wait shows here; level.unit.test.ts does the measuring.
 describe('Level measurement over the wire', () => {
-  test('keeps the deck and the music player\'s input while it runs, and on a desk without meters plays nothing', async () => {
+  test('keeps the deck and holds the music player\'s strip while it runs, and on a desk without meters plays nothing', async () => {
     const admin = new SocketTestHelper();
     let wasMuted = false;
     try {
@@ -34,24 +34,23 @@ describe('Level measurement over the wire', () => {
       admin.write('adminLock', true);
       await admin.waitForState((patch) => patch.adminLock === true);
 
-      const setAside = admin.waitForState((patch) => auxIs(patch, false));
       const measuring = admin.waitForState((patch) => patch.levelMatch?.phase === 'measuring');
-      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, targetDb: -30, span: { kind: 'whole' } });
+      const output = { kind: 'output' };
+      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, meter: output, targetDb: -30, span: { kind: 'whole' } });
       await measuring;
-      await setAside;
 
       admin.write('playback', PlaybackState.PLAYING);
       assert.equal(await admin.waitForRejected('playback'), RejectReason.LEVEL_MATCHING);
       admin.invoke('enableConsoleInput', { input: 'aux' });
       assert.equal(await admin.waitForRejected('enableConsoleInput'), RejectReason.CONSOLE_HELD);
-      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, targetDb: -30, span: { kind: 'whole' } });
+      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, meter: output, targetDb: -30, span: { kind: 'whole' } });
       assert.equal(await admin.waitForRejected('matchTrackLevel'), RejectReason.LEVEL_MATCHING);
 
-      const back = admin.waitForState((patch) => auxIs(patch, true), 10000);
       const ended = await admin.waitForState((patch) => patch.levelMatch?.phase === 'failed', 10000);
-      assert.deepEqual(ended.levelMatch, { phase: 'failed', track: SCRATCH_TRACK_ID, why: LevelFailure.DESK_SILENT });
-      await back;
-      assert.equal((await admin.read()).playback, PlaybackState.PAUSED);
+      assert.deepEqual(ended.levelMatch, { phase: 'failed', track: SCRATCH_TRACK_ID, meter: output, why: LevelFailure.DESK_SILENT });
+      const after = await admin.read();
+      assert.equal(after.playback, PlaybackState.PAUSED);
+      assert.ok(auxIs(after, true), 'the music player\'s strip is as it was');
     } finally {
       admin.write('adminLock', false);
       if (wasMuted) admin.write('mute', MuteState.MUTED);
@@ -68,7 +67,7 @@ describe('Level measurement over the wire', () => {
       admin.invoke('authenticate', { password: TEST_ADMIN_PASSWORD });
       await authed;
 
-      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, targetDb: -30, span: { kind: 'whole' } });
+      admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, meter: { kind: 'output' }, targetDb: -30, span: { kind: 'whole' } });
       assert.equal(await admin.waitForRejected('matchTrackLevel'), RejectReason.ADMIN_UNLOCKED);
       admin.invoke('stopLevelMatch');
       assert.equal(await admin.waitForRejected('stopLevelMatch'), RejectReason.NOT_MEASURING);

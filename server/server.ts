@@ -149,7 +149,12 @@ class MediaServer {
     );
     this.flowRunner = flowRunner;
     const levelMatcher = new LevelMatcher(
-      player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner, LEVEL_CONFIG.TIMING,
+      player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner,
+      {
+        output: [...CONSOLE_CONFIG.MEASURE_OUTPUT.BLOCK, ...CONSOLE_CONFIG.MEASURE_OUTPUT.OPEN],
+        mainMuted: CONSOLE_CONFIG.MEASURE_MAIN_MUTED,
+      },
+      LEVEL_CONFIG.TIMING,
     );
     this.levelMatcher = levelMatcher;
     const adminSession = new AdminSession(player, lockCoordinator, notifier, clock, levelMatcher);

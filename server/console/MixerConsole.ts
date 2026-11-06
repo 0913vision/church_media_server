@@ -1,9 +1,10 @@
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
-import type { ConsoleInput } from '../protocol.ts';
+import type { ConsoleInput, LevelMeter } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 import type { DeskChange } from './desk.ts';
+import { dbFromFader } from './faderLevel.ts';
 import { DeskHeldError } from './DeskHolds.ts';
 import type DeskHolds from './DeskHolds.ts';
 import type { HeldDesk } from './DeskHolds.ts';
@@ -60,8 +61,14 @@ class MixerConsole {
     return this.holds.holding(changes, body);
   }
 
-  watchMeters(listener: (levels: readonly number[]) => void): () => void {
-    return this.console.watchMeters(listener);
+  watchMeters(meter: LevelMeter['kind'], listener: (levels: readonly number[]) => void): () => void {
+    return this.console.watchMeters(meter, listener);
+  }
+
+  /** What lies between a meter and what it stands for: the main fader for the main, nothing for the output. */
+  async meterGainDb(meter: LevelMeter['kind']): Promise<number> {
+    const gain = meter === 'main' ? CONSOLE_CONFIG.METERS.MAIN.GAIN : CONSOLE_CONFIG.METERS.OUTPUT.GAIN;
+    return gain === null ? 0 : dbFromFader((await this.console.query(gain)).value);
   }
 
   has(inputId: unknown): inputId is string {

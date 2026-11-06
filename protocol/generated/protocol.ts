@@ -404,29 +404,53 @@ export const LevelSpanKind = {
 } as const;
 
 /**
+ * Which meter a level measurement reads, chosen before it starts and kept until it
+ * ends.
+ */
+export type LevelMeter =
+  /**
+   * The music player's own output: every way out of it is shut on the desk and read
+   * back — the main, the mono and all sixteen buses, AuxMix included — its strip left
+   * on at 0 dB in no group, and its input meter read. Nobody hears it, the band
+   * included.
+   */
+  | { kind: 'output' }
+  /**
+   * What the main output carries: the main LR strip's meter before its fader and mute,
+   * plus the main fader's gain read as it starts — what the main meter by the desk's
+   * screen shows with the main on. The desk is otherwise left as it is.
+   */
+  | { kind: 'main'; mute: boolean }
+  ;
+export const LevelMeterKind = {
+  OUTPUT: 'output',
+  MAIN: 'main',
+} as const;
+
+/**
  * What the server's one level measurement is doing, or how the last one ended. A
- * measurement plays a track to the desk with the music player's input switched off
- * there, reads that input's meter, and moves the track's level so its average lands on
- * a target. It takes minutes, so it is state: every screen can say the deck is in use
- * and why. What one ended with stays until the next starts; a restart forgets it.
+ * measurement plays a track to the desk, reads the meter it was given, and moves the
+ * track's level so its average lands on a target. It takes minutes, so it is state:
+ * every screen can say the deck is in use and why. What one ended with stays until the
+ * next starts; a restart forgets it.
  */
 export type LevelMatch =
   /** Nothing has been measured since the server started */
   | { phase: 'idle' }
   /** A track is being measured. Sent once a second while it runs. */
-  | { phase: 'measuring'; track: string; targetDb: number; elapsedSec: number; totalSec: number; levelDb: number }
+  | { phase: 'measuring'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; levelDb: number }
   /**
    * Measured, and the track's level was moved. The new level is in tracks, in the same
    * patch.
    */
-  | { phase: 'done'; track: string; targetDb: number; averageDb: number; volumeBefore: number; volumeAfter: number }
+  | { phase: 'done'; track: string; meter: LevelMeter; targetDb: number; averageDb: number; volumeBefore: number; volumeAfter: number }
   /**
    * Measured, but the target needs a level the deck does not have — over 100, or under
    * 1. Nothing was changed.
    */
-  | { phase: 'outOfReach'; track: string; targetDb: number; averageDb: number; volumeBefore: number; volumeNeeded: number }
+  | { phase: 'outOfReach'; track: string; meter: LevelMeter; targetDb: number; averageDb: number; volumeBefore: number; volumeNeeded: number }
   /** Ended without an answer. Nothing was changed. */
-  | { phase: 'failed'; track: string; why: LevelFailure }
+  | { phase: 'failed'; track: string; meter: LevelMeter; why: LevelFailure }
   ;
 export const LevelMatchKind = {
   IDLE: 'idle',
@@ -848,25 +872,25 @@ export const COMMANDS = {
    */
   selectTrack: { permission: 'admin' },
   /**
-   * Measure a track on the desk and move its level so the desk's meter averages the
-   * target. The music player's input is switched off on the desk and read back before
-   * anything plays, so the room hears nothing; the track then plays from its start at
-   * its own level while the input's meter is read, and the deck and the desk are put
-   * back after it has stopped — however it ends. The average leaves out silence and
-   * the passages well under the song's own level, so a quiet verse does not drag it
-   * down. The new level is the one written down for the track, as setTrackVolume would
-   * write it; a flow already saved keeps the levels it was written with. Answers as
-   * soon as it is accepted; how it goes is in levelMatch. Only for a person holding
+   * Measure a track on the desk and move its level so the chosen meter averages the
+   * target. Everything about it — the track, the meter, whether the main is muted, the
+   * target and the span — is decided here, before it starts. Whatever the meter asks
+   * of the desk is set and read back before anything plays; the track then plays from
+   * its start at its own level while the meter is read, and the deck and the desk are
+   * put back after it has stopped — however it ends. The average leaves out silence
+   * and the passages well under the song's own level, so a quiet verse does not drag
+   * it down. The new level is the one written down for the track, as setTrackVolume
+   * would write it; a flow already saved keeps the levels it was written with. Answers
+   * as soon as it is accepted; how it goes is in levelMatch. Only for a person holding
    * the gate with nothing playing: refused with adminUnlocked when the gate is open,
    * flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted
    * while output is muted (it would measure silence), levelMatching while another
-   * measurement runs, unknownTrack, and invalidValue for a target outside -60 to 0 or
-   * a span that is not one. While it runs the deck is the measurement's — song,
-   * playback, volume, mute, loop and selectTrack are refused with levelMatching — and
-   * the music player's input is held on the desk, so switching it on is refused with
-   * consoleHeld. Releasing the gate, a run taking it, or a hand switching the input on
-   * at the desk ends it. A level change applies from the next time the track is
-   * chosen.
+   * measurement runs, unknownTrack, and invalidValue for a target outside -60 to 0, a
+   * span or a meter that is not one. While it runs the deck is the measurement's —
+   * song, playback, volume, mute, loop and selectTrack are refused with levelMatching
+   * — and what it holds on the desk cannot be switched from here (consoleHeld).
+   * Releasing the gate, a run taking it, or a hand moving what it holds at the desk
+   * ends it. A level change applies from the next time the track is chosen.
    */
   matchTrackLevel: { permission: 'admin' },
   /**
@@ -1067,7 +1091,7 @@ export type InvokeRequest =
   | { command: 'renameTrack'; args: { id: string; title: string } }
   | { command: 'deleteTrack'; args: { id: string } }
   | { command: 'selectTrack'; args: { id: string } }
-  | { command: 'matchTrackLevel'; args: { track: string; targetDb: number; span: LevelSpan } }
+  | { command: 'matchTrackLevel'; args: { track: string; meter: LevelMeter; targetDb: number; span: LevelSpan } }
   | { command: 'stopLevelMatch'; args: Record<string, never> }
   ;
 

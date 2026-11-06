@@ -1,5 +1,5 @@
 import { requireEnv, requireIntEnv } from '../utils/env.ts';
-import { auxin, bus, dcasOf, fader, mainSend, monoSend, mtx, muteGroupsOf, on, sendOff, sendOn } from '../console/desk.ts';
+import { auxin, bus, dcasOf, fader, mainSend, mainSt, monoSend, mtx, muteGroupsOf, off, on, sendOff, sendOn } from '../console/desk.ts';
 import type { DeskChange } from '../console/desk.ts';
 
 /** The music player's input, a linked pair, and AuxMix, the bus the band hears on their P16s. */
@@ -91,10 +91,29 @@ export const CONSOLE_CONFIG = {
     ] satisfies DeskChange[],
   },
 
-  METER: {
-    REQUEST: "/meters/0",
-    // Note(yoochan.kim): aux in 5/6; /meters/0 is 32 channels, then the 8 aux ins. Not yet checked on the desk.
-    CHANNELS: [36, 37],
+  /** Measuring the music player's output: every way out shut, its strip open to its meter, put back in reverse. */
+  MEASURE_OUTPUT: {
+    // Note(yoochan.kim): off whatever they were, the room first, so nobody hears a measurement, the band included.
+    BLOCK: [
+      ...MUSIC_PLAYER.flatMap((strip) => [mainSend(strip, false), monoSend(strip, false)]),
+      ...MUSIC_PLAYER.flatMap((strip) => upTo(16).map((n) => sendOff(strip, bus(n)))),
+    ] satisfies DeskChange[],
+    // Note(yoochan.kim): on, at 0 dB and in no group, so the meter reads the track wherever the strip was left.
+    OPEN: [
+      ...MUSIC_PLAYER.flatMap((strip) => [muteGroupsOf(strip, []), dcasOf(strip, []), on(strip)]),
+      ...MUSIC_PLAYER.map((strip) => fader(strip, 0)),
+    ] satisfies DeskChange[],
+  },
+
+  /** Measuring the main with the room spared: the main switched off while it runs, put back after. */
+  MEASURE_MAIN_MUTED: [off(mainSt)] satisfies DeskChange[],
+
+  // Note(yoochan.kim): read on the desk: a strip's pre-fade meter moves while it is muted, its post-fade one does not.
+  METERS: {
+    // Note(yoochan.kim): /meters/0 is 32 channels, then the 8 aux ins; 36 and 37 are aux in 5 and 6, pre-fade.
+    OUTPUT: { REQUEST: "/meters/0", ARGS: [], CHANNELS: [36, 37], GAIN: null },
+    // Note(yoochan.kim): /meters/6 70 is the main LR strip, pre-fade first; plus the main fader, it is the main meter.
+    MAIN: { REQUEST: "/meters/6", ARGS: [70], CHANNELS: [0], GAIN: "/main/st/mix/fader" },
     // Note(yoochan.kim): a request brings frames for 10s, so it is renewed before that runs out.
     RENEW_MS: 5000
   }

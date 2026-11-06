@@ -1,5 +1,5 @@
 import { LevelFailure, RejectReason } from '../protocol.ts';
-import type { DeckSource, LevelMatch, StatePatch } from '../protocol.ts';
+import type { DeckSource, LevelMatch, LevelMeter, StatePatch } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
@@ -8,7 +8,7 @@ import type Notifier from '../notify/Notifier.ts';
 import type MixerConsole from '../console/MixerConsole.ts';
 import type FlowRunner from '../flow/FlowRunner.ts';
 import { DeskHeldError, DeskRestoreError } from '../console/DeskHolds.ts';
-import { off } from '../console/desk.ts';
+import type { DeskChange } from '../console/desk.ts';
 import { LEVEL_CONFIG } from '../constants/levelConfig.ts';
 import type { LevelTiming } from '../constants/levelConfig.ts';
 import { MeterAverage, volumeFor } from './meterAverage.ts';
@@ -31,6 +31,7 @@ class Ended extends Error {
 
 interface Run {
   readonly track: LibraryEntry;
+  readonly meter: LevelMeter;
   readonly targetDb: number;
   readonly totalSec: number;
   /** Played to its end, rather than for a stretch of it */
@@ -46,6 +47,14 @@ interface DeckSnapshot {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The meter a measurement was asked for, or null for one that is not a LevelMeter. */
+function meterOf(value: unknown): LevelMeter | null {
+  const meter = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+  if (meter.kind === 'output') return { kind: 'output' };
+  if (meter.kind === 'main' && typeof meter.mute === 'boolean') return { kind: 'main', mute: meter.mute };
+  return null;
+}
 const oneDecimal = (value: number): number => Math.round(value * 10) / 10;
 
 /** Note(yoochan.kim): order is the safety: input off before play, meters before play, stopped before input back. */
@@ -60,6 +69,8 @@ class LevelMatcher {
     private readonly notifier: Notifier,
     private readonly mixer: MixerConsole,
     private readonly flowRunner: Pick<FlowRunner, 'ownsDeck'>,
+    /** The desk while each kind of measurement runs, in the order to set it. */
+    private readonly desks: { readonly output: readonly DeskChange[]; readonly mainMuted: readonly DeskChange[] },
     private readonly timing: LevelTiming,
   ) {}
 
@@ -73,8 +84,10 @@ class LevelMatcher {
   }
 
   start(args: unknown): Outcome {
-    const { track: id, targetDb, span } = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>;
+    const { track: id, meter: asked, targetDb, span } = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>;
     if (typeof id !== 'string') return { ok: false, reason: RejectReason.INVALID_VALUE };
+    const meter = meterOf(asked);
+    if (!meter) return { ok: false, reason: RejectReason.INVALID_VALUE };
     const { MIN, MAX } = LEVEL_CONFIG.TARGET_DB;
     if (typeof targetDb !== 'number' || !Number.isFinite(targetDb) || targetDb < MIN || targetDb > MAX) {
       return { ok: false, reason: RejectReason.INVALID_VALUE };
@@ -92,10 +105,11 @@ class LevelMatcher {
     const length = this.lengthOf(span, track.durationSec);
     if (!length) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    const run: Run = { track, targetDb, ...length, why: null };
+    const run: Run = { track, meter, targetDb, ...length, why: null };
     this.run = run;
     log.info('level', null, 'Level measurement accepted', {
       track: track.id,
+      meter: meter.kind === 'main' ? `main, ${meter.mute ? 'muted' : 'heard'}` : 'output',
       targetDb,
       totalSec: length.totalSec,
       volume: track.volume,
@@ -129,8 +143,9 @@ class LevelMatcher {
     let ended: LevelFailure | null = null;
 
     try {
-      // Note(yoochan.kim): input off and read back before anything plays, so the room never hears a measurement.
-      await this.mixer.holding([off(LEVEL_CONFIG.STRIP)], async (desk) => {
+      // Note(yoochan.kim): what the meter asks of the desk is set and read back before anything plays.
+      const changes = run.meter.kind === 'output' ? this.desks.output : run.meter.mute ? this.desks.mainMuted : [];
+      await this.mixer.holding(changes, async (desk) => {
         desk.onDeskChange(() => {
           run.why ??= LevelFailure.DESK_MOVED;
         });
@@ -142,7 +157,7 @@ class LevelMatcher {
       } else if (error instanceof DeskHeldError) {
         ended = LevelFailure.DESK_HELD;
       } else if (error instanceof DeskRestoreError) {
-        // Note(yoochan.kim): the answer stands; DeskHolds keeps retrying the restore, the input showing off meanwhile.
+        // Note(yoochan.kim): the answer stands; DeskHolds keeps retrying the restore, the console showing the desk.
         log.error('level', null, 'Measured, but the desk is not put back yet', { track: run.track.id });
       } else {
         log.error('level', null, 'The desk could not be set aside', { track: run.track.id, error: errorMessage(error) });
@@ -156,13 +171,13 @@ class LevelMatcher {
     if (ended !== null || averageDb === null) {
       const why = ended ?? LevelFailure.NO_SIGNAL;
       log.warn('level', null, 'Level measurement ended without an answer', { track: run.track.id, why });
-      this.publish({ phase: 'failed', track: run.track.id, why });
+      this.publish({ phase: 'failed', track: run.track.id, meter: run.meter, why });
       return;
     }
 
     const needed = volumeFor(volumeBefore, averageDb, run.targetDb);
     const volumeAfter = Math.round(needed);
-    const result = { track: run.track.id, targetDb: run.targetDb, averageDb: oneDecimal(averageDb), volumeBefore };
+    const result = { track: run.track.id, meter: run.meter, targetDb: run.targetDb, averageDb: oneDecimal(averageDb), volumeBefore };
     if (volumeAfter < LEVEL_CONFIG.VOLUME.MIN || volumeAfter > LEVEL_CONFIG.VOLUME.MAX) {
       log.info('level', null, 'Measured; the target is out of reach', { ...result, volumeNeeded: oneDecimal(needed) });
       this.publish({ phase: 'outOfReach', ...result, volumeNeeded: oneDecimal(needed) });
@@ -178,7 +193,7 @@ class LevelMatcher {
     const meter = new MeterAverage();
     let lastFrameAt = 0;
     let listening = false;
-    const stopMeters = this.mixer.watchMeters((levels) => {
+    const stopMeters = this.mixer.watchMeters(run.meter.kind, (levels) => {
       lastFrameAt = Date.now();
       if (listening) meter.add(levels, lastFrameAt);
     });
@@ -192,6 +207,9 @@ class LevelMatcher {
         await delay(this.timing.TICK_MS);
       }
       this.check(run);
+      const gainDb = await this.mixer.meterGainDb(run.meter.kind).catch(() => {
+        throw new Ended(LevelFailure.DESK_SILENT);
+      });
 
       const found: DeckSnapshot = { deck: this.player.getDeck(), loop: this.player.getLoop() };
       try {
@@ -203,7 +221,7 @@ class LevelMatcher {
           playback: this.player.getState(),
           volume: this.player.getVolume(),
         });
-        await this.listen(run, meter, () => lastFrameAt);
+        await this.listen(run, meter, gainDb, () => lastFrameAt);
       } catch (error) {
         if (error instanceof Ended) throw error;
         log.error('level', null, 'The deck could not play the track', { track: run.track.id, error: errorMessage(error) });
@@ -212,14 +230,15 @@ class LevelMatcher {
         listening = false;
         await this.giveBack(found);
       }
-      return meter.averageDb();
+      const average = meter.averageDb();
+      return average === null ? null : average + gainDb;
     } finally {
       stopMeters();
     }
   }
 
   /** Waits out the measurement, telling every screen how it goes. Throws Ended when something ends it early. */
-  private async listen(run: Run, meter: MeterAverage, lastFrameAt: () => number): Promise<void> {
+  private async listen(run: Run, meter: MeterAverage, gainDb: number, lastFrameAt: () => number): Promise<void> {
     const startedAt = Date.now();
     let toldAt = startedAt;
     for (;;) {
@@ -236,7 +255,8 @@ class LevelMatcher {
 
       if (now - toldAt >= this.timing.PROGRESS_INTERVAL_MS) {
         toldAt = now;
-        const levelDb = meter.recentDb(this.timing.RECENT_SEC) ?? SILENCE_DB;
+        const recent = meter.recentDb(this.timing.RECENT_SEC);
+        const levelDb = recent === null ? SILENCE_DB : recent + gainDb;
         this.publish(this.progress(run, Math.floor(elapsedSec), Math.max(SILENCE_DB, oneDecimal(levelDb))));
       }
     }
@@ -285,7 +305,7 @@ class LevelMatcher {
   }
 
   private progress(run: Run, elapsedSec: number, levelDb: number): LevelMatch {
-    return { phase: 'measuring', track: run.track.id, targetDb: run.targetDb, elapsedSec, totalSec: run.totalSec, levelDb };
+    return { phase: 'measuring', track: run.track.id, meter: run.meter, targetDb: run.targetDb, elapsedSec, totalSec: run.totalSec, levelDb };
   }
 
   private publish(status: LevelMatch, alongside: StatePatch = {}): void {
