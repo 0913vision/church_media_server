@@ -27,7 +27,7 @@ const { int, float, deskAddress } = await import('../../server/console/desk.ts')
 const { MeterAverage, volumeFor } = await import('../../server/level/meterAverage.ts');
 const { CONSOLE_CONFIG } = await import('../../server/constants/consoleConfig.ts');
 const { faderFromDb } = await import('../../server/console/faderLevel.ts');
-const MEASURE = [...CONSOLE_CONFIG.MEASURE_OUTPUT.BLOCK, ...CONSOLE_CONFIG.MEASURE_OUTPUT.OPEN];
+const MEASURE = CONSOLE_CONFIG.MEASURE_OUTPUT;
 const OUTPUT = { kind: 'output' } as const;
 const MAIN = '/main/st/mix/on';
 
@@ -115,7 +115,7 @@ class MeterDesk implements ConsoleDevice {
 
   watchMeters(kind: 'output' | 'main', listener: (levels: readonly number[]) => void): () => void {
     this.watched.push(kind);
-    // Note(yoochan.kim): the main's pre-fade meter has the track while the music player is sent to it, muted or not.
+    // Note(yoochan.kim): both are pre-fade, so no mute silences them; the main has the track while it is sent there.
     const frame = (): void => {
       const level = kind === 'main' && this.values.get('/auxin/05/mix/st')?.value !== 1 ? 0 : this.mpv.meter();
       listener([level, level]);
@@ -225,7 +225,7 @@ describe('Averaging a meter', () => {
 });
 
 describe('Measuring a track on the desk', () => {
-  test('plays it with every way out of the music player shut and its strip open, then moves its level onto the target', async () => {
+  test('plays it with every way out of the music player shut and its strip muted, then moves its level onto the target', async () => {
     const { events, patches, tracks, player, desk, holds, matcher, finished } = rig();
     const touched = [...new Set(MEASURE.map((change) => change.address))];
     const read = async (): Promise<Record<string, number>> =>
@@ -245,13 +245,15 @@ describe('Measuring a track on the desk', () => {
       assert.equal(whilePlaying[`${strip}/mix/st`], 0, `${strip} off the room`);
       assert.equal(whilePlaying[`${strip}/mix/mono`], 0, `${strip} off the mono`);
       for (let n = 1; n <= 16; n += 1) assert.equal(whilePlaying[`${strip}/mix/${two(n)}/on`], 0, `${strip} off bus ${n}, AuxMix included`);
-      assert.equal(whilePlaying[`${strip}/mix/on`], 1, `${strip} on, so its meter reads the track`);
-      assert.equal(whilePlaying[`${strip}/grp/mute`], 0, `${strip} in no mute group`);
-      assert.equal(whilePlaying[`${strip}/grp/dca`], 0, `${strip} in no DCA`);
+      assert.equal(whilePlaying[`${strip}/mix/on`], 0, `${strip} muted, its meter read before the mute`);
     }
+    const sent = events.filter((event) => event.startsWith('desk '));
+    assert.ok(!sent.some((event) => /\/(grp|mix\/fader)/.test(event)), 'its groups, DCA and fader left alone');
     assert.deepEqual(await read(), before, 'the desk as it was, the music player live to the room again');
     const load = events.indexOf('deck load /audio/hymn.mp3');
-    assert.ok(events.findIndex((event) => event.startsWith('desk /auxin/06/mix/fader=')) < load, 'all of it set before the track loads');
+    const muted = events.indexOf('desk /auxin/06/mix/on=0');
+    assert.ok(events.findIndex((event) => event.startsWith('desk /auxin/05/mix/16/on=')) < muted, 'every send shut before the strip is muted');
+    assert.ok(muted !== -1 && muted < load, 'all of it set before the track loads');
     const stopped = events.findIndex((event, at) => at > load && event === 'deck pause=yes');
     const putBack = events.findIndex((event, at) => at > load && event.startsWith('desk '));
     assert.ok(stopped !== -1 && stopped < putBack, 'the track stopped before any of the desk went back');

@@ -91,19 +91,14 @@ export const CONSOLE_CONFIG = {
     ] satisfies DeskChange[],
   },
 
-  /** Measuring the music player's output: every way out shut, its strip open to its meter, put back in reverse. */
-  MEASURE_OUTPUT: {
-    // Note(yoochan.kim): off whatever they were, the room first, so nobody hears a measurement, the band included.
-    BLOCK: [
-      ...MUSIC_PLAYER.flatMap((strip) => [mainSend(strip, false), monoSend(strip, false)]),
-      ...MUSIC_PLAYER.flatMap((strip) => upTo(16).map((n) => sendOff(strip, bus(n)))),
-    ] satisfies DeskChange[],
-    // Note(yoochan.kim): on, at 0 dB and in no group, so the meter reads the track wherever the strip was left.
-    OPEN: [
-      ...MUSIC_PLAYER.flatMap((strip) => [muteGroupsOf(strip, []), dcasOf(strip, []), on(strip)]),
-      ...MUSIC_PLAYER.map((strip) => fader(strip, 0)),
-    ] satisfies DeskChange[],
-  },
+  /** Measuring the music player's output: every way out shut, then the strip muted too, put back in reverse. */
+  MEASURE_OUTPUT: [
+    // Note(yoochan.kim): every send off whatever its tap, the room first, since a bus may take it before the mute.
+    ...MUSIC_PLAYER.flatMap((strip) => [mainSend(strip, false), monoSend(strip, false)]),
+    ...MUSIC_PLAYER.flatMap((strip) => upTo(16).map((n) => sendOff(strip, bus(n)))),
+    // Note(yoochan.kim): the meter is read before the mute (read on the desk 2026-11-06), so the strip stays muted.
+    ...MUSIC_PLAYER.map((strip) => off(strip)),
+  ] satisfies DeskChange[],
 
   /** Measuring the main with the room spared: the main switched off while it runs, put back after. */
   MEASURE_MAIN_MUTED: [off(mainSt)] satisfies DeskChange[],

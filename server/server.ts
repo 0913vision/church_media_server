@@ -151,7 +151,7 @@ class MediaServer {
     const levelMatcher = new LevelMatcher(
       player, trackLibrary, lockCoordinator, notifier, mixerConsole, flowRunner,
       {
-        output: [...CONSOLE_CONFIG.MEASURE_OUTPUT.BLOCK, ...CONSOLE_CONFIG.MEASURE_OUTPUT.OPEN],
+        output: CONSOLE_CONFIG.MEASURE_OUTPUT,
         mainMuted: CONSOLE_CONFIG.MEASURE_MAIN_MUTED,
       },
       LEVEL_CONFIG.TIMING,

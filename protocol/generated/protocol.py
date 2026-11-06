@@ -386,9 +386,10 @@ LevelSpan = LevelSpanWhole | LevelSpanFirst
 class LevelMeterOutput(TypedDict):
     """
     The music player's own output: every way out of it is shut on the desk and
-    read back — the main, the mono and all sixteen buses, AuxMix included —
-    its strip left on at 0 dB in no group, and its input meter read. Nobody
-    hears it, the band included.
+    read back — the main, the mono and all sixteen buses, AuxMix included,
+    whatever each send's tap — then its strip muted too, and its input meter
+    read, which the desk takes before the mute and the fader. Nobody hears it,
+    the band included.
     """
     kind: Literal["output"]
 
