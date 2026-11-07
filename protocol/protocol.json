@@ -65,6 +65,7 @@
         "DECK_PLAYING": "deckPlaying",
         "DECK_MUTED": "deckMuted",
         "NOT_MEASURING": "notMeasuring",
+        "OUT_OF_REACH": "outOfReach",
         "NOTICE_TRACK": "noticeTrack",
         "NOTICE_MISSING": "noticeMissing",
         "COUNTDOWN_OUTSIDE_LOCK": "countdownOutsideLock",
@@ -85,6 +86,13 @@
         "DESK_SILENT": "deskSilent",
         "DESK_HELD": "deskHeld",
         "NO_SIGNAL": "noSignal"
+      }
+    },
+    "LevelStage": {
+      "description": "Where a running level measurement has got to",
+      "values": {
+        "SETTING_DESK": "settingDesk",
+        "PLAYING": "playing"
       }
     }
   },
@@ -317,12 +325,36 @@
         }
       }
     },
+    "LevelAnswer": {
+      "description": "What a measurement has come to so far: the average the meter read, and the level that average says the track needs.",
+      "discriminator": "kind",
+      "variants": {
+        "none": {
+          "description": "Nothing loud enough to count has been heard yet",
+          "fields": {}
+        },
+        "reachable": {
+          "description": "The target needs a level the deck has, 1 to 100",
+          "fields": {
+            "averageDb": { "type": "number", "description": "The average the meter read at volumeBefore, one decimal" },
+            "volumeAfter": { "type": "number", "description": "The level that lands the average on the target" }
+          }
+        },
+        "outOfReach": {
+          "description": "The target needs a level the deck does not have — over 100, or under 1 — so it cannot be applied",
+          "fields": {
+            "averageDb": { "type": "number", "description": "The average the meter read at volumeBefore, one decimal" },
+            "volumeNeeded": { "type": "number", "description": "The level the target would take, one decimal" }
+          }
+        }
+      }
+    },
     "LevelMatch": {
-      "description": "What the server's one level measurement is doing, or how the last one ended. A measurement plays a track to the desk, reads the meter it was given, and moves the track's level so its average lands on a target. It takes minutes, so it is state: every screen can say the deck is in use and why. What one ended with stays until the next starts; a restart forgets it.",
+      "description": "What the server's one level measurement is doing, or what the last one came to. A measurement plays a track to the desk from its start and reads the meter it was given; what that average says the track's level should be is applied only when a person applies it. It takes minutes, so it is state: every screen can say the deck is in use and why. What one came to stays until the next starts or it is set aside; a restart forgets it.",
       "discriminator": "phase",
       "variants": {
         "idle": {
-          "description": "Nothing has been measured since the server started",
+          "description": "No measurement is running, paused or waiting to be applied",
           "fields": {}
         },
         "measuring": {
@@ -331,38 +363,59 @@
             "track": { "type": "string", "description": "Track id" },
             "meter": { "type": "LevelMeter", "description": "The meter being read" },
             "targetDb": { "type": "number", "description": "The average it was asked to land on, in dB under the desk's full scale" },
-            "elapsedSec": { "type": "number", "description": "How much has been played, whole seconds. Zero while the desk is being set aside." },
+            "stage": { "type": "LevelStage", "description": "Setting the desk, or playing the track" },
+            "elapsedSec": { "type": "number", "description": "How much has been played, whole seconds" },
             "totalSec": { "type": "number", "description": "How much will be played, in seconds" },
-            "levelDb": { "type": "number", "description": "What the meter has read over the last few seconds, in dB under full scale, one decimal. Silence reads -120." }
+            "levelDb": { "type": "number", "description": "What the meter has read over the last few seconds, in dB under full scale, one decimal. Silence reads -120." },
+            "averageDb": { "type": "number", "description": "The average so far, gated the way the answer will be, in dB under full scale, one decimal. Reads -120 until there is one." }
           }
         },
-        "done": {
-          "description": "Measured, and the track's level was moved. The new level is in tracks, in the same patch.",
+        "paused": {
+          "description": "Stopped part-way by stopLevelMatch. The track is stopped where it was, and the deck and the desk are still as the measurement set them: it can go on from here (resumeLevelMatch), be applied as it is (applyLevelMatch), or be set aside (cancelLevelMatch). Nothing has been changed yet.",
+          "fields": {
+            "track": { "type": "string", "description": "Track id" },
+            "meter": { "type": "LevelMeter", "description": "The meter being read" },
+            "targetDb": { "type": "number", "description": "The average it was asked to land on" },
+            "elapsedSec": { "type": "number", "description": "How much has been played, whole seconds" },
+            "totalSec": { "type": "number", "description": "How much the whole would play, in seconds" },
+            "volumeBefore": { "type": "number", "description": "The level it is being measured at, which the track still has" },
+            "answer": { "type": "LevelAnswer", "description": "What the part played so far comes to" }
+          }
+        },
+        "measured": {
+          "description": "Played to the end, and the deck and the desk are put back. Nothing has been changed yet: the answer is applied by applyLevelMatch or set aside by cancelLevelMatch.",
           "fields": {
             "track": { "type": "string", "description": "Track id" },
             "meter": { "type": "LevelMeter", "description": "The meter it was read on" },
             "targetDb": { "type": "number", "description": "The average it was asked to land on" },
+            "elapsedSec": { "type": "number", "description": "How much was played, whole seconds" },
+            "totalSec": { "type": "number", "description": "How much the whole would play, in seconds" },
+            "volumeBefore": { "type": "number", "description": "The level it was measured at, which the track still has" },
+            "answer": { "type": "LevelAnswer", "description": "What it came to; never none, since a measurement that heard nothing fails with noSignal" }
+          }
+        },
+        "done": {
+          "description": "Applied: the track's level was moved. The new level is in tracks, in the same patch. revertLevelMatch puts the old one back.",
+          "fields": {
+            "track": { "type": "string", "description": "Track id" },
+            "meter": { "type": "LevelMeter", "description": "The meter it was read on" },
+            "targetDb": { "type": "number", "description": "The average it was asked to land on" },
+            "elapsedSec": { "type": "number", "description": "How much was played, whole seconds" },
+            "totalSec": { "type": "number", "description": "How much the whole would play, in seconds" },
             "averageDb": { "type": "number", "description": "The average the meter read at the old level, one decimal" },
             "volumeBefore": { "type": "number", "description": "The level it was measured at" },
             "volumeAfter": { "type": "number", "description": "The level it now has" }
           }
         },
-        "outOfReach": {
-          "description": "Measured, but the target needs a level the deck does not have — over 100, or under 1. Nothing was changed.",
-          "fields": {
-            "track": { "type": "string", "description": "Track id" },
-            "meter": { "type": "LevelMeter", "description": "The meter it was read on" },
-            "targetDb": { "type": "number", "description": "The average it was asked to land on" },
-            "averageDb": { "type": "number", "description": "The average the meter read, one decimal" },
-            "volumeBefore": { "type": "number", "description": "The level it was measured at, and still has" },
-            "volumeNeeded": { "type": "number", "description": "The level the target would take, one decimal" }
-          }
-        },
         "failed": {
-          "description": "Ended without an answer. Nothing was changed.",
+          "description": "Ended without an answer. Nothing was changed, and the deck and the desk were put back.",
           "fields": {
             "track": { "type": "string", "description": "Track id" },
             "meter": { "type": "LevelMeter", "description": "The meter it was to be read on" },
+            "targetDb": { "type": "number", "description": "The average it was asked to land on" },
+            "elapsedSec": { "type": "number", "description": "How much had been played, whole seconds" },
+            "totalSec": { "type": "number", "description": "How much the whole would have played, in seconds" },
+            "volumeBefore": { "type": "number", "description": "The level it was being measured at, which the track still has" },
             "why": { "type": "LevelFailure" }
           }
         }
@@ -514,7 +567,7 @@
       "access": "ro"
     },
     "levelMatch": {
-      "description": "What the level measurement is doing, or how the last one ended. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — matchTrackLevel and stopLevelMatch move it.",
+      "description": "What the level measurement is doing, or what the last one came to. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — the level commands (matchTrackLevel, stopLevelMatch, resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it.",
       "type": "LevelMatch",
       "access": "ro"
     },
@@ -685,7 +738,7 @@
       }
     },
     "matchTrackLevel": {
-      "description": "Measure a track on the desk and move its level so the chosen meter averages the target. Everything about it — the track, the meter, whether the main is muted, the target and the span — is decided here, before it starts. Whatever the meter asks of the desk is set and read back before anything plays; the track then plays from its start at its own level while the meter is read, and the deck and the desk are put back after it has stopped — however it ends. The average leaves out silence and the passages well under the song's own level, so a quiet verse does not drag it down. The new level is the one written down for the track, as setTrackVolume would write it; a flow already saved keeps the levels it was written with. Answers as soon as it is accepted; how it goes is in levelMatch. Only for a person holding the gate with nothing playing: refused with adminUnlocked when the gate is open, flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted while output is muted (it would measure silence), levelMatching while another measurement runs, unknownTrack, and invalidValue for a target outside -60 to 0, a span or a meter that is not one. While it runs the deck is the measurement's — song, playback, volume, mute, loop and selectTrack are refused with levelMatching — and what it holds on the desk cannot be switched from here (consoleHeld). Releasing the gate, a run taking it, or a hand moving what it holds at the desk ends it. A level change applies from the next time the track is chosen.",
+      "description": "Measure a track on the desk: what level would make the chosen meter average the target. Everything about it — the track, the meter, whether the main is muted, the target and the span — is decided here, before it starts. Whatever the meter asks of the desk is set and read back before anything plays; the track then plays from its start at its own level while the meter is read, and the deck and the desk are put back after it has stopped — however it ends. The average leaves out silence and the passages well under the song's own level, so a quiet verse does not drag it down. Nothing is changed by measuring: levelMatch reads measured with the answer, and applyLevelMatch writes it down for the track as setTrackVolume would; a flow already saved keeps the levels it was written with. Answers as soon as it is accepted; how it goes is in levelMatch, and it replaces whatever the last measurement came to. Only for a person holding the gate with nothing playing: refused with adminUnlocked when the gate is open, flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted while output is muted (it would measure silence), levelMatching while another measurement runs or is paused, unknownTrack, and invalidValue for a target outside -60 to 0, a span or a meter that is not one. While it runs or is paused the deck is the measurement's — song, playback, volume, mute, loop and selectTrack are refused with levelMatching — and what it holds on the desk cannot be switched from here (consoleHeld). Releasing the gate, a run taking it, or a hand moving what it holds at the desk ends it. A level change applies from the next time the track is chosen.",
       "permission": "admin",
       "args": {
         "track": { "type": "string", "description": "Track id from the tracks attribute" },
@@ -695,7 +748,27 @@
       }
     },
     "stopLevelMatch": {
-      "description": "End the level measurement now: the track stops, the deck and the desk are put back, and no level changes. levelMatch reads failed, why stopped. Refused with notMeasuring when none is running.",
+      "description": "Stop the running measurement where it is: the track stops at once, without a fade, the deck and the desk stay as the measurement set them, and levelMatch reads paused with what the part played so far comes to. Refused with notMeasuring unless one is running.",
+      "permission": "admin",
+      "args": {}
+    },
+    "resumeLevelMatch": {
+      "description": "Go on with a paused measurement from where it stopped, its average carried on. Refused with notMeasuring unless one is paused.",
+      "permission": "admin",
+      "args": {}
+    },
+    "applyLevelMatch": {
+      "description": "Write down the level the measurement came to for its track, as setTrackVolume would. A paused one is ended first: the track stops for good and the deck and the desk are put back before the level is written. levelMatch reads done, in the same patch as tracks. Refused with notMeasuring unless one is paused or measured, outOfReach when its answer is, invalidValue when it has none yet, and unknownTrack when the track has gone.",
+      "permission": "admin",
+      "args": {}
+    },
+    "cancelLevelMatch": {
+      "description": "Set a paused or measured measurement aside with nothing changed: a paused one's track stops for good and the deck and the desk are put back. levelMatch reads idle. Refused with notMeasuring unless one is paused or measured.",
+      "permission": "admin",
+      "args": {}
+    },
+    "revertLevelMatch": {
+      "description": "Put back the level an applied measurement replaced. levelMatch reads measured again, so it can be applied once more. Refused with notMeasuring unless the last one was applied, and unknownTrack when the track has gone.",
       "permission": "admin",
       "args": {}
     }

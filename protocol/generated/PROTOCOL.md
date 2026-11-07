@@ -42,7 +42,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `loop` | `boolean` | 읽기/쓰기 | admin | Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Refused with levelMatching while a level measurement has the deck. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state. |
 | `tracks` | `Track[]` | 읽기 전용 | — | Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — addTrack, setTrackVolume, renameTrack and deleteTrack move it. |
 | `trackFetch` | `TrackFetch` | 읽기 전용 | — | Whether a track is being fetched from YouTube right now. Changes in the same patch as the tracks it produced, so a screen never sees the fetch end before the track appears. Read-only — addTrack moves it. |
-| `levelMatch` | `LevelMatch` | 읽기 전용 | — | What the level measurement is doing, or how the last one ended. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — matchTrackLevel and stopLevelMatch move it. |
+| `levelMatch` | `LevelMatch` | 읽기 전용 | — | What the level measurement is doing, or what the last one came to. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — the level commands (matchTrackLevel, stopLevelMatch, resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it. |
 | `deck` | `DeckSource` | 읽기 전용 | — | What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it. |
 | `unlockWhenDone` | `boolean` | 읽기/쓰기 | admin | Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens. |
 | `musicEndsAt` | `MusicEnd` | 읽기/쓰기 | admin | When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens. |
@@ -212,7 +212,7 @@ Put a library track on the deck, paused at its start, at its own level — the s
 
 권한: admin
 
-Measure a track on the desk and move its level so the chosen meter averages the target. Everything about it — the track, the meter, whether the main is muted, the target and the span — is decided here, before it starts. Whatever the meter asks of the desk is set and read back before anything plays; the track then plays from its start at its own level while the meter is read, and the deck and the desk are put back after it has stopped — however it ends. The average leaves out silence and the passages well under the song's own level, so a quiet verse does not drag it down. The new level is the one written down for the track, as setTrackVolume would write it; a flow already saved keeps the levels it was written with. Answers as soon as it is accepted; how it goes is in levelMatch. Only for a person holding the gate with nothing playing: refused with adminUnlocked when the gate is open, flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted while output is muted (it would measure silence), levelMatching while another measurement runs, unknownTrack, and invalidValue for a target outside -60 to 0, a span or a meter that is not one. While it runs the deck is the measurement's — song, playback, volume, mute, loop and selectTrack are refused with levelMatching — and what it holds on the desk cannot be switched from here (consoleHeld). Releasing the gate, a run taking it, or a hand moving what it holds at the desk ends it. A level change applies from the next time the track is chosen.
+Measure a track on the desk: what level would make the chosen meter average the target. Everything about it — the track, the meter, whether the main is muted, the target and the span — is decided here, before it starts. Whatever the meter asks of the desk is set and read back before anything plays; the track then plays from its start at its own level while the meter is read, and the deck and the desk are put back after it has stopped — however it ends. The average leaves out silence and the passages well under the song's own level, so a quiet verse does not drag it down. Nothing is changed by measuring: levelMatch reads measured with the answer, and applyLevelMatch writes it down for the track as setTrackVolume would; a flow already saved keeps the levels it was written with. Answers as soon as it is accepted; how it goes is in levelMatch, and it replaces whatever the last measurement came to. Only for a person holding the gate with nothing playing: refused with adminUnlocked when the gate is open, flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted while output is muted (it would measure silence), levelMatching while another measurement runs or is paused, unknownTrack, and invalidValue for a target outside -60 to 0, a span or a meter that is not one. While it runs or is paused the deck is the measurement's — song, playback, volume, mute, loop and selectTrack are refused with levelMatching — and what it holds on the desk cannot be switched from here (consoleHeld). Releasing the gate, a run taking it, or a hand moving what it holds at the desk ends it. A level change applies from the next time the track is chosen.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -225,7 +225,39 @@ Measure a track on the desk and move its level so the chosen meter averages the 
 
 권한: admin
 
-End the level measurement now: the track stops, the deck and the desk are put back, and no level changes. levelMatch reads failed, why stopped. Refused with notMeasuring when none is running.
+Stop the running measurement where it is: the track stops at once, without a fade, the deck and the desk stay as the measurement set them, and levelMatch reads paused with what the part played so far comes to. Refused with notMeasuring unless one is running.
+
+_필드 없음._
+
+### `resumeLevelMatch`
+
+권한: admin
+
+Go on with a paused measurement from where it stopped, its average carried on. Refused with notMeasuring unless one is paused.
+
+_필드 없음._
+
+### `applyLevelMatch`
+
+권한: admin
+
+Write down the level the measurement came to for its track, as setTrackVolume would. A paused one is ended first: the track stops for good and the deck and the desk are put back before the level is written. levelMatch reads done, in the same patch as tracks. Refused with notMeasuring unless one is paused or measured, outOfReach when its answer is, invalidValue when it has none yet, and unknownTrack when the track has gone.
+
+_필드 없음._
+
+### `cancelLevelMatch`
+
+권한: admin
+
+Set a paused or measured measurement aside with nothing changed: a paused one's track stops for good and the deck and the desk are put back. levelMatch reads idle. Refused with notMeasuring unless one is paused or measured.
+
+_필드 없음._
+
+### `revertLevelMatch`
+
+권한: admin
+
+Put back the level an applied measurement replaced. levelMatch reads measured again, so it can be applied once more. Refused with notMeasuring unless the last one was applied, and unknownTrack when the track has gone.
 
 _필드 없음._
 
@@ -259,13 +291,19 @@ Who may write an attribute or invoke a command
 
 Why a write or invoke was refused. Sent only to the client that issued it, so it can explain itself instead of appearing to do nothing.
 
-`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"titleTaken"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"consoleHeld"` · `"levelMatching"` · `"deckPlaying"` · `"deckMuted"` · `"notMeasuring"` · `"noticeTrack"` · `"noticeMissing"` · `"countdownOutsideLock"` · `"countdownOverlapsMusic"` · `"noticesOverlap"` · `"countdownUnderway"` · `"protocolMismatch"`
+`"unknownTarget"` · `"notWritable"` · `"invalidValue"` · `"invalidPassword"` · `"notAdmin"` · `"adminLocked"` · `"adminUnlocked"` · `"deviceBusy"` · `"unknownTrack"` · `"unknownFlow"` · `"flowActive"` · `"noFlow"` · `"windowPassed"` · `"musicOutsideLock"` · `"deckSong"` · `"trackInUse"` · `"unknownUpload"` · `"titleTaken"` · `"tooLarge"` · `"fetchFailed"` · `"fetchBusy"` · `"consoleHeld"` · `"levelMatching"` · `"deckPlaying"` · `"deckMuted"` · `"notMeasuring"` · `"outOfReach"` · `"noticeTrack"` · `"noticeMissing"` · `"countdownOutsideLock"` · `"countdownOverlapsMusic"` · `"noticesOverlap"` · `"countdownUnderway"` · `"protocolMismatch"`
 
 ### LevelFailure
 
 Why a level measurement ended without an answer. Nothing about the track was changed, and the deck and the desk were put back.
 
 `"stopped"` · `"gateReleased"` · `"deckTaken"` · `"deckFailed"` · `"deskMoved"` · `"deskSilent"` · `"deskHeld"` · `"noSignal"`
+
+### LevelStage
+
+Where a running level measurement has got to
+
+`"settingDesk"` · `"playing"`
 
 ## 객체
 

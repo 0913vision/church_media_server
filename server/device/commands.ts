@@ -348,6 +348,30 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       return deps.levelMatcher.stop();
     },
   },
+
+  resumeLevelMatch: {
+    async run(_args, deps) {
+      return deps.levelMatcher.resume();
+    },
+  },
+
+  applyLevelMatch: {
+    async run(_args, deps) {
+      return deps.levelMatcher.apply();
+    },
+  },
+
+  cancelLevelMatch: {
+    async run(_args, deps) {
+      return deps.levelMatcher.cancel();
+    },
+  },
+
+  revertLevelMatch: {
+    async run(_args, deps) {
+      return deps.levelMatcher.revert();
+    },
+  },
 };
 
 export const IMPLEMENTED_COMMANDS: readonly string[] = Object.keys(COMMAND_IMPL);

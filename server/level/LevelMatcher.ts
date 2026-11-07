@@ -1,5 +1,5 @@
-import { LevelFailure, RejectReason } from '../protocol.ts';
-import type { DeckSource, LevelMatch, LevelMeter, StatePatch } from '../protocol.ts';
+import { LevelFailure, LevelStage, RejectReason } from '../protocol.ts';
+import type { DeckSource, LevelAnswer, LevelMatch, LevelMeter, StatePatch } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
 import type { LibraryEntry } from '../tracks/TrackLibrary.ts';
@@ -29,6 +29,9 @@ class Ended extends Error {
   }
 }
 
+/** What a person asked of a running measurement, acted on at its next tick. */
+type Ask = 'pause' | 'resume' | 'apply' | 'cancel';
+
 interface Run {
   readonly track: LibraryEntry;
   readonly meter: LevelMeter;
@@ -36,8 +39,20 @@ interface Run {
   readonly totalSec: number;
   /** Played to its end, rather than for a stretch of it */
   readonly whole: boolean;
-  /** Set from outside — a stop, a hand on the desk — and acted on at the next tick */
+  readonly volumeBefore: number;
+  /** Set from outside — a hand on the desk, the server stopping — and acted on at the next tick */
   why: LevelFailure | null;
+  ask: Ask | null;
+  /** Stopped where it was, the deck and the desk still the measurement's */
+  paused: boolean;
+  /** How far it has played, whole seconds */
+  elapsedSec: number;
+}
+
+/** How a measurement's body ended: played to its end, or applied or set aside while paused. */
+interface Finish {
+  readonly how: 'complete' | 'apply' | 'cancel';
+  readonly averageDb: number | null;
 }
 
 /** What was on the deck when a measurement took it. */
@@ -78,9 +93,14 @@ class LevelMatcher {
     return this.status;
   }
 
-  /** From acceptance until the deck and the desk are back, the deck is not the panel's. */
+  /** From acceptance until the deck and the desk are back, paused or not, the deck is not the panel's. */
   ownsDeck(): boolean {
     return this.run !== null;
+  }
+
+  /** A track is sounding for it; a paused one is not, so nothing waits on it. */
+  isPlaying(): boolean {
+    return this.run !== null && !this.run.paused;
   }
 
   start(args: unknown): Outcome {
@@ -105,7 +125,7 @@ class LevelMatcher {
     const length = this.lengthOf(span, track.durationSec);
     if (!length) return { ok: false, reason: RejectReason.INVALID_VALUE };
 
-    const run: Run = { track, meter, targetDb, ...length, why: null };
+    const run: Run = { track, meter, targetDb, ...length, volumeBefore: track.volume, why: null, ask: null, paused: false, elapsedSec: 0 };
     this.run = run;
     log.info('level', null, 'Level measurement accepted', {
       track: track.id,
@@ -114,14 +134,68 @@ class LevelMatcher {
       totalSec: length.totalSec,
       volume: track.volume,
     });
-    this.publish(this.progress(run, 0, SILENCE_DB));
+    this.publish(this.progress(run, LevelStage.SETTING_DESK, SILENCE_DB, SILENCE_DB));
     void this.go(run);
     return { ok: true };
   }
 
   stop(): Outcome {
-    if (!this.run) return { ok: false, reason: RejectReason.NOT_MEASURING };
-    this.run.why ??= LevelFailure.STOPPED;
+    const run = this.run;
+    if (!run || run.paused || run.ask !== null) return { ok: false, reason: RejectReason.NOT_MEASURING };
+    run.ask = 'pause';
+    return { ok: true };
+  }
+
+  resume(): Outcome {
+    const run = this.run;
+    if (!run || !run.paused || run.ask !== null) return { ok: false, reason: RejectReason.NOT_MEASURING };
+    run.ask = 'resume';
+    return { ok: true };
+  }
+
+  apply(): Outcome {
+    const status = this.status;
+    const run = this.run;
+    if (run && (!run.paused || run.ask !== null)) return { ok: false, reason: RejectReason.NOT_MEASURING };
+    if (status.phase !== 'paused' && status.phase !== 'measured') return { ok: false, reason: RejectReason.NOT_MEASURING };
+    if (status.answer.kind === 'none') return { ok: false, reason: RejectReason.INVALID_VALUE };
+    if (status.answer.kind === 'outOfReach') return { ok: false, reason: RejectReason.OUT_OF_REACH };
+    if (!this.trackLibrary.get(status.track)) return { ok: false, reason: RejectReason.UNKNOWN_TRACK };
+
+    // Note(yoochan.kim): a paused one is ended first; the level is written once the deck and the desk are back.
+    if (run) {
+      run.ask = 'apply';
+      return { ok: true };
+    }
+    this.applyAnswer(status, status.answer);
+    return { ok: true };
+  }
+
+  cancel(): Outcome {
+    const run = this.run;
+    if (run) {
+      if (!run.paused || run.ask !== null) return { ok: false, reason: RejectReason.NOT_MEASURING };
+      run.ask = 'cancel';
+      return { ok: true };
+    }
+    if (this.status.phase !== 'measured') return { ok: false, reason: RejectReason.NOT_MEASURING };
+    log.info('level', null, 'Level measurement set aside', { track: this.status.track });
+    this.publish({ phase: 'idle' });
+    return { ok: true };
+  }
+
+  revert(): Outcome {
+    const status = this.status;
+    if (this.run || status.phase !== 'done') return { ok: false, reason: RejectReason.NOT_MEASURING };
+    if (!this.trackLibrary.get(status.track)) return { ok: false, reason: RejectReason.UNKNOWN_TRACK };
+
+    this.trackLibrary.setVolume(status.track, status.volumeBefore);
+    log.info('level', null, 'Level put back', { track: status.track, volume: status.volumeBefore, from: status.volumeAfter });
+    const { track, meter, targetDb, elapsedSec, totalSec, volumeBefore, averageDb, volumeAfter } = status;
+    this.publish(
+      { phase: 'measured', track, meter, targetDb, elapsedSec, totalSec, volumeBefore, answer: { kind: 'reachable', averageDb, volumeAfter } },
+      { tracks: this.trackLibrary.list() },
+    );
     return { ok: true };
   }
 
@@ -138,8 +212,7 @@ class LevelMatcher {
   }
 
   private async go(run: Run): Promise<void> {
-    const volumeBefore = run.track.volume;
-    const measured: { averageDb: number | null } = { averageDb: null };
+    const body: { finish: Finish | null } = { finish: null };
     let ended: LevelFailure | null = null;
 
     try {
@@ -149,7 +222,7 @@ class LevelMatcher {
         desk.onDeskChange(() => {
           run.why ??= LevelFailure.DESK_MOVED;
         });
-        measured.averageDb = await this.measure(run);
+        body.finish = await this.measure(run);
       });
     } catch (error) {
       if (error instanceof Ended) {
@@ -166,30 +239,48 @@ class LevelMatcher {
     }
 
     this.run = null;
-    const averageDb = measured.averageDb;
-    if (ended === null && averageDb === null) ended = LevelFailure.NO_SIGNAL;
-    if (ended !== null || averageDb === null) {
-      const why = ended ?? LevelFailure.NO_SIGNAL;
-      log.warn('level', null, 'Level measurement ended without an answer', { track: run.track.id, why });
-      this.publish({ phase: 'failed', track: run.track.id, meter: run.meter, why });
+    const finish = body.finish;
+    if (ended === null && finish === null) ended = LevelFailure.DESK_SILENT;
+    if (ended === null && finish?.how === 'complete' && finish.averageDb === null) ended = LevelFailure.NO_SIGNAL;
+    if (ended !== null || finish === null) {
+      const why = ended ?? LevelFailure.DESK_SILENT;
+      log.warn('level', null, 'Level measurement ended without an answer', { track: run.track.id, why, at: run.elapsedSec });
+      this.publish({
+        phase: 'failed', track: run.track.id, meter: run.meter, targetDb: run.targetDb,
+        elapsedSec: run.elapsedSec, totalSec: run.totalSec, volumeBefore: run.volumeBefore, why,
+      });
       return;
     }
 
-    const needed = volumeFor(volumeBefore, averageDb, run.targetDb);
-    const volumeAfter = Math.round(needed);
-    const result = { track: run.track.id, meter: run.meter, targetDb: run.targetDb, averageDb: oneDecimal(averageDb), volumeBefore };
-    if (volumeAfter < LEVEL_CONFIG.VOLUME.MIN || volumeAfter > LEVEL_CONFIG.VOLUME.MAX) {
-      log.info('level', null, 'Measured; the target is out of reach', { ...result, volumeNeeded: oneDecimal(needed) });
-      this.publish({ phase: 'outOfReach', ...result, volumeNeeded: oneDecimal(needed) });
+    if (finish.how === 'cancel') {
+      log.info('level', null, 'Level measurement set aside', { track: run.track.id, at: run.elapsedSec });
+      this.publish({ phase: 'idle' });
       return;
     }
-    this.trackLibrary.setVolume(run.track.id, volumeAfter);
-    log.info('level', null, 'Measured; level moved', { ...result, volumeAfter });
-    this.publish({ phase: 'done', ...result, volumeAfter }, { tracks: this.trackLibrary.list() });
+    const measured = { ...this.resultOf(run), answer: this.answerOf(run, finish.averageDb) } as const;
+    if (finish.how === 'apply' && measured.answer.kind === 'reachable') {
+      this.applyAnswer(measured, measured.answer);
+      return;
+    }
+    log.info('level', null, 'Measured; waiting to be applied', { track: run.track.id, at: run.elapsedSec, answer: measured.answer });
+    this.publish({ phase: 'measured', ...measured });
   }
 
-  /** Plays the track at the desk and reads its meter. Runs inside the hold, and stops the track before leaving it. */
-  private async measure(run: Run): Promise<number | null> {
+  private applyAnswer(
+    result: Omit<Extract<LevelMatch, { phase: 'measured' }>, 'phase' | 'answer'>,
+    answer: Extract<LevelAnswer, { kind: 'reachable' }>,
+  ): void {
+    this.trackLibrary.setVolume(result.track, answer.volumeAfter);
+    log.info('level', null, 'Measured level applied', { track: result.track, averageDb: answer.averageDb, from: result.volumeBefore, volume: answer.volumeAfter });
+    const { track, meter, targetDb, elapsedSec, totalSec, volumeBefore } = result;
+    this.publish(
+      { phase: 'done', track, meter, targetDb, elapsedSec, totalSec, averageDb: answer.averageDb, volumeBefore, volumeAfter: answer.volumeAfter },
+      { tracks: this.trackLibrary.list() },
+    );
+  }
+
+  /** Plays the track at the desk and reads its meter until it ends or a person ends it. Runs inside the hold, and stops the track before leaving it. */
+  private async measure(run: Run): Promise<Finish> {
     const meter = new MeterAverage();
     let lastFrameAt = 0;
     let listening = false;
@@ -210,18 +301,89 @@ class LevelMatcher {
       const gainDb = await this.mixer.meterGainDb(run.meter.kind).catch(() => {
         throw new Ended(LevelFailure.DESK_SILENT);
       });
+      const averageDb = (): number | null => {
+        const average = meter.averageDb();
+        return average === null ? null : average + gainDb;
+      };
 
       const found: DeckSnapshot = { deck: this.player.getDeck(), loop: this.player.getLoop() };
-      try {
-        const played = await this.withAudio(() => this.player.playTrackAt(run.track, 0, run.track.volume, false));
-        if (!played) throw new Ended(LevelFailure.DECK_FAILED);
+      let started = false;
+      let playedMs = 0;
+      let playingSince: number | null = null;
+      const elapsedSec = (now: number): number => (playedMs + (playingSince === null ? 0 : now - playingSince)) / 1000;
+
+      // Note(yoochan.kim): a resumed track fades in, so the meter counts again only once the fade is over.
+      const play = async (): Promise<void> => {
+        playingSince = Date.now();
+        const sounding = await this.withAudio(started
+          ? () => this.player.play()
+          : () => this.player.playTrackAt(run.track, 0, run.track.volume, false));
+        if (!sounding) throw new Ended(LevelFailure.DECK_FAILED);
+        started = true;
+        run.paused = false;
         listening = true;
-        this.notifier.state({
-          deck: this.player.getDeck(),
-          playback: this.player.getState(),
-          volume: this.player.getVolume(),
-        });
-        await this.listen(run, meter, gainDb, () => lastFrameAt);
+        this.tellDeck();
+      };
+      const pause = async (): Promise<void> => {
+        listening = false;
+        if (started && !(await this.withAudio(() => this.player.cut()))) throw new Ended(LevelFailure.DECK_FAILED);
+        if (playingSince !== null) playedMs += Date.now() - playingSince;
+        playingSince = null;
+        run.paused = true;
+        run.elapsedSec = Math.floor(elapsedSec(Date.now()));
+        this.tellDeck();
+        log.info('level', null, 'Level measurement paused', { track: run.track.id, at: run.elapsedSec });
+        this.publish({ phase: 'paused', ...this.resultOf(run), answer: this.answerOf(run, averageDb()) });
+      };
+
+      try {
+        // Note(yoochan.kim): stopped while the desk was being set, so nothing has sounded yet.
+        if (run.ask === 'pause') {
+          this.takeAsk(run);
+          await pause();
+        } else {
+          await play();
+        }
+
+        let toldAt = 0;
+        for (;;) {
+          await delay(this.timing.TICK_MS);
+          this.check(run);
+          const now = Date.now();
+          if (now - lastFrameAt > this.timing.METER_SILENCE_MS) throw new Ended(LevelFailure.DESK_SILENT);
+
+          const ask = this.takeAsk(run);
+          if (ask === 'apply' || ask === 'cancel') return { how: ask, averageDb: averageDb() };
+          if (run.paused) {
+            if (ask !== 'resume') continue;
+            log.info('level', null, 'Level measurement resumed', { track: run.track.id, at: run.elapsedSec });
+            await play();
+            toldAt = 0;
+          }
+
+          const played = elapsedSec(Date.now());
+          run.elapsedSec = Math.min(Math.floor(played), Math.floor(run.totalSec));
+          const over = run.whole
+            ? this.player.hasEnded() || played >= run.totalSec + this.timing.END_SLACK_SEC
+            : played >= run.totalSec;
+          if (over) {
+            // Note(yoochan.kim): rounded as a screen rounds the length, so a whole track reads 6:02 / 6:02.
+            run.elapsedSec = Math.round(run.totalSec);
+            return { how: 'complete', averageDb: averageDb() };
+          }
+          if (ask === 'pause') {
+            await pause();
+            continue;
+          }
+
+          if (Date.now() - toldAt >= this.timing.PROGRESS_INTERVAL_MS) {
+            toldAt = Date.now();
+            const told = (db: number | null): number => Math.max(SILENCE_DB, oneDecimal(db === null ? SILENCE_DB : db + gainDb));
+            const recent = meter.recentDb(this.timing.RECENT_SEC);
+            const average = meter.averageDb();
+            this.publish(this.progress(run, LevelStage.PLAYING, told(recent), told(average)));
+          }
+        }
       } catch (error) {
         if (error instanceof Ended) throw error;
         log.error('level', null, 'The deck could not play the track', { track: run.track.id, error: errorMessage(error) });
@@ -230,36 +392,16 @@ class LevelMatcher {
         listening = false;
         await this.giveBack(found);
       }
-      const average = meter.averageDb();
-      return average === null ? null : average + gainDb;
     } finally {
       stopMeters();
     }
   }
 
-  /** Waits out the measurement, telling every screen how it goes. Throws Ended when something ends it early. */
-  private async listen(run: Run, meter: MeterAverage, gainDb: number, lastFrameAt: () => number): Promise<void> {
-    const startedAt = Date.now();
-    let toldAt = startedAt;
-    for (;;) {
-      await delay(this.timing.TICK_MS);
-      this.check(run);
-      const now = Date.now();
-      if (now - lastFrameAt() > this.timing.METER_SILENCE_MS) throw new Ended(LevelFailure.DESK_SILENT);
-
-      const elapsedSec = (now - startedAt) / 1000;
-      const over = run.whole
-        ? this.player.hasEnded() || elapsedSec >= run.totalSec + this.timing.END_SLACK_SEC
-        : elapsedSec >= run.totalSec;
-      if (over) return;
-
-      if (now - toldAt >= this.timing.PROGRESS_INTERVAL_MS) {
-        toldAt = now;
-        const recent = meter.recentDb(this.timing.RECENT_SEC);
-        const levelDb = recent === null ? SILENCE_DB : recent + gainDb;
-        this.publish(this.progress(run, Math.floor(elapsedSec), Math.max(SILENCE_DB, oneDecimal(levelDb))));
-      }
-    }
+  /** A person's request, taken once; a command may set it between any two ticks. */
+  private takeAsk(run: Run): Ask | null {
+    const ask = run.ask;
+    run.ask = null;
+    return ask;
   }
 
   /** Throws Ended when the measurement has lost what it needs: its gate, or its deck. */
@@ -296,6 +438,14 @@ class LevelMatcher {
     });
   }
 
+  private tellDeck(): void {
+    this.notifier.state({
+      deck: this.player.getDeck(),
+      playback: this.player.getState(),
+      volume: this.player.getVolume(),
+    });
+  }
+
   private async withAudio(work: () => Promise<void>): Promise<boolean> {
     for (let attempt = 1; attempt <= AUDIO_ATTEMPTS; attempt += 1) {
       if (await this.lockCoordinator.withAudioLock(true, work)) return true;
@@ -304,8 +454,29 @@ class LevelMatcher {
     return false;
   }
 
-  private progress(run: Run, elapsedSec: number, levelDb: number): LevelMatch {
-    return { phase: 'measuring', track: run.track.id, meter: run.meter, targetDb: run.targetDb, elapsedSec, totalSec: run.totalSec, levelDb };
+  /** What the average so far says the track's level should be. */
+  private answerOf(run: Run, averageDb: number | null): LevelAnswer {
+    if (averageDb === null) return { kind: 'none' };
+    const needed = volumeFor(run.volumeBefore, averageDb, run.targetDb);
+    const volumeAfter = Math.round(needed);
+    if (volumeAfter < LEVEL_CONFIG.VOLUME.MIN || volumeAfter > LEVEL_CONFIG.VOLUME.MAX) {
+      return { kind: 'outOfReach', averageDb: oneDecimal(averageDb), volumeNeeded: oneDecimal(needed) };
+    }
+    return { kind: 'reachable', averageDb: oneDecimal(averageDb), volumeAfter };
+  }
+
+  private resultOf(run: Run) {
+    return {
+      track: run.track.id, meter: run.meter, targetDb: run.targetDb,
+      elapsedSec: run.elapsedSec, totalSec: run.totalSec, volumeBefore: run.volumeBefore,
+    };
+  }
+
+  private progress(run: Run, stage: LevelStage, levelDb: number, averageDb: number): LevelMatch {
+    return {
+      phase: 'measuring', track: run.track.id, meter: run.meter, targetDb: run.targetDb, stage,
+      elapsedSec: run.elapsedSec, totalSec: run.totalSec, levelDb, averageDb,
+    };
   }
 
   private publish(status: LevelMatch, alongside: StatePatch = {}): void {

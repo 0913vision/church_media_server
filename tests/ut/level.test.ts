@@ -47,7 +47,9 @@ describe('Level measurement over the wire', () => {
       assert.equal(await admin.waitForRejected('matchTrackLevel'), RejectReason.LEVEL_MATCHING);
 
       const ended = await admin.waitForState((patch) => patch.levelMatch?.phase === 'failed', 10000);
-      assert.deepEqual(ended.levelMatch, { phase: 'failed', track: SCRATCH_TRACK_ID, meter: output, why: LevelFailure.DESK_SILENT });
+      assert.ok(ended.levelMatch?.phase === 'failed');
+      assert.equal(ended.levelMatch.why, LevelFailure.DESK_SILENT);
+      assert.equal(ended.levelMatch.elapsedSec, 0, 'nothing played');
       const after = await admin.read();
       assert.equal(after.playback, PlaybackState.PAUSED);
       assert.ok(auxIs(after, true), 'the music player\'s strip is as it was');
@@ -69,8 +71,10 @@ describe('Level measurement over the wire', () => {
 
       admin.invoke('matchTrackLevel', { track: SCRATCH_TRACK_ID, meter: { kind: 'output' }, targetDb: -30, span: { kind: 'whole' } });
       assert.equal(await admin.waitForRejected('matchTrackLevel'), RejectReason.ADMIN_UNLOCKED);
-      admin.invoke('stopLevelMatch');
-      assert.equal(await admin.waitForRejected('stopLevelMatch'), RejectReason.NOT_MEASURING);
+      for (const command of ['stopLevelMatch', 'resumeLevelMatch', 'applyLevelMatch', 'cancelLevelMatch', 'revertLevelMatch']) {
+        admin.invoke(command);
+        assert.equal(await admin.waitForRejected(command), RejectReason.NOT_MEASURING, command);
+      }
     } finally {
       admin.disconnect();
     }

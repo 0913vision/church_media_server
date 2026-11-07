@@ -225,7 +225,7 @@ describe('Averaging a meter', () => {
 });
 
 describe('Measuring a track on the desk', () => {
-  test('plays it with every way out of the music player shut and its strip muted, then moves its level onto the target', async () => {
+  test('plays it with every way out of the music player shut and its strip muted, then says the level that lands it on the target, applied only when asked', async () => {
     const { events, patches, tracks, player, desk, holds, matcher, finished } = rig();
     const touched = [...new Set(MEASURE.map((change) => change.address))];
     const read = async (): Promise<Record<string, number>> =>
@@ -257,15 +257,28 @@ describe('Measuring a track on the desk', () => {
     const stopped = events.findIndex((event, at) => at > load && event === 'deck pause=yes');
     const putBack = events.findIndex((event, at) => at > load && event.startsWith('desk '));
     assert.ok(stopped !== -1 && stopped < putBack, 'the track stopped before any of the desk went back');
-    assert.equal(result.phase, 'done');
-    assert.ok(result.phase === 'done');
+    assert.ok(result.phase === 'measured');
     assert.equal(result.volumeBefore, 50);
-    assert.equal(result.averageDb, -26);
-    assert.equal(result.volumeAfter, 43);
-    assert.equal(tracks.get('hymn')!.volume, 43);
+    assert.deepEqual(result.answer, { kind: 'reachable', averageDb: -26, volumeAfter: 43 });
+    assert.equal(tracks.get('hymn')!.volume, 50, 'nothing changed by measuring');
 
+    const progress = patches.flatMap((patch) => (patch.levelMatch?.phase === 'measuring' ? [patch.levelMatch] : []));
+    assert.equal(progress[0]?.stage, 'settingDesk', 'the desk set first');
+    assert.equal(progress[0]?.averageDb, -120, 'no average while the desk is being set');
+    assert.ok(progress.some((step) => step.stage === 'playing' && step.averageDb === -26), 'the average so far told while it plays');
+
+    assert.deepEqual(matcher.apply(), { ok: true });
+    assert.equal(tracks.get('hymn')!.volume, 43);
+    const done = matcher.current();
+    assert.ok(done.phase === 'done');
+    assert.equal(done.volumeAfter, 43);
     const told = patches.find((patch) => patch.levelMatch?.phase === 'done')!;
     assert.equal(told.tracks?.find((track) => track.id === 'hymn')?.volume, 43, 'the new level arrives with the result');
+
+    assert.deepEqual(matcher.revert(), { ok: true });
+    assert.equal(tracks.get('hymn')!.volume, 50, 'the old level back');
+    assert.equal(matcher.current().phase, 'measured', 'and the answer can be applied again');
+    assert.deepEqual(matcher.revert(), { ok: false, reason: RejectReason.NOT_MEASURING });
     assert.deepEqual(player.getDeck(), { source: 'song' });
     assert.equal(player.getState(), PlaybackState.PAUSED);
     assert.deepEqual(desk.watched, ['output'], 'read off the music player\'s own meter');
@@ -290,9 +303,9 @@ describe('Measuring a track on the desk', () => {
     const sent = events.filter((event) => event.startsWith('desk ')).map((event) => event.slice(5, event.indexOf('=')));
     assert.deepEqual([...new Set(sent)], [MAIN], 'nothing on the desk but the main');
     assert.deepEqual(desk.watched, ['main']);
-    assert.ok(result.phase === 'done');
+    assert.ok(result.phase === 'measured' && result.answer.kind === 'reachable');
     assert.deepEqual(result.meter, meter);
-    assert.equal(result.averageDb, -20, 'read before the main\'s mute, and its fader\'s +6 dB added: the output\'s -26 plus 6');
+    assert.equal(result.answer.averageDb, -20, 'read before the main\'s mute, and its fader\'s +6 dB added: the output\'s -26 plus 6');
     holds.dispose();
   });
 
@@ -305,9 +318,9 @@ describe('Measuring a track on the desk', () => {
 
     assert.deepEqual(events.filter((event) => event.startsWith('desk ')), [], 'the desk left as it is');
     assert.deepEqual(desk.watched, ['main']);
-    assert.ok(result.phase === 'done');
+    assert.ok(result.phase === 'measured' && result.answer.kind === 'reachable');
     assert.deepEqual(result.meter, meter);
-    assert.equal(result.averageDb, -20, 'the main fader\'s +6 dB added');
+    assert.equal(result.answer.averageDb, -20, 'the main fader\'s +6 dB added');
     holds.dispose();
   });
 
@@ -318,7 +331,9 @@ describe('Measuring a track on the desk', () => {
     matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     const result = await finished();
 
-    assert.deepEqual(result, { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.DESK_SILENT });
+    assert.deepEqual(result, {
+      phase: 'failed', track: 'hymn', meter: OUTPUT, targetDb: -30, elapsedSec: 0, totalSec: 0.5, volumeBefore: 50, why: LevelFailure.DESK_SILENT,
+    });
     assert.ok(!events.includes('deck load /audio/hymn.mp3'), 'the track was never loaded');
     assert.ok(!events.includes('deck pause=no'), 'and nothing ever played');
     assert.equal(desk.values.get(AUX_ON)!.value, 1);
@@ -360,7 +375,8 @@ describe('Measuring a track on the desk', () => {
     desk.hand('/auxin/05/mix/st', int(1));
     const result = await finished();
 
-    assert.deepEqual(result, { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.DESK_MOVED });
+    assert.ok(result.phase === 'failed');
+    assert.equal(result.why, LevelFailure.DESK_MOVED);
     const stopped = events.findIndex((event, at) => at >= handAt && event === 'deck pause=yes');
     const putBack = events.findIndex((event, at) => at >= handAt && event.startsWith('desk '));
     assert.ok(stopped !== -1 && stopped < putBack, 'the track stopped before any of the desk went back');
@@ -372,7 +388,8 @@ describe('Measuring a track on the desk', () => {
     released.matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!released.player.isPlaying()) await settle(2);
     released.lock.setAdminLock(false);
-    assert.deepEqual(await released.finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.GATE_RELEASED });
+    const ended = await released.finished();
+    assert.ok(ended.phase === 'failed' && ended.why === LevelFailure.GATE_RELEASED);
     released.holds.dispose();
 
     const taken = rig();
@@ -380,34 +397,108 @@ describe('Measuring a track on the desk', () => {
     while (!taken.player.isPlaying()) await settle(2);
     taken.lock.setAdminLock(true, 'flow');
     taken.flow.owns = true;
-    assert.deepEqual(await taken.finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.GATE_RELEASED });
+    const lost = await taken.finished();
+    assert.ok(lost.phase === 'failed' && lost.why === LevelFailure.GATE_RELEASED);
     assert.equal(taken.player.getDeck().source, 'track', 'the run\'s deck is not the measurement\'s to put back');
     assert.equal(taken.desk.values.get(AUX_ON)!.value, 1, 'but the desk is, so the run can be heard');
     taken.holds.dispose();
   });
 
-  test('stopping it changes nothing', async () => {
-    const { tracks, player, holds, matcher, finished } = rig();
+  test('stopping pauses it where it is, the deck and the desk still its own; it goes on from there, and set aside changes nothing', async () => {
+    const { events, tracks, player, desk, holds, matcher, finished } = rig();
+    const putBack = async (): Promise<void> => {
+      while (matcher.ownsDeck()) await settle(5);
+    };
 
-    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
+    matcher.start({ track: 'other', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
     while (!player.isPlaying()) await settle(2);
+    await settle(80);
     assert.deepEqual(matcher.stop(), { ok: true });
+    const paused = await finished();
 
-    assert.deepEqual(await finished(), { phase: 'failed', track: 'hymn', meter: OUTPUT, why: LevelFailure.STOPPED });
-    assert.equal(tracks.get('hymn')!.volume, 50);
+    assert.ok(paused.phase === 'paused');
+    assert.equal(paused.answer.kind, 'reachable', 'what it has heard so far is an answer');
+    assert.equal(events.at(-1), 'deck pause=yes', 'the track stopped');
+    assert.equal(player.isPlaying(), false);
+    assert.deepEqual(player.getDeck(), { source: 'track', id: 'other' }, 'still on the deck');
+    assert.equal(desk.values.get(AUX_ON)!.value, 0, 'the desk still as the measurement set it');
+    assert.equal(matcher.isPlaying(), false, 'so the gate\'s lapse does not wait on it');
+    assert.equal(matcher.ownsDeck(), true);
     assert.deepEqual(matcher.stop(), { ok: false, reason: RejectReason.NOT_MEASURING });
+    assert.deepEqual(matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } }), { ok: false, reason: RejectReason.LEVEL_MATCHING });
+
+    assert.deepEqual(matcher.resume(), { ok: true });
+    while (!player.isPlaying()) await settle(2);
+    assert.deepEqual(matcher.resume(), { ok: false, reason: RejectReason.NOT_MEASURING });
+    await settle(80);
+    assert.deepEqual(matcher.stop(), { ok: true });
+    const again = await finished();
+    assert.ok(again.phase === 'paused');
+    assert.ok(again.elapsedSec >= paused.elapsedSec, 'it went on from where it stopped');
+    assert.equal(events.filter((event) => event === 'deck load /audio/other.mp3').length, 1, 'not loaded again');
+
+    assert.deepEqual(matcher.cancel(), { ok: true });
+    await putBack();
+    assert.deepEqual(matcher.current(), { phase: 'idle' });
+    assert.equal(tracks.get('other')!.volume, 30);
+    assert.equal(desk.values.get(AUX_ON)!.value, 1, 'the desk put back');
+    assert.deepEqual(player.getDeck(), { source: 'song' });
     holds.dispose();
   });
 
-  test('a target the deck cannot reach is reported and changes nothing', async () => {
+  test('a paused one applied is ended first, and its level written', async () => {
+    const { tracks, player, desk, holds, matcher, finished } = rig();
+
+    matcher.start({ track: 'other', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
+    while (!player.isPlaying()) await settle(2);
+    await settle(80);
+    matcher.stop();
+    const paused = await finished();
+    assert.ok(paused.phase === 'paused' && paused.answer.kind === 'reachable');
+
+    assert.deepEqual(matcher.apply(), { ok: true });
+    while (matcher.ownsDeck()) await settle(5);
+    const done = matcher.current();
+    assert.ok(done.phase === 'done');
+    assert.equal(done.volumeAfter, paused.answer.volumeAfter);
+    assert.equal(tracks.get('other')!.volume, paused.answer.volumeAfter);
+    assert.equal(desk.values.get(AUX_ON)!.value, 1);
+    assert.deepEqual(player.getDeck(), { source: 'song' });
+    holds.dispose();
+  });
+
+  test('stopped while the desk is being set, nothing sounds until it goes on', async () => {
+    const { events, holds, matcher, finished } = rig();
+
+    matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: -30, span: { kind: 'whole' } });
+    assert.deepEqual(matcher.stop(), { ok: true });
+    const paused = await finished();
+
+    assert.ok(paused.phase === 'paused');
+    assert.deepEqual(paused.answer, { kind: 'none' });
+    assert.ok(!events.includes('deck load /audio/hymn.mp3'), 'nothing loaded');
+    assert.deepEqual(matcher.apply(), { ok: false, reason: RejectReason.INVALID_VALUE }, 'nothing heard is nothing to apply');
+
+    matcher.resume();
+    while (matcher.current().phase === 'paused') await settle(2);
+    const result = await finished();
+    assert.ok(result.phase === 'measured');
+    assert.ok(events.includes('deck load /audio/hymn.mp3'), 'played from its start once it went on');
+    holds.dispose();
+  });
+
+  test('a target the deck cannot reach is reported, cannot be applied, and changes nothing', async () => {
     const { tracks, holds, matcher, finished } = rig();
 
     matcher.start({ track: 'hymn', meter: OUTPUT, targetDb: 0, span: { kind: 'first', sec: 0.3 } });
     const result = await finished();
 
-    assert.equal(result.phase, 'outOfReach');
-    assert.ok(result.phase === 'outOfReach' && result.volumeNeeded > 100);
+    assert.ok(result.phase === 'measured' && result.answer.kind === 'outOfReach');
+    assert.ok(result.answer.volumeNeeded > 100);
+    assert.deepEqual(matcher.apply(), { ok: false, reason: RejectReason.OUT_OF_REACH });
     assert.equal(tracks.get('hymn')!.volume, 50);
+    assert.deepEqual(matcher.cancel(), { ok: true });
+    assert.deepEqual(matcher.current(), { phase: 'idle' });
     holds.dispose();
   });
 

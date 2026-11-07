@@ -83,6 +83,7 @@ export const RejectReason = {
   DECK_PLAYING: 'deckPlaying',
   DECK_MUTED: 'deckMuted',
   NOT_MEASURING: 'notMeasuring',
+  OUT_OF_REACH: 'outOfReach',
   NOTICE_TRACK: 'noticeTrack',
   NOTICE_MISSING: 'noticeMissing',
   COUNTDOWN_OUTSIDE_LOCK: 'countdownOutsideLock',
@@ -113,6 +114,16 @@ export const LevelFailure = {
 export type LevelFailure = (typeof LevelFailure)[keyof typeof LevelFailure];
 export function isLevelFailure(value: unknown): value is LevelFailure {
   return typeof value === 'string' && (Object.values(LevelFailure) as string[]).includes(value);
+}
+
+/** Where a running level measurement has got to */
+export const LevelStage = {
+  SETTING_DESK: 'settingDesk',
+  PLAYING: 'playing',
+} as const;
+export type LevelStage = (typeof LevelStage)[keyof typeof LevelStage];
+export function isLevelStage(value: unknown): value is LevelStage {
+  return typeof value === 'string' && (Object.values(LevelStage) as string[]).includes(value);
 }
 
 /**
@@ -428,35 +439,69 @@ export const LevelMeterKind = {
 } as const;
 
 /**
- * What the server's one level measurement is doing, or how the last one ended. A
- * measurement plays a track to the desk, reads the meter it was given, and moves the
- * track's level so its average lands on a target. It takes minutes, so it is state:
- * every screen can say the deck is in use and why. What one ended with stays until the
- * next starts; a restart forgets it.
+ * What a measurement has come to so far: the average the meter read, and the level
+ * that average says the track needs.
+ */
+export type LevelAnswer =
+  /** Nothing loud enough to count has been heard yet */
+  | { kind: 'none' }
+  /** The target needs a level the deck has, 1 to 100 */
+  | { kind: 'reachable'; averageDb: number; volumeAfter: number }
+  /**
+   * The target needs a level the deck does not have — over 100, or under 1 — so it
+   * cannot be applied
+   */
+  | { kind: 'outOfReach'; averageDb: number; volumeNeeded: number }
+  ;
+export const LevelAnswerKind = {
+  NONE: 'none',
+  REACHABLE: 'reachable',
+  OUT_OF_REACH: 'outOfReach',
+} as const;
+
+/**
+ * What the server's one level measurement is doing, or what the last one came to. A
+ * measurement plays a track to the desk from its start and reads the meter it was
+ * given; what that average says the track's level should be is applied only when a
+ * person applies it. It takes minutes, so it is state: every screen can say the deck
+ * is in use and why. What one came to stays until the next starts or it is set aside;
+ * a restart forgets it.
  */
 export type LevelMatch =
-  /** Nothing has been measured since the server started */
+  /** No measurement is running, paused or waiting to be applied */
   | { phase: 'idle' }
   /** A track is being measured. Sent once a second while it runs. */
-  | { phase: 'measuring'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; levelDb: number }
+  | { phase: 'measuring'; track: string; meter: LevelMeter; targetDb: number; stage: LevelStage; elapsedSec: number; totalSec: number; levelDb: number; averageDb: number }
   /**
-   * Measured, and the track's level was moved. The new level is in tracks, in the same
-   * patch.
+   * Stopped part-way by stopLevelMatch. The track is stopped where it was, and the
+   * deck and the desk are still as the measurement set them: it can go on from here
+   * (resumeLevelMatch), be applied as it is (applyLevelMatch), or be set aside
+   * (cancelLevelMatch). Nothing has been changed yet.
    */
-  | { phase: 'done'; track: string; meter: LevelMeter; targetDb: number; averageDb: number; volumeBefore: number; volumeAfter: number }
+  | { phase: 'paused'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; volumeBefore: number; answer: LevelAnswer }
   /**
-   * Measured, but the target needs a level the deck does not have — over 100, or under
-   * 1. Nothing was changed.
+   * Played to the end, and the deck and the desk are put back. Nothing has been
+   * changed yet: the answer is applied by applyLevelMatch or set aside by
+   * cancelLevelMatch.
    */
-  | { phase: 'outOfReach'; track: string; meter: LevelMeter; targetDb: number; averageDb: number; volumeBefore: number; volumeNeeded: number }
-  /** Ended without an answer. Nothing was changed. */
-  | { phase: 'failed'; track: string; meter: LevelMeter; why: LevelFailure }
+  | { phase: 'measured'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; volumeBefore: number; answer: LevelAnswer }
+  /**
+   * Applied: the track's level was moved. The new level is in tracks, in the same
+   * patch. revertLevelMatch puts the old one back.
+   */
+  | { phase: 'done'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; averageDb: number; volumeBefore: number; volumeAfter: number }
+  /**
+   * Ended without an answer. Nothing was changed, and the deck and the desk were put
+   * back.
+   */
+  | { phase: 'failed'; track: string; meter: LevelMeter; targetDb: number; elapsedSec: number; totalSec: number; volumeBefore: number; why: LevelFailure }
   ;
 export const LevelMatchKind = {
   IDLE: 'idle',
   MEASURING: 'measuring',
+  PAUSED: 'paused',
+  MEASURED: 'measured',
   DONE: 'done',
-  OUT_OF_REACH: 'outOfReach',
   FAILED: 'failed',
 } as const;
 
@@ -622,9 +667,10 @@ export const ATTRIBUTES = {
    */
   trackFetch: { access: 'ro' },
   /**
-   * What the level measurement is doing, or how the last one ended. Changes in the
+   * What the level measurement is doing, or what the last one came to. Changes in the
    * same patch as the tracks it moved, so a screen never sees it done before the new
-   * level. Read-only — matchTrackLevel and stopLevelMatch move it.
+   * level. Read-only — the level commands (matchTrackLevel, stopLevelMatch,
+   * resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it.
    */
   levelMatch: { access: 'ro' },
   /**
@@ -872,33 +918,62 @@ export const COMMANDS = {
    */
   selectTrack: { permission: 'admin' },
   /**
-   * Measure a track on the desk and move its level so the chosen meter averages the
+   * Measure a track on the desk: what level would make the chosen meter average the
    * target. Everything about it — the track, the meter, whether the main is muted, the
    * target and the span — is decided here, before it starts. Whatever the meter asks
    * of the desk is set and read back before anything plays; the track then plays from
    * its start at its own level while the meter is read, and the deck and the desk are
    * put back after it has stopped — however it ends. The average leaves out silence
    * and the passages well under the song's own level, so a quiet verse does not drag
-   * it down. The new level is the one written down for the track, as setTrackVolume
-   * would write it; a flow already saved keeps the levels it was written with. Answers
-   * as soon as it is accepted; how it goes is in levelMatch. Only for a person holding
-   * the gate with nothing playing: refused with adminUnlocked when the gate is open,
-   * flowActive when the gate is a run's, deckPlaying while the deck plays, deckMuted
-   * while output is muted (it would measure silence), levelMatching while another
-   * measurement runs, unknownTrack, and invalidValue for a target outside -60 to 0, a
-   * span or a meter that is not one. While it runs the deck is the measurement's —
-   * song, playback, volume, mute, loop and selectTrack are refused with levelMatching
-   * — and what it holds on the desk cannot be switched from here (consoleHeld).
-   * Releasing the gate, a run taking it, or a hand moving what it holds at the desk
-   * ends it. A level change applies from the next time the track is chosen.
+   * it down. Nothing is changed by measuring: levelMatch reads measured with the
+   * answer, and applyLevelMatch writes it down for the track as setTrackVolume would;
+   * a flow already saved keeps the levels it was written with. Answers as soon as it
+   * is accepted; how it goes is in levelMatch, and it replaces whatever the last
+   * measurement came to. Only for a person holding the gate with nothing playing:
+   * refused with adminUnlocked when the gate is open, flowActive when the gate is a
+   * run's, deckPlaying while the deck plays, deckMuted while output is muted (it would
+   * measure silence), levelMatching while another measurement runs or is paused,
+   * unknownTrack, and invalidValue for a target outside -60 to 0, a span or a meter
+   * that is not one. While it runs or is paused the deck is the measurement's — song,
+   * playback, volume, mute, loop and selectTrack are refused with levelMatching — and
+   * what it holds on the desk cannot be switched from here (consoleHeld). Releasing
+   * the gate, a run taking it, or a hand moving what it holds at the desk ends it. A
+   * level change applies from the next time the track is chosen.
    */
   matchTrackLevel: { permission: 'admin' },
   /**
-   * End the level measurement now: the track stops, the deck and the desk are put
-   * back, and no level changes. levelMatch reads failed, why stopped. Refused with
-   * notMeasuring when none is running.
+   * Stop the running measurement where it is: the track stops at once, without a fade,
+   * the deck and the desk stay as the measurement set them, and levelMatch reads
+   * paused with what the part played so far comes to. Refused with notMeasuring unless
+   * one is running.
    */
   stopLevelMatch: { permission: 'admin' },
+  /**
+   * Go on with a paused measurement from where it stopped, its average carried on.
+   * Refused with notMeasuring unless one is paused.
+   */
+  resumeLevelMatch: { permission: 'admin' },
+  /**
+   * Write down the level the measurement came to for its track, as setTrackVolume
+   * would. A paused one is ended first: the track stops for good and the deck and the
+   * desk are put back before the level is written. levelMatch reads done, in the same
+   * patch as tracks. Refused with notMeasuring unless one is paused or measured,
+   * outOfReach when its answer is, invalidValue when it has none yet, and unknownTrack
+   * when the track has gone.
+   */
+  applyLevelMatch: { permission: 'admin' },
+  /**
+   * Set a paused or measured measurement aside with nothing changed: a paused one's
+   * track stops for good and the deck and the desk are put back. levelMatch reads
+   * idle. Refused with notMeasuring unless one is paused or measured.
+   */
+  cancelLevelMatch: { permission: 'admin' },
+  /**
+   * Put back the level an applied measurement replaced. levelMatch reads measured
+   * again, so it can be applied once more. Refused with notMeasuring unless the last
+   * one was applied, and unknownTrack when the track has gone.
+   */
+  revertLevelMatch: { permission: 'admin' },
 } as const;
 export type CommandName = keyof typeof COMMANDS;
 
@@ -957,9 +1032,10 @@ export interface State {
    */
   trackFetch: TrackFetch;
   /**
-   * What the level measurement is doing, or how the last one ended. Changes in the
+   * What the level measurement is doing, or what the last one came to. Changes in the
    * same patch as the tracks it moved, so a screen never sees it done before the new
-   * level. Read-only — matchTrackLevel and stopLevelMatch move it.
+   * level. Read-only — the level commands (matchTrackLevel, stopLevelMatch,
+   * resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it.
    */
   levelMatch: LevelMatch;
   /**
@@ -1093,6 +1169,10 @@ export type InvokeRequest =
   | { command: 'selectTrack'; args: { id: string } }
   | { command: 'matchTrackLevel'; args: { track: string; meter: LevelMeter; targetDb: number; span: LevelSpan } }
   | { command: 'stopLevelMatch'; args: Record<string, never> }
+  | { command: 'resumeLevelMatch'; args: Record<string, never> }
+  | { command: 'applyLevelMatch'; args: Record<string, never> }
+  | { command: 'cancelLevelMatch'; args: Record<string, never> }
+  | { command: 'revertLevelMatch'; args: Record<string, never> }
   ;
 
 /** C2S event names */

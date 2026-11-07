@@ -74,6 +74,7 @@ class RejectReason(str, Enum):
     DECK_PLAYING = "deckPlaying"
     DECK_MUTED = "deckMuted"
     NOT_MEASURING = "notMeasuring"
+    OUT_OF_REACH = "outOfReach"
     NOTICE_TRACK = "noticeTrack"
     NOTICE_MISSING = "noticeMissing"
     COUNTDOWN_OUTSIDE_LOCK = "countdownOutsideLock"
@@ -96,6 +97,12 @@ class LevelFailure(str, Enum):
     DESK_SILENT = "deskSilent"
     DESK_HELD = "deskHeld"
     NO_SIGNAL = "noSignal"
+
+
+class LevelStage(str, Enum):
+    """Where a running level measurement has got to"""
+    SETTING_DESK = "settingDesk"
+    PLAYING = "playing"
 
 
 class Song(TypedDict):
@@ -412,8 +419,37 @@ it ends.
 LevelMeter = LevelMeterOutput | LevelMeterMain
 
 
+class LevelAnswerNone(TypedDict):
+    """Nothing loud enough to count has been heard yet"""
+    kind: Literal["none"]
+
+
+class LevelAnswerReachable(TypedDict):
+    """The target needs a level the deck has, 1 to 100"""
+    kind: Literal["reachable"]
+    averageDb: float  # The average the meter read at volumeBefore, one decimal
+    volumeAfter: float  # The level that lands the average on the target
+
+
+class LevelAnswerOutOfReach(TypedDict):
+    """
+    The target needs a level the deck does not have — over 100, or under 1 —
+    so it cannot be applied
+    """
+    kind: Literal["outOfReach"]
+    averageDb: float  # The average the meter read at volumeBefore, one decimal
+    volumeNeeded: float  # The level the target would take, one decimal
+
+
+"""
+What a measurement has come to so far: the average the meter read, and the
+level that average says the track needs.
+"""
+LevelAnswer = LevelAnswerNone | LevelAnswerReachable | LevelAnswerOutOfReach
+
+
 class LevelMatchIdle(TypedDict):
-    """Nothing has been measured since the server started"""
+    """No measurement is running, paused or waiting to be applied"""
     phase: Literal["idle"]
 
 
@@ -423,55 +459,86 @@ class LevelMatchMeasuring(TypedDict):
     track: str  # Track id
     meter: LevelMeter  # The meter being read
     targetDb: float  # The average it was asked to land on, in dB under the desk's full scale
-    elapsedSec: float  # How much has been played, whole seconds. Zero while the desk is being set aside.
+    stage: LevelStage  # Setting the desk, or playing the track
+    elapsedSec: float  # How much has been played, whole seconds
     totalSec: float  # How much will be played, in seconds
     levelDb: float  # What the meter has read over the last few seconds, in dB under full scale, one decimal. Silence reads -120.
+    averageDb: float  # The average so far, gated the way the answer will be, in dB under full scale, one decimal. Reads -120 until there is one.
+
+
+class LevelMatchPaused(TypedDict):
+    """
+    Stopped part-way by stopLevelMatch. The track is stopped where it was, and
+    the deck and the desk are still as the measurement set them: it can go on
+    from here (resumeLevelMatch), be applied as it is (applyLevelMatch), or be
+    set aside (cancelLevelMatch). Nothing has been changed yet.
+    """
+    phase: Literal["paused"]
+    track: str  # Track id
+    meter: LevelMeter  # The meter being read
+    targetDb: float  # The average it was asked to land on
+    elapsedSec: float  # How much has been played, whole seconds
+    totalSec: float  # How much the whole would play, in seconds
+    volumeBefore: float  # The level it is being measured at, which the track still has
+    answer: LevelAnswer  # What the part played so far comes to
+
+
+class LevelMatchMeasured(TypedDict):
+    """
+    Played to the end, and the deck and the desk are put back. Nothing has
+    been changed yet: the answer is applied by applyLevelMatch or set aside by
+    cancelLevelMatch.
+    """
+    phase: Literal["measured"]
+    track: str  # Track id
+    meter: LevelMeter  # The meter it was read on
+    targetDb: float  # The average it was asked to land on
+    elapsedSec: float  # How much was played, whole seconds
+    totalSec: float  # How much the whole would play, in seconds
+    volumeBefore: float  # The level it was measured at, which the track still has
+    answer: LevelAnswer  # What it came to; never none, since a measurement that heard nothing fails with noSignal
 
 
 class LevelMatchDone(TypedDict):
     """
-    Measured, and the track's level was moved. The new level is in tracks, in
-    the same patch.
+    Applied: the track's level was moved. The new level is in tracks, in the
+    same patch. revertLevelMatch puts the old one back.
     """
     phase: Literal["done"]
     track: str  # Track id
     meter: LevelMeter  # The meter it was read on
     targetDb: float  # The average it was asked to land on
+    elapsedSec: float  # How much was played, whole seconds
+    totalSec: float  # How much the whole would play, in seconds
     averageDb: float  # The average the meter read at the old level, one decimal
     volumeBefore: float  # The level it was measured at
     volumeAfter: float  # The level it now has
 
 
-class LevelMatchOutOfReach(TypedDict):
-    """
-    Measured, but the target needs a level the deck does not have — over 100,
-    or under 1. Nothing was changed.
-    """
-    phase: Literal["outOfReach"]
-    track: str  # Track id
-    meter: LevelMeter  # The meter it was read on
-    targetDb: float  # The average it was asked to land on
-    averageDb: float  # The average the meter read, one decimal
-    volumeBefore: float  # The level it was measured at, and still has
-    volumeNeeded: float  # The level the target would take, one decimal
-
-
 class LevelMatchFailed(TypedDict):
-    """Ended without an answer. Nothing was changed."""
+    """
+    Ended without an answer. Nothing was changed, and the deck and the desk
+    were put back.
+    """
     phase: Literal["failed"]
     track: str  # Track id
     meter: LevelMeter  # The meter it was to be read on
+    targetDb: float  # The average it was asked to land on
+    elapsedSec: float  # How much had been played, whole seconds
+    totalSec: float  # How much the whole would have played, in seconds
+    volumeBefore: float  # The level it was being measured at, which the track still has
     why: LevelFailure
 
 
 """
-What the server's one level measurement is doing, or how the last one ended. A
-measurement plays a track to the desk, reads the meter it was given, and moves
-the track's level so its average lands on a target. It takes minutes, so it is
-state: every screen can say the deck is in use and why. What one ended with
-stays until the next starts; a restart forgets it.
+What the server's one level measurement is doing, or what the last one came
+to. A measurement plays a track to the desk from its start and reads the meter
+it was given; what that average says the track's level should be is applied
+only when a person applies it. It takes minutes, so it is state: every screen
+can say the deck is in use and why. What one came to stays until the next
+starts or it is set aside; a restart forgets it.
 """
-LevelMatch = LevelMatchIdle | LevelMatchMeasuring | LevelMatchDone | LevelMatchOutOfReach | LevelMatchFailed
+LevelMatch = LevelMatchIdle | LevelMatchMeasuring | LevelMatchPaused | LevelMatchMeasured | LevelMatchDone | LevelMatchFailed
 
 
 class FetchProgressStarting(TypedDict):
@@ -626,7 +693,7 @@ class State(TypedDict):
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Refused with levelMatching while a level measurement has the deck. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state.
     tracks: list[Track]  # Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — addTrack, setTrackVolume, renameTrack and deleteTrack move it.
     trackFetch: TrackFetch  # Whether a track is being fetched from YouTube right now. Changes in the same patch as the tracks it produced, so a screen never sees the fetch end before the track appears. Read-only — addTrack moves it.
-    levelMatch: LevelMatch  # What the level measurement is doing, or how the last one ended. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — matchTrackLevel and stopLevelMatch move it.
+    levelMatch: LevelMatch  # What the level measurement is doing, or what the last one came to. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — the level commands (matchTrackLevel, stopLevelMatch, resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens.
     musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens.
@@ -649,7 +716,7 @@ class StatePatch(TypedDict, total=False):
     loop: bool  # Whether what is on the deck repeats. Always true unless the gate is held: the panel's two songs are meant to run under a service without ending, and nobody at the panel should be able to stop that. Writable only while the gate is held, and refused with flowActive while a run's music is sounding — it describes what is on the deck, and a run's track made to repeat is a timeline that never finishes. A run merely holding the gate is not using the deck, so this stays writable then. Refused with levelMatching while a level measurement has the deck. Reset to true when the gate opens — like everything else the gate changes, it goes back to the user's state.
     tracks: list[Track]  # Every track the server can play, each with the level it sounds at, in the order to show them. State rather than part of ready, because tracks are added, renamed and deleted while clients are connected. Read-only — addTrack, setTrackVolume, renameTrack and deleteTrack move it.
     trackFetch: TrackFetch  # Whether a track is being fetched from YouTube right now. Changes in the same patch as the tracks it produced, so a screen never sees the fetch end before the track appears. Read-only — addTrack moves it.
-    levelMatch: LevelMatch  # What the level measurement is doing, or how the last one ended. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — matchTrackLevel and stopLevelMatch move it.
+    levelMatch: LevelMatch  # What the level measurement is doing, or what the last one came to. Changes in the same patch as the tracks it moved, so a screen never sees it done before the new level. Read-only — the level commands (matchTrackLevel, stopLevelMatch, resumeLevelMatch, applyLevelMatch, cancelLevelMatch, revertLevelMatch) move it.
     deck: DeckSource  # What is on the deck: the panel's own song, or a library track an admin put on. Read-only — song and playTrack are what move it.
     unlockWhenDone: bool  # Whether the music stopping also releases the gate, restoring the user's song on the way out. For putting one piece on and walking away. 'Stopping' means either the track running out or musicEndsAt arriving — with loop on, only the latter can ever happen. Writable only while a *person* is holding the gate — during a run the gate is the run's and there is no hold to arm, so this is refused with flowActive. False again once the gate opens.
     musicEndsAt: MusicEnd  # When the music an admin put on should stop. This is what makes a repeating track finite: looping audio has no end of its own, so without it a gate held over that music is held until somebody comes back. A client should ask the moment loop is switched on, and while the answer is undecided say plainly — in words, not as an alarm — that nothing will stop by itself. Reaching an instant stops the music and puts the user's song back; the gate goes too if unlockWhenDone is on. Writable only while a *person* is holding the gate, for the same reason unlockWhenDone is; refused with flowActive during a run. Undecided again once the gate opens.
@@ -875,27 +942,30 @@ class SelectTrackArgs(TypedDict):
 
 class MatchTrackLevelArgs(TypedDict):
     """
-    Measure a track on the desk and move its level so the chosen meter
-    averages the target. Everything about it — the track, the meter, whether
+    Measure a track on the desk: what level would make the chosen meter
+    average the target. Everything about it — the track, the meter, whether
     the main is muted, the target and the span — is decided here, before it
     starts. Whatever the meter asks of the desk is set and read back before
     anything plays; the track then plays from its start at its own level while
     the meter is read, and the deck and the desk are put back after it has
     stopped — however it ends. The average leaves out silence and the passages
     well under the song's own level, so a quiet verse does not drag it down.
-    The new level is the one written down for the track, as setTrackVolume
-    would write it; a flow already saved keeps the levels it was written with.
-    Answers as soon as it is accepted; how it goes is in levelMatch. Only for
-    a person holding the gate with nothing playing: refused with adminUnlocked
-    when the gate is open, flowActive when the gate is a run's, deckPlaying
-    while the deck plays, deckMuted while output is muted (it would measure
-    silence), levelMatching while another measurement runs, unknownTrack, and
+    Nothing is changed by measuring: levelMatch reads measured with the
+    answer, and applyLevelMatch writes it down for the track as setTrackVolume
+    would; a flow already saved keeps the levels it was written with. Answers
+    as soon as it is accepted; how it goes is in levelMatch, and it replaces
+    whatever the last measurement came to. Only for a person holding the gate
+    with nothing playing: refused with adminUnlocked when the gate is open,
+    flowActive when the gate is a run's, deckPlaying while the deck plays,
+    deckMuted while output is muted (it would measure silence), levelMatching
+    while another measurement runs or is paused, unknownTrack, and
     invalidValue for a target outside -60 to 0, a span or a meter that is not
-    one. While it runs the deck is the measurement's — song, playback, volume,
-    mute, loop and selectTrack are refused with levelMatching — and what it
-    holds on the desk cannot be switched from here (consoleHeld). Releasing
-    the gate, a run taking it, or a hand moving what it holds at the desk ends
-    it. A level change applies from the next time the track is chosen.
+    one. While it runs or is paused the deck is the measurement's — song,
+    playback, volume, mute, loop and selectTrack are refused with
+    levelMatching — and what it holds on the desk cannot be switched from here
+    (consoleHeld). Releasing the gate, a run taking it, or a hand moving what
+    it holds at the desk ends it. A level change applies from the next time
+    the track is chosen.
     """
     track: str  # Track id from the tracks attribute
     meter: LevelMeter  # Which meter to read, and for the main whether to mute it
@@ -905,9 +975,50 @@ class MatchTrackLevelArgs(TypedDict):
 
 class StopLevelMatchArgs(TypedDict):
     """
-    End the level measurement now: the track stops, the deck and the desk are
-    put back, and no level changes. levelMatch reads failed, why stopped.
-    Refused with notMeasuring when none is running.
+    Stop the running measurement where it is: the track stops at once, without
+    a fade, the deck and the desk stay as the measurement set them, and
+    levelMatch reads paused with what the part played so far comes to. Refused
+    with notMeasuring unless one is running.
+    """
+    pass
+
+
+class ResumeLevelMatchArgs(TypedDict):
+    """
+    Go on with a paused measurement from where it stopped, its average carried
+    on. Refused with notMeasuring unless one is paused.
+    """
+    pass
+
+
+class ApplyLevelMatchArgs(TypedDict):
+    """
+    Write down the level the measurement came to for its track, as
+    setTrackVolume would. A paused one is ended first: the track stops for
+    good and the deck and the desk are put back before the level is written.
+    levelMatch reads done, in the same patch as tracks. Refused with
+    notMeasuring unless one is paused or measured, outOfReach when its answer
+    is, invalidValue when it has none yet, and unknownTrack when the track has
+    gone.
+    """
+    pass
+
+
+class CancelLevelMatchArgs(TypedDict):
+    """
+    Set a paused or measured measurement aside with nothing changed: a paused
+    one's track stops for good and the deck and the desk are put back.
+    levelMatch reads idle. Refused with notMeasuring unless one is paused or
+    measured.
+    """
+    pass
+
+
+class RevertLevelMatchArgs(TypedDict):
+    """
+    Put back the level an applied measurement replaced. levelMatch reads
+    measured again, so it can be applied once more. Refused with notMeasuring
+    unless the last one was applied, and unknownTrack when the track has gone.
     """
     pass
 
@@ -958,6 +1069,10 @@ COMMANDS: dict[str, dict] = {
     "selectTrack": {"permission": "admin"},
     "matchTrackLevel": {"permission": "admin"},
     "stopLevelMatch": {"permission": "admin"},
+    "resumeLevelMatch": {"permission": "admin"},
+    "applyLevelMatch": {"permission": "admin"},
+    "cancelLevelMatch": {"permission": "admin"},
+    "revertLevelMatch": {"permission": "admin"},
 }
 
 

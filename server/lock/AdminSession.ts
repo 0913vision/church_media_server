@@ -29,7 +29,7 @@ class AdminSession {
     private readonly lockCoordinator: LockCoordinator,
     private readonly notifier: Notifier,
     private readonly clock: Clock,
-    private readonly levelMatcher: Pick<LevelMatcher, 'ownsDeck'>,
+    private readonly levelMatcher: Pick<LevelMatcher, 'isPlaying'>,
   ) {}
 
   isArmed(): boolean {
@@ -110,8 +110,8 @@ class AdminSession {
       return;
     }
 
-    // Note(yoochan.kim): a measurement's track is not the person's music, and the lapse waits for its end.
-    if (this.levelMatcher.ownsDeck()) return;
+    // Note(yoochan.kim): the lapse waits for a measurement's track to end, but not for one left paused with the desk held.
+    if (this.levelMatcher.isPlaying()) return;
 
     const now = this.clock.now();
 
