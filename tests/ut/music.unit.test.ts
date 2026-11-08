@@ -201,6 +201,27 @@ describe('A run\'s music', () => {
     assert.equal(mpv.when('loadfile /audio/b.mp3'), undefined);
   });
 
+  test('started late, its track is put paused where the timeline will be half a second on, and started then', async () => {
+    const { mpv, runner } = rig();
+    const long = entry('long', 5, 50);
+    const t0 = Date.now();
+    const plan: Plan = {
+      id: 'late', name: '늦은 시작', lock: { at: new Date(t0 - 3000), until: new Date(t0 + 4000) },
+      parts: [{ kind: 'music', tracks: [long], startsAt: new Date(t0 - 2000), endsAt: new Date(t0 + 3000) }],
+    };
+    assert.deepEqual(runner.startPlan(plan), { ok: true });
+    await settle(800);
+
+    const load = mpv.when('loadfile /audio/long.mp3');
+    near(load === undefined ? undefined : load - t0, 0, 'loaded at once');
+    const seek = mpv.calls.find((entryCall) => entryCall.call.startsWith('playback-time='));
+    const at = Number(seek?.call.slice('playback-time='.length));
+    assert.ok(Math.abs(at - 2.5) < SLACK_MS / 1000, `put where the timeline is at 500: ${at}s`);
+    const start = mpv.when('pause=no', load);
+    near(start === undefined ? undefined : start - t0, 500, 'started as the timeline got there');
+    await runner.stop();
+  });
+
   test('never put on the deck before the gate, nor over a person\'s song that is playing', async () => {
     const gated = rig();
     const t0 = Date.now();

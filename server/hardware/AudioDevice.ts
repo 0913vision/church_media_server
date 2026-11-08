@@ -211,6 +211,16 @@ class AudioDevice implements AudioOutput {
     }
   }
 
+  async cueFileAt(filePath: string, offsetSec: number): Promise<void> {
+    this.loadFile(filePath, false);
+    try {
+      await this.setPlaybackTime(offsetSec);
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to seek track', { filePath, offsetSec, error: errorMessage(error) });
+      throw error;
+    }
+  }
+
   /** Note(yoochan.kim): gapless when the formats match (mpv's gapless-audio=weak); every file on the Pi is 44.1kHz stereo. */
   queueFile(filePath: string): void {
     try {

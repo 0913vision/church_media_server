@@ -32,6 +32,7 @@ class FakeAudioOutput implements AudioOutput {
   async loadLastSongTime(): Promise<void> {}
   async playFileAt(): Promise<void> {}
   loadFile(): void {}
+  async cueFileAt(): Promise<void> {}
   queueFile(): void {}
   clearQueue(): void {}
   playingFile(): string | null {

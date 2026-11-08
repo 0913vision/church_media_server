@@ -18,6 +18,8 @@ export interface AudioOutput {
   playFileAt(filePath: string, offsetSec: number, loop?: boolean, fadeLimitMs?: number): Promise<void>;
   /** Puts a library file on the deck, paused at its start */
   loadFile(filePath: string, loop: boolean): void;
+  /** Puts a file on the deck paused at a point in it, so starting it there is only an unpause */
+  cueFileAt(filePath: string, offsetSec: number): Promise<void>;
   /** Puts a file after the one playing, so mpv runs straight on into it as that one ends */
   queueFile(filePath: string): void;
   /** Drops whatever is queued after the file playing; the file playing is left as it is */

@@ -78,15 +78,15 @@ class Player {
     return this.state.state;
   }
 
-  /** `fadeFromStart`: the app's own songs always fade; onSounding fires as sound starts, not when the fade ends. */
-  async play({ onSounding, fadeFromStart = false }: { onSounding?: () => void; fadeFromStart?: boolean } = {}): Promise<void> {
+  /** `fadeFromStart`: the app's own songs always fade; onSounding fires as sound starts, not when the fade ends; `fadeMs` shortens the fade. */
+  async play({ onSounding, fadeFromStart = false, fadeMs }: { onSounding?: () => void; fadeFromStart?: boolean; fadeMs?: number } = {}): Promise<void> {
     const fade = fadeFromStart || this.device.isPartWay();
     log.info('player', null, 'Play', { ...this.where(), fade: fade ? 'in' : 'none' });
     try {
       await this.device.resume(fade, () => {
         this.state.state = PlaybackState.PLAYING;
         onSounding?.();
-      });
+      }, fadeMs);
     } catch (error) {
       log.error('player', null, 'Failed to play audio', { error: errorMessage(error) });
       throw error;
@@ -241,6 +241,21 @@ class Player {
       this.device.loadFile(track.file, false);
     } catch (error) {
       log.error('player', null, 'Failed to cue track', { track: track.id, volume, error: errorMessage(error) });
+      throw error;
+    }
+    this.trackId = track.id;
+    this.state.state = PlaybackState.PAUSED;
+  }
+
+  /** Loaded paused at a point in it, for a run joining it part-way on the moment it names; the caller has taken the deck. */
+  async cueTrackAt(track: { id: string; file: string }, offsetSec: number, volume: number): Promise<void> {
+    try {
+      await this.takeDeck(false);
+      this.device.setVolume(this.isMuted() ? 0 : volume);
+      this.liveVolume = volume;
+      await this.device.cueFileAt(track.file, offsetSec);
+    } catch (error) {
+      log.error('player', null, 'Failed to cue track', { track: track.id, offsetSec, volume, error: errorMessage(error) });
       throw error;
     }
     this.trackId = track.id;

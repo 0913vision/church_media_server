@@ -12,6 +12,7 @@ import type { FlowTiming } from '../constants/flowConfig.ts';
 import type MixerConsole from '../console/MixerConsole.ts';
 import type { DeskChange } from '../console/desk.ts';
 import { DeskRestoreError } from '../console/DeskHolds.ts';
+import { DEVICE_CONFIG } from '../constants/deviceConfig.ts';
 import { log } from '../utils/logger.ts';
 import { formatInstant, isWireInstant } from '../utils/instant.ts';
 import { errorMessage } from '../utils/errors.ts';
@@ -27,6 +28,8 @@ const RUN_ON_EARLY_MS = 2000;
 // Note(yoochan.kim): how long past its boundary a queued track may take to come on before it is loaded instead.
 const RUN_ON_WAIT_MS = 300;
 const RUN_ON_POLL_MS = 5;
+// Note(yoochan.kim): a track joined part-way is put where the timeline will be this far on, room for opening and seeking it (100–200ms on the Pi).
+const JOIN_LEAD_MS = 500;
 
 /** A library track as one flow scheduled it: same audio, that flow's level */
 type ScheduledEntry = LibraryEntry;
@@ -489,30 +492,53 @@ class FlowRunner {
   ): Promise<boolean> {
     // Note(yoochan.kim): no fade once the run holds the deck; a fade between its own tracks would start each 3s late.
     let seekSec = 0;
+    const join: { at: number | null } = { at: null };
     const ran = await this.withAudio(async () => {
       await this.player.takeDeck(!this.holdsDeck());
       this.holdDeck();
       // Note(yoochan.kim): after takeDeck's fade, which takes seconds, or the seek lands where the music was before it.
-      seekSec = Math.max(0, (this.clock.now().getTime() - startedAt.getTime()) / 1000);
+      const now = this.clock.now().getTime();
+      seekSec = Math.max(0, (now - startedAt.getTime()) / 1000);
+      // Note(yoochan.kim): joined part-way it is put paused where the timeline will be, and started then; a seek worked out first ran 127ms behind (2026-11-08, Pi).
+      if (seekSec > DEVICE_CONFIG.SEEK_AUDIBLE_SEC && (track.durationSec - seekSec) * 1000 > 2 * JOIN_LEAD_MS) {
+        join.at = now + JOIN_LEAD_MS;
+        seekSec = (join.at - startedAt.getTime()) / 1000;
+        await this.player.cueTrackAt(track, seekSec, track.volume);
+        return;
+      }
       await this.player.playTrackAt(track, seekSec, track.volume, false, (track.durationSec - seekSec) * 1000);
     });
     if (!ran) {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
       return false;
     }
-    this.trackStarted(track, startedAt, seekSec, index, total, endsAt, 'loaded');
+    if (join.at === null) {
+      this.trackStarted(track, startedAt, seekSec, index, total, endsAt, 'loaded');
+      return true;
+    }
+
+    await this.sleepUntil(new Date(join.at));
+    const sounded: { at?: number } = {};
+    const fadeMs = Math.min(DEVICE_CONFIG.FADE_IN_MS, (track.durationSec - seekSec) * 1000);
+    const started = await this.withAudio(() => this.player.play({ fadeMs, onSounding: () => { sounded.at = this.clock.now().getTime(); } }));
+    if (!started) {
+      log.error('flow', null, 'Could not take the audio device to start a track', { track: track.id });
+      return false;
+    }
+    this.trackStarted(track, startedAt, seekSec, index, total, endsAt, 'joined', sounded.at);
     return true;
   }
 
-  /** How it began: loaded on its boundary, cued paused ahead and unpaused, or queued and run on into. */
+  /** How it began: loaded on its boundary, joined part-way, cued paused ahead and unpaused, or queued and run on into. */
   private trackStarted(
-    track: ScheduledEntry, startedAt: Date, seekSec: number, index: number, total: number, endsAt: Date, how: 'loaded' | 'cued' | 'queued',
+    track: ScheduledEntry, startedAt: Date, seekSec: number, index: number, total: number, endsAt: Date,
+    how: 'loaded' | 'joined' | 'cued' | 'queued', soundedAt?: number,
   ): void {
     if (this.active) {
       this.active.playing = { track: { title: track.title, index: index + 1, total }, endsAt };
     }
     // Note(yoochan.kim): seek is the plan, lag how long after that point was due the room heard it begin.
-    const lagSec = (this.clock.now().getTime() - startedAt.getTime()) / 1000 - seekSec;
+    const lagSec = ((soundedAt ?? this.clock.now().getTime()) - startedAt.getTime()) / 1000 - seekSec;
     log.info('flow', null, 'Track started', {
       track: `${index + 1}/${total}`,
       title: track.title,
