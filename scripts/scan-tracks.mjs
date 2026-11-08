@@ -7,25 +7,25 @@ import { execFileSync } from 'node:child_process';
 const manifestPath = process.argv[2] ?? process.env.TRACKS_MANIFEST_PATH ?? './assets/tracks.json';
 const manifestDir = path.dirname(manifestPath);
 
-// Note(yoochan.kim): ffprobe reads only the file's header and never opens an audio device, so this makes no sound.
+// Note(yoochan.kim): ffmpeg decodes the file and never opens an audio device, so this makes no sound.
+// Note(yoochan.kim): the decoded audio, not the header: an mp3's header counts its padding, which mpv trims, so a run ran on 10–90ms early.
 function measureSeconds(file) {
+  // Note(yoochan.kim): decoded to 1kHz mono, one byte a millisecond, as server/tracks/probe.ts counts it.
   const output = execFileSync(
-    'ffprobe',
-    ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file],
-    { encoding: 'utf8' },
+    'ffmpeg',
+    ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', '1000', '-f', 'u8', '-'],
+    { maxBuffer: 256 * 1024 * 1024 },
   );
-  const seconds = Number.parseFloat(output.trim());
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    throw new Error(`ffprobe reported no usable duration for ${file}`);
+  if (output.length === 0) {
+    throw new Error(`ffmpeg decoded no audio from ${file}`);
   }
-  // Note(yoochan.kim): one decimal is well inside the seek tolerance and keeps the file readable.
-  return Math.round(seconds * 10) / 10;
+  return output.length / 1000;
 }
 
 try {
-  execFileSync('ffprobe', ['-version'], { stdio: 'ignore' });
+  execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
 } catch {
-  console.error('scan-tracks: ffprobe not found. Install ffmpeg, or edit durationSec by hand and keep it exact.');
+  console.error('scan-tracks: ffmpeg not found. Install it, or edit durationSec by hand and keep it exact.');
   process.exit(1);
 }
 
@@ -51,7 +51,7 @@ for (const track of tracks) {
     console.log(`scan-tracks: ${track.id} ${measured}s (unchanged)`);
   } else {
     changed += 1;
-    const drift = typeof previous === 'number' ? ` (was ${previous}s, off by ${(measured - previous).toFixed(1)}s)` : '';
+    const drift = typeof previous === 'number' ? ` (was ${previous}s, off by ${Math.round((measured - previous) * 1000)}ms)` : '';
     console.log(`scan-tracks: ${track.id} ${measured}s${drift}`);
   }
 }

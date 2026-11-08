@@ -124,7 +124,8 @@ describe('Uploading a track', () => {
       const track: Track = added[0]!;
       assert.strictEqual(track.title, '새 곡');
       assert.strictEqual(track.volume, 53, 'every new track starts at the same level');
-      assert.ok(track.durationSec > 1 && track.durationSec < 1.2, `measured from the file: ${track.durationSec}`);
+      // Note(yoochan.kim): the fixture plays for 1.000s; its header says 1.071s, counting the mp3's padding.
+      assert.strictEqual(track.durationSec, 1, 'measured as it plays, not from its header');
 
       // Note(yoochan.kim): what the next boot reads, not what this process remembers.
       const manifest = JSON.parse(fs.readFileSync(TEST_TRACKS_MANIFEST_PATH, 'utf8')) as { id: string; file: string }[];
