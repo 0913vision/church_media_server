@@ -22,6 +22,11 @@ type Checked<T> = { ok: true; value: T } | { ok: false; reason: RejectReason };
 // Note(yoochan.kim): an admin's write holds the audio lock up to one fade; retry across it rather than drop a track.
 const AUDIO_LOCK_ATTEMPTS = 12;
 const AUDIO_LOCK_RETRY_MS = 300;
+// Note(yoochan.kim): mpv runs on as the file really ends, 10–90ms before its manifest length on the Pi's songs, so a run watches from ahead of each boundary.
+const RUN_ON_EARLY_MS = 2000;
+// Note(yoochan.kim): how long past its boundary a queued track may take to come on before it is loaded instead.
+const RUN_ON_WAIT_MS = 300;
+const RUN_ON_POLL_MS = 5;
 
 /** A library track as one flow scheduled it: same audio, that flow's level */
 type ScheduledEntry = LibraryEntry;
@@ -252,27 +257,90 @@ class FlowRunner {
       return;
     }
     // Note(yoochan.kim): sound never precedes the gate; an earlier timeline is joined at the lock, like a late start.
-    await this.sleepUntil(part.startsAt.getTime() < lock.at.getTime() ? lock.at : part.startsAt);
+    const begins = part.startsAt.getTime() < lock.at.getTime() ? lock.at : part.startsAt;
+    // Note(yoochan.kim): the first track goes on the deck ahead, as a notice does, but never before the gate.
+    await this.sleepUntil(new Date(Math.max(begins.getTime() - this.timing.CUE_PRELOAD_MS, lock.at.getTime())));
 
     // Note(yoochan.kim): absolute boundaries, so a late start joins where the timeline is and nothing drifts.
     const starts = boundariesOf(part);
-    const now = this.clock.now().getTime();
-    const first = starts.findIndex((start, index) => now < start.getTime() + part.tracks[index]!.durationSec * 1000);
+    const at = Math.max(this.clock.now().getTime(), begins.getTime());
+    const first = starts.findIndex((start, index) => at < start.getTime() + part.tracks[index]!.durationSec * 1000);
     if (first < 0) {
       await this.partDone();
       return;
     }
+    const cued = starts[first]!.getTime() >= at && (await this.cueAhead(part.tracks[first]!));
+    if (!cued) await this.sleepUntil(begins);
 
     for (let index = first; index < part.tracks.length; index++) {
-      if (index > first) await this.sleepUntil(starts[index]!);
+      const track = part.tracks[index]!;
+      const start = starts[index]!;
+      const ranOn = index > first && (await this.ranOn(track, start));
+      if (!ranOn && (index > first || cued)) await this.sleepUntil(start);
       if (this.clock.hasPassed(part.endsAt)) break;
 
-      const played = await this.playTrack(part.tracks[index]!, starts[index]!, index, part.tracks.length, part.endsAt);
+      let played: boolean;
+      if (ranOn) played = await this.ranOnInto(track, start, index, part.tracks.length, part.endsAt);
+      else if (index === first && cued) played = await this.startCued(track, start, index, part.tracks.length, part.endsAt);
+      else played = await this.playTrack(track, start, index, part.tracks.length, part.endsAt);
       if (!played) return;
+
+      // Note(yoochan.kim): queued as this one starts, so at its boundary the next is already open and plays straight on (gapless).
+      const next = part.tracks[index + 1];
+      if (next) this.player.queueTrack(next);
     }
 
     await this.sleepUntil(part.endsAt);
     await this.partDone();
+  }
+
+  /** The run's first track loaded paused ahead of its start; not over a person's sound, which is faded first as ever. */
+  private async cueAhead(track: ScheduledEntry): Promise<boolean> {
+    if (this.player.isPlaying()) return false;
+    const cued = await this.withAudio(async () => {
+      await this.player.takeDeck(false);
+      this.holdDeck();
+      await this.player.cueTrack(track, track.volume);
+    });
+    if (!cued) log.warn('flow', null, 'Could not put the first track on the deck ahead; it is loaded at its start', { track: track.id });
+    return cued;
+  }
+
+  private async startCued(track: ScheduledEntry, start: Date, index: number, total: number, endsAt: Date): Promise<boolean> {
+    const ran = await this.withAudio(() => this.player.play());
+    if (!ran) {
+      log.error('flow', null, 'Could not take the audio device to start a track', { track: track.id });
+      return false;
+    }
+    this.trackStarted(track, start, 0, index, total, endsAt, 'cued');
+    return true;
+  }
+
+  /** Whether mpv has run on into the queued track, watched from ahead of its boundary so it takes its level as it comes on. */
+  private async ranOn(track: ScheduledEntry, start: Date): Promise<boolean> {
+    // Note(yoochan.kim): the same file twice in a row reads as on at once; only its title and level move early then.
+    await this.sleepUntil(new Date(start.getTime() - RUN_ON_EARLY_MS));
+    const giveUp = start.getTime() + RUN_ON_WAIT_MS;
+    while (!this.player.isOn(track)) {
+      if (this.clock.now().getTime() >= giveUp) {
+        log.warn('flow', null, 'The queued track did not come on at its boundary; loading it', { track: track.id });
+        this.player.clearQueue();
+        return false;
+      }
+      // Note(yoochan.kim): the run's own wait, so a stop meanwhile ends it here rather than loading a track after cleanup.
+      await this.sleepUntil(new Date(this.clock.now().getTime() + RUN_ON_POLL_MS));
+    }
+    return true;
+  }
+
+  private async ranOnInto(track: ScheduledEntry, start: Date, index: number, total: number, endsAt: Date): Promise<boolean> {
+    const ran = await this.withAudio(async () => this.player.ranOnInto(track, track.volume));
+    if (!ran) {
+      log.error('flow', null, 'Could not take the audio device to set a track\'s level', { track: track.id });
+      return false;
+    }
+    this.trackStarted(track, start, 0, index, total, endsAt, 'queued');
+    return true;
   }
 
   /** Plays the countdown as one block, each notice loaded paused ahead and started by an unpause on its second. */
@@ -432,7 +500,14 @@ class FlowRunner {
       log.error('flow', null, 'Could not take the audio device for a track', { track: track.id });
       return false;
     }
+    this.trackStarted(track, startedAt, seekSec, index, total, endsAt, 'loaded');
+    return true;
+  }
 
+  /** How it began: loaded on its boundary, cued paused ahead and unpaused, or queued and run on into. */
+  private trackStarted(
+    track: ScheduledEntry, startedAt: Date, seekSec: number, index: number, total: number, endsAt: Date, how: 'loaded' | 'cued' | 'queued',
+  ): void {
     if (this.active) {
       this.active.playing = { track: { title: track.title, index: index + 1, total }, endsAt };
     }
@@ -441,12 +516,12 @@ class FlowRunner {
     log.info('flow', null, 'Track started', {
       track: `${index + 1}/${total}`,
       title: track.title,
+      start: how,
       seek: `${seekSec.toFixed(1)}s`,
       lag: `${lagSec.toFixed(2)}s`,
       level: track.volume,
     });
     this.notifier.state({ playback: this.player.getState(), volume: this.player.getVolume(), flow: this.status() });
-    return true;
   }
 
   private async cleanup(): Promise<void> {
@@ -472,6 +547,8 @@ class FlowRunner {
   private async restoreDeck(fade = true): Promise<void> {
     const point = this.active?.restorePoint;
     const ran = await this.withAudio(async () => {
+      // Note(yoochan.kim): a track the run queued must not come on while the one playing fades out under a stop.
+      if (this.holdsDeck()) this.player.clearQueue();
       await this.player.restoreSong(fade);
       if (!point) return;
       // Note(yoochan.kim): back to the deck this run was handed, not the one it happens to find.

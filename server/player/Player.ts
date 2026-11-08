@@ -247,6 +247,28 @@ class Player {
     this.state.state = PlaybackState.PAUSED;
   }
 
+  /** A run's next track after the one playing, so it starts the moment that one ends; the deck still names the one playing. */
+  queueTrack(track: { file: string }): void {
+    this.device.queueFile(track.file);
+  }
+
+  clearQueue(): void {
+    this.device.clearQueue();
+  }
+
+  /** Whether mpv has run on into this track. */
+  isOn(track: { file: string }): boolean {
+    return this.device.playingFile() === track.file;
+  }
+
+  /** mpv has run on into a run's next track: the deck names it and takes its level. */
+  ranOnInto(track: { id: string }, volume: number): void {
+    this.device.setVolume(this.isMuted() ? 0 : volume);
+    this.liveVolume = volume;
+    this.trackId = track.id;
+    this.state.state = PlaybackState.PLAYING;
+  }
+
   /** Note(yoochan.kim): chosen, not started, like picking a panel song: pressing a name says which, not go. */
   async selectTrack(track: { id: string; file: string }, volume: number, loop: boolean): Promise<void> {
     try {

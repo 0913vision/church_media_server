@@ -211,6 +211,33 @@ class AudioDevice implements AudioOutput {
     }
   }
 
+  /** Note(yoochan.kim): gapless when the formats match (mpv's gapless-audio=weak); every file on the Pi is 44.1kHz stereo. */
+  queueFile(filePath: string): void {
+    try {
+      this.mpv.executeCommand(["loadfile", filePath, "append", null]);
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to queue track file', { filePath, error: errorMessage(error) });
+      throw error;
+    }
+  }
+
+  clearQueue(): void {
+    try {
+      this.mpv.executeCommand(["playlist-clear", null]);
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to clear the queue', { error: errorMessage(error) });
+    }
+  }
+
+  playingFile(): string | null {
+    try {
+      return this.mpv.getProperty("path");
+    } catch (error) {
+      log.error('audioDevice', null, 'Failed to read the playing file', { error: errorMessage(error) });
+      return null;
+    }
+  }
+
   async playFileAt(filePath: string, offsetSec: number, loop = false, fadeLimitMs = Infinity): Promise<void> {
     this.mpv.setProperty("pause", "yes");
     this.mpv.setProperty("loop", loop ? "inf" : "no");

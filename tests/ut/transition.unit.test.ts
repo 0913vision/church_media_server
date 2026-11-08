@@ -64,7 +64,7 @@ describe('A run moving from one of its tracks to the next', () => {
     await player.playTrackAt({ id: 'first', file: '/audio/first.mp3' }, 0, 60);
     mpv.calls = [];
 
-    // Note(yoochan.kim): what FlowRunner does at a boundary between its own tracks.
+    // Note(yoochan.kim): what FlowRunner does at a boundary when mpv has not run on into the track it queued.
     const boundary = Date.now();
     await player.takeDeck(false);
     // Note(yoochan.kim): its timer fires a few milliseconds late, which is not a seek.

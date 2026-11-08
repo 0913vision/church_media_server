@@ -72,7 +72,9 @@ class MpvClient {
   }
 
   executeCommand(command: (string | null)[]): void {
-    const code = this.api.mpv_command(this.playerInstance, command);
+    // Note(yoochan.kim): mpv reads the list up to a null; one sent without it read past its end and froze the server (2026-11-08, on the Pi).
+    const terminated = command.at(-1) === null ? command : [...command, null];
+    const code = this.api.mpv_command(this.playerInstance, terminated);
     if (code < 0) {
       log.warn('mpvClient', null, 'mpv_command failed', { command: command.join(' '), code });
     }

@@ -291,7 +291,10 @@ describe('A run\'s countdown', () => {
     assert.deepEqual(runner.startPlan(plan), { ok: true });
     await settle(2200);
 
-    const song = mpv.when('loadfile /audio/song.mp3');
+    // Note(yoochan.kim): put on the deck ahead (its 300 of lead already gone, so at once) and started by an unpause at 200.
+    const loaded = mpv.when('loadfile /audio/song.mp3');
+    near(loaded === undefined ? undefined : loaded - t0, 0, 'the music put on the deck');
+    const song = mpv.when('pause=no', loaded);
     near(song === undefined ? undefined : song - t0, 200, 'the music started');
     // Note(yoochan.kim): its block opens 500 before it, at 1000, as the music ends.
     const cue = mpv.when('loadfile /audio/min.mp3');
