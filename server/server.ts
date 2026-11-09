@@ -35,11 +35,13 @@ import Notifier from './notify/Notifier.ts';
 import FileStateStore from './state/FileStateStore.ts';
 import type { PersistedState } from './state/StateStore.ts';
 import Clock from './clock/Clock.ts';
+import NtpServer from './clock/NtpServer.ts';
+import { createTimeDoor } from './clock/timeDoor.ts';
 import { createMockView } from './console/mockView.ts';
 import { serveApk } from './update/apkProxy.ts';
 import { registerHandlers } from './handlers/index.ts';
 import type { ServerDeps } from './deps.ts';
-import { requireEnv } from './utils/env.ts';
+import { requireEnv, requireIntEnv } from './utils/env.ts';
 import { log } from './utils/logger.ts';
 
 type TypedServer = Server<ClientToServerEventsUnsafe, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -53,6 +55,7 @@ class MediaServer {
   private uploads: Uploads | null = null;
   private deskHolds: DeskHolds | null = null;
   private levelMatcher: LevelMatcher | null = null;
+  private ntpServer: NtpServer | null = null;
 
   start(): void {
     log.info('server', null, 'Socket is initializing');
@@ -70,10 +73,19 @@ class MediaServer {
     const serveUploads = createUploadDoor(trackLibrary, uploads);
     const fetcher = new Fetcher(requireEnv('YTDLP_PATH'));
 
-    // Note(yoochan.kim): HTTP only moves files; everything that changes the device speaks the socket protocol.
+    // Note(yoochan.kim): built before the HTTP server too, since the time door reads the clock from the first request.
+    const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
+    const restored = stateStore.load();
+    // Note(yoochan.kim): the clock correction describes the building, not the run, so it outlives a power cut.
+    const clock = new Clock(restored?.clockOffsetSec ?? 0);
+    const serveTime = createTimeDoor(clock);
+    this.ntpServer = new NtpServer(clock, requireIntEnv('NTP_PORT'));
+
+    // Note(yoochan.kim): HTTP moves files and tells the time; everything that changes the device speaks the socket protocol.
     const httpServer = createServer((req, res) => {
       if (serveMockDesk?.(req, res)) return;
       if (serveUploads(req, res)) return;
+      if (serveTime(req, res)) return;
       void serveApk(req, res);
     });
     const io: TypedServer = new Server<
@@ -91,8 +103,6 @@ class MediaServer {
     const notifier = new Notifier(io);
 
     const schedule = new Schedule(requireEnv('SCHEDULE_FILE_PATH'));
-    const stateStore = new FileStateStore(requireEnv('STATE_FILE_PATH'));
-    const restored = stateStore.load();
     // Note(yoochan.kim): a song since dropped from the manifest cannot be loaded, so the deck takes the first.
     const restoredSong = trackLibrary.isDeckSong(restored?.currentSong) ? restored!.currentSong : undefined;
     const initialConfig: PlayerConfig = {
@@ -103,8 +113,6 @@ class MediaServer {
       state: PlaybackState.PAUSED
     };
 
-    // Note(yoochan.kim): the clock correction describes the building, not the run, so it outlives a power cut.
-    const clock = new Clock(restored?.clockOffsetSec ?? 0);
     let preferences: PersistedState = {
       serverVolume: initialConfig.serverVolume,
       muted: initialConfig.muted,
@@ -231,6 +239,10 @@ class MediaServer {
     if (this.deskHolds) {
       this.deskHolds.dispose();
       this.deskHolds = null;
+    }
+    if (this.ntpServer) {
+      this.ntpServer.dispose();
+      this.ntpServer = null;
     }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

@@ -38,6 +38,8 @@ const TEST_ADMIN_CONTACT_PHONE = process.env.ADMIN_CONTACT_PHONE ?? '010-0000-00
 // Note(yoochan.kim): a port nothing answers, so a test reaching the APK relay fails fast instead of downloading.
 const TEST_FILESERVER_URL = process.env.FILESERVER_URL ?? 'http://localhost:1';
 const TEST_FILESERVER_PASSWORD = process.env.FILESERVER_PASSWORD ?? 'test';
+// Note(yoochan.kim): NTP's own 123 is root's on Linux, so the tests ask on a free one.
+export const TEST_NTP_PORT = Number(process.env.NTP_PORT ?? '4123');
 // Note(yoochan.kim): a stand-in, so no test reaches YouTube. The video id picks its answer.
 const TEST_YTDLP_PATH = path.resolve('./tests/fixtures/fake-yt-dlp.mjs');
 
@@ -102,6 +104,7 @@ export async function ensureServer(): Promise<void> {
   process.env.ADMIN_CONTACT_PHONE = TEST_ADMIN_CONTACT_PHONE;
   process.env.FILESERVER_URL = TEST_FILESERVER_URL;
   process.env.FILESERVER_PASSWORD = TEST_FILESERVER_PASSWORD;
+  process.env.NTP_PORT = String(TEST_NTP_PORT);
   // Note(yoochan.kim): Start from a clean slate so boot uses INITIAL defaults, not a prior run.
   fs.rmSync(TEST_STATE_FILE_PATH, { force: true });
   copyManifest();

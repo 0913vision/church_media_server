@@ -47,6 +47,20 @@ missing or invalid one (no silent defaults). Copy `.env.example` and adjust.
 | `X32_REMOTE_PORT` | X32 OSC port | `10023` |
 | `MPV_LIBRARY_PATH` | libmpv shared library path | `/opt/homebrew/lib/libmpv.dylib` (macOS) · `/lib/arm-linux-gnueabihf/libmpv.so` (Pi) |
 | `STATE_FILE_PATH` | Where player preferences are persisted | `./data/state.json` |
+| `NTP_PORT` | UDP port answering NTP with church time | `123` |
+
+## Church time for other devices
+
+The server tells the time it runs services by: standard time plus the
+correction set in the admin web's clock tab, so it matches the sanctuary wall
+clock.
+
+- **NTP** on `NTP_PORT`: set a computer's or a clock's time server to the Pi
+  (e.g. `192.168.0.4`) and it follows church time. On Linux, port 123 has to be
+  opened to the server's user first.
+- **`GET /time`** on `PORT`: for programs that read the time without setting a
+  clock. Answers `{ churchTime, churchEpochMs, standardTime, offsetSec }`, the
+  times in ISO 8601 with their zone.
 
 ## Commands
 
