@@ -262,7 +262,14 @@ class LevelMatcher {
       this.applyAnswer(measured, measured.answer);
       return;
     }
-    log.info('level', null, 'Measured; waiting to be applied', { track: run.track.id, at: run.elapsedSec, answer: measured.answer });
+    // Note(yoochan.kim): the answer spelled out, since a measurement set aside afterwards is gone from everywhere but here.
+    const { answer } = measured;
+    log.info('level', null, 'Measured; waiting to be applied', {
+      track: run.track.id, meter: measured.meter.kind, targetDb: measured.targetDb, at: run.elapsedSec, from: measured.volumeBefore,
+      answer: answer.kind,
+      ...(answer.kind === 'none' ? {} : { averageDb: answer.averageDb }),
+      ...(answer.kind === 'reachable' ? { volume: answer.volumeAfter } : answer.kind === 'outOfReach' ? { needed: answer.volumeNeeded } : {}),
+    });
     this.publish({ phase: 'measured', ...measured });
   }
 
