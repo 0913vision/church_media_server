@@ -1,6 +1,7 @@
 import { test, describe, before } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { MuteState, PlaybackState } from '../../server/protocol.ts';
+import type { FlowStatus, StatePatch } from '../../server/protocol.ts';
 import type MpvClient from '../../server/hardware/MpvClient.ts';
 import type Notifier from '../../server/notify/Notifier.ts';
 import type TrackLibrary from '../../server/tracks/TrackLibrary.ts';
@@ -110,7 +111,13 @@ function rig(library: TrackLibrary = LIBRARY) {
     () => 50,
     () => {},
   );
-  const notifier = new Proxy({}, { get: () => () => {} }) as unknown as Notifier;
+  // Note(yoochan.kim): what every screen was told of the run, and when.
+  const told: { at: number; flow: string }[] = [];
+  const notifier = new Proxy({}, {
+    get: (_, key) => key === 'state'
+      ? (patch: StatePatch) => { if (patch.flow) told.push({ at: Date.now(), flow: shown(patch.flow) }); }
+      : () => {},
+  }) as unknown as Notifier;
   const locks = new m.LockCoordinator(notifier);
   const desk = new m.MockConsole();
   const holds = new m.DeskHolds(desk, HOLD_TIMING, () => {}, [], testWatch());
@@ -119,7 +126,7 @@ function rig(library: TrackLibrary = LIBRARY) {
   const runner = new m.FlowRunner(
     player, library, locks, notifier, clock, mixer, [...m.BAND_ONLY.BLOCK, ...m.BAND_ONLY.OPEN], TIMING,
   );
-  return { mpv, player, locks, runner, desk, holds, clock };
+  return { mpv, player, locks, runner, desk, holds, clock, told };
 }
 
 const settle = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -132,21 +139,37 @@ function sampleDeck(runner: { ownsDeck(): boolean }, t0: number, moments: number
   for (const ms of moments) setTimeout(() => { seen[ms] = runner.ownsDeck(); }, t0 + ms - Date.now());
   return seen;
 }
+
+/** The status a screen reads, as "playing", "holding" or "holding, deck". */
+function sampleStatus(runner: { status(): FlowStatus }, t0: number, moments: number[]): Record<number, string> {
+  const seen: Record<number, string> = {};
+  for (const ms of moments) setTimeout(() => { seen[ms] = shown(runner.status()); }, t0 + ms - Date.now());
+  return seen;
+}
+
+function shown(status: FlowStatus): string {
+  return status.phase === 'holding' && status.deckHeld ? 'holding, deck' : status.phase;
+}
 const countdownPlan = (lock: { at: Date; until: Date }, cues: { track: LibraryEntry; at: Date }[], desk?: DeskChange[]): Plan =>
   ({ id: 'countdown', name: '카운트다운', lock, parts: [{ kind: 'countdown', cues, desk }] });
 
 describe('A run\'s countdown', () => {
   test('each clip goes on the deck as soon as the step before is done, paused, and starts on its second', async () => {
-    const { mpv, runner } = rig();
+    const { mpv, runner, told } = rig();
     const t0 = Date.now();
     const plan = countdownPlan({ at: new Date(t0 - 1000), until: new Date(t0 + 2600) }, [
       { track: entry('min', 0.5, 40), at: new Date(t0 + 700) },
       { track: entry('count', 0.4, 70), at: new Date(t0 + 1600) },
     ]);
     const deck = sampleDeck(runner, t0, [100, 1250, 2300]);
+    const status = sampleStatus(runner, t0, [100, 450, 900, 1400, 1800]);
 
     assert.deepEqual(runner.startPlan(plan), { ok: true });
     await settle(2400);
+    // Note(yoochan.kim): from the block's opening the deck is the run's, between its clips too, and screens are told so.
+    assert.deepEqual(status, { 100: 'holding', 450: 'holding, deck', 900: 'playing', 1400: 'holding, deck', 1800: 'playing' });
+    const opened = told.find((patch) => patch.flow === 'holding, deck');
+    near(opened === undefined ? undefined : opened.at - t0, 200, 'screens told the deck was taken as the block opened');
 
     // Note(yoochan.kim): the block opens at 200 (500 ahead, no desk), and the deck is taken and the first loaded then.
     const loadMin = mpv.when('loadfile /audio/min.mp3');
@@ -288,9 +311,11 @@ describe('A run\'s countdown', () => {
       ],
     };
     const deck = sampleDeck(runner, t0, [1100, 2100]);
+    const status = sampleStatus(runner, t0, [600, 1100, 1700, 2100]);
 
     assert.deepEqual(runner.startPlan(plan), { ok: true });
     await settle(2200);
+    assert.deepEqual(status, { 600: 'playing', 1100: 'holding, deck', 1700: 'playing', 2100: 'holding' }, 'the quiet after the music shown as the run\'s');
 
     // Note(yoochan.kim): put on the deck ahead (its 300 of lead already gone, so at once) and started by an unpause at 200.
     const loaded = mpv.when('loadfile /audio/song.mp3');

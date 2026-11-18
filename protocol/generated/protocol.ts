@@ -691,7 +691,7 @@ export type FlowStatus =
   /** The flow's music is sounding */
   | { phase: 'playing'; id: string; name: string; track: FlowTrack; endsAt: string }
   /** Nothing is sounding, but the flow still holds the admin lock */
-  | { phase: 'holding'; id: string; name: string; unlockAt: string }
+  | { phase: 'holding'; id: string; name: string; unlockAt: string; deckHeld: boolean }
   ;
 export const FlowStatusKind = {
   IDLE: 'idle',
@@ -704,10 +704,11 @@ export const FlowStatusKind = {
 export const ATTRIBUTES = {
   /**
    * Whether the deck is playing. Writing it fades in or out and holds the audio lock
-   * for the length of the fade. Refused with flowActive while a flow's music is
-   * sounding: the run was handed the deck and puts it back itself. A flow that only
-   * holds the gate is keeping the panel out, not using the deck, so this stays
-   * writable then. Refused with levelMatching while a level measurement has the deck.
+   * for the length of the fade. Refused with flowActive while a flow holds the deck
+   * (its status playing, or holding with deckHeld): the run was handed the deck and
+   * puts it back itself. A flow that only holds the gate is keeping the panel out, not
+   * using the deck, so this stays writable then. Refused with levelMatching while a
+   * level measurement has the deck.
    */
   playback: { access: 'rw', permission: 'any' },
   /**
@@ -716,29 +717,31 @@ export const ATTRIBUTES = {
    * what is *sounding*: while a run plays, this is the level that run was written
    * with, not the one the panel was left at, and the panel's own level comes back with
    * its song. Applies immediately, so it is safe to write continuously while dragging
-   * a fader. Refused with flowActive while a flow's music is sounding: the run was
-   * handed the deck and puts it back itself. A flow that only holds the gate is
-   * keeping the panel out, not using the deck, so this stays writable then. Refused
-   * with levelMatching while a level measurement has the deck.
+   * a fader. Refused with flowActive while a flow holds the deck (its status playing,
+   * or holding with deckHeld): the run was handed the deck and puts it back itself. A
+   * flow that only holds the gate is keeping the panel out, not using the deck, so
+   * this stays writable then. Refused with levelMatching while a level measurement has
+   * the deck.
    */
   volume: { access: 'rw', permission: 'any', range: { min: 0, max: 100 } },
   /**
-   * Whether output is muted. Refused with flowActive while a flow's music is sounding:
-   * the run was handed the deck and puts it back itself. A flow that only holds the
-   * gate is keeping the panel out, not using the deck, so this stays writable then.
-   * Refused with levelMatching while a level measurement has the deck.
+   * Whether output is muted. Refused with flowActive while a flow holds the deck (its
+   * status playing, or holding with deckHeld): the run was handed the deck and puts it
+   * back itself. A flow that only holds the gate is keeping the panel out, not using
+   * the deck, so this stays writable then. Refused with levelMatching while a level
+   * measurement has the deck.
    */
   mute: { access: 'rw', permission: 'any' },
   /**
    * Whether what is on the deck repeats. Always true unless the gate is held: the
    * panel's two songs are meant to run under a service without ending, and nobody at
    * the panel should be able to stop that. Writable only while the gate is held, and
-   * refused with flowActive while a run's music is sounding — it describes what is on
-   * the deck, and a run's track made to repeat is a timeline that never finishes. A
-   * run merely holding the gate is not using the deck, so this stays writable then.
-   * Refused with levelMatching while a level measurement has the deck. Reset to true
-   * when the gate opens — like everything else the gate changes, it goes back to the
-   * user's state.
+   * refused with flowActive while a run holds the deck (its status playing, or holding
+   * with deckHeld) — it describes what is on the deck, and a run's track made to
+   * repeat is a timeline that never finishes. A run merely holding the gate is not
+   * using the deck, so this stays writable then. Refused with levelMatching while a
+   * level measurement has the deck. Reset to true when the gate opens — like
+   * everything else the gate changes, it goes back to the user's state.
    */
   loop: { access: 'rw', permission: 'admin' },
   /**
@@ -790,10 +793,11 @@ export const ATTRIBUTES = {
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
    * rather than a fixed set because which songs exist, and what they are called, is
-   * the server's to say. Refused with flowActive while a flow's music is sounding: the
-   * run was handed the deck and puts it back itself. A flow that only holds the gate
-   * is keeping the panel out, not using the deck, so this stays writable then. Refused
-   * with levelMatching while a level measurement has the deck.
+   * the server's to say. Refused with flowActive while a flow holds the deck (its
+   * status playing, or holding with deckHeld): the run was handed the deck and puts it
+   * back itself. A flow that only holds the gate is keeping the panel out, not using
+   * the deck, so this stays writable then. Refused with levelMatching while a level
+   * measurement has the deck.
    */
   song: { access: 'rw', permission: 'any' },
   /**
@@ -1001,15 +1005,15 @@ export const COMMANDS = {
    * act as writing the song attribute, for the tracks that are not among ready.songs.
    * Playing it is a separate write to playback. Refused with adminUnlocked unless the
    * gate is held: while the panel is open it shows the song it thinks is playing, and
-   * a track it never chose would make that a lie. Refused with flowActive while a
-   * run's music is sounding — a run holds the gate, so that first check passes during
-   * a service and this one is what keeps the deck the run's. While a run only holds
-   * the gate this is allowed, and what it puts on is faded out when the run's own
-   * music comes due; the run goes back to the deck it was handed, not to the track
-   * somebody put on during its quiet half. Releasing the gate takes the track off and
-   * puts the user's song back. Refused with levelMatching while a level measurement
-   * has the deck, and with noticeTrack for a countdown track — only a flow's countdown
-   * plays those.
+   * a track it never chose would make that a lie. Refused with flowActive while a run
+   * holds the deck (its status playing, or holding with deckHeld) — a run holds the
+   * gate, so that first check passes during a service and this one is what keeps the
+   * deck the run's. While a run only holds the gate this is allowed, and what it puts
+   * on is faded out when the run's own music comes due; the run goes back to the deck
+   * it was handed, not to the track somebody put on during its quiet half. Releasing
+   * the gate takes the track off and puts the user's song back. Refused with
+   * levelMatching while a level measurement has the deck, and with noticeTrack for a
+   * countdown track — only a flow's countdown plays those.
    */
   selectTrack: { permission: 'admin' },
   /**
@@ -1081,10 +1085,11 @@ export type CommandName = keyof typeof COMMANDS;
 export interface State {
   /**
    * Whether the deck is playing. Writing it fades in or out and holds the audio lock
-   * for the length of the fade. Refused with flowActive while a flow's music is
-   * sounding: the run was handed the deck and puts it back itself. A flow that only
-   * holds the gate is keeping the panel out, not using the deck, so this stays
-   * writable then. Refused with levelMatching while a level measurement has the deck.
+   * for the length of the fade. Refused with flowActive while a flow holds the deck
+   * (its status playing, or holding with deckHeld): the run was handed the deck and
+   * puts it back itself. A flow that only holds the gate is keeping the panel out, not
+   * using the deck, so this stays writable then. Refused with levelMatching while a
+   * level measurement has the deck.
    */
   playback: PlaybackState;
   /**
@@ -1093,29 +1098,31 @@ export interface State {
    * what is *sounding*: while a run plays, this is the level that run was written
    * with, not the one the panel was left at, and the panel's own level comes back with
    * its song. Applies immediately, so it is safe to write continuously while dragging
-   * a fader. Refused with flowActive while a flow's music is sounding: the run was
-   * handed the deck and puts it back itself. A flow that only holds the gate is
-   * keeping the panel out, not using the deck, so this stays writable then. Refused
-   * with levelMatching while a level measurement has the deck.
+   * a fader. Refused with flowActive while a flow holds the deck (its status playing,
+   * or holding with deckHeld): the run was handed the deck and puts it back itself. A
+   * flow that only holds the gate is keeping the panel out, not using the deck, so
+   * this stays writable then. Refused with levelMatching while a level measurement has
+   * the deck.
    */
   volume: number;
   /**
-   * Whether output is muted. Refused with flowActive while a flow's music is sounding:
-   * the run was handed the deck and puts it back itself. A flow that only holds the
-   * gate is keeping the panel out, not using the deck, so this stays writable then.
-   * Refused with levelMatching while a level measurement has the deck.
+   * Whether output is muted. Refused with flowActive while a flow holds the deck (its
+   * status playing, or holding with deckHeld): the run was handed the deck and puts it
+   * back itself. A flow that only holds the gate is keeping the panel out, not using
+   * the deck, so this stays writable then. Refused with levelMatching while a level
+   * measurement has the deck.
    */
   mute: MuteState;
   /**
    * Whether what is on the deck repeats. Always true unless the gate is held: the
    * panel's two songs are meant to run under a service without ending, and nobody at
    * the panel should be able to stop that. Writable only while the gate is held, and
-   * refused with flowActive while a run's music is sounding — it describes what is on
-   * the deck, and a run's track made to repeat is a timeline that never finishes. A
-   * run merely holding the gate is not using the deck, so this stays writable then.
-   * Refused with levelMatching while a level measurement has the deck. Reset to true
-   * when the gate opens — like everything else the gate changes, it goes back to the
-   * user's state.
+   * refused with flowActive while a run holds the deck (its status playing, or holding
+   * with deckHeld) — it describes what is on the deck, and a run's track made to
+   * repeat is a timeline that never finishes. A run merely holding the gate is not
+   * using the deck, so this stays writable then. Refused with levelMatching while a
+   * level measurement has the deck. Reset to true when the gate opens — like
+   * everything else the gate changes, it goes back to the user's state.
    */
   loop: boolean;
   /**
@@ -1167,10 +1174,11 @@ export interface State {
    * Id of the selected song, one of the ids listed in ready.songs. Writing it fades
    * out, switches, and restores that song's remembered position, paused. It is an id
    * rather than a fixed set because which songs exist, and what they are called, is
-   * the server's to say. Refused with flowActive while a flow's music is sounding: the
-   * run was handed the deck and puts it back itself. A flow that only holds the gate
-   * is keeping the panel out, not using the deck, so this stays writable then. Refused
-   * with levelMatching while a level measurement has the deck.
+   * the server's to say. Refused with flowActive while a flow holds the deck (its
+   * status playing, or holding with deckHeld): the run was handed the deck and puts it
+   * back itself. A flow that only holds the gate is keeping the panel out, not using
+   * the deck, so this stays writable then. Refused with levelMatching while a level
+   * measurement has the deck.
    */
   song: string;
   /**

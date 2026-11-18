@@ -134,7 +134,7 @@ class FlowRunner {
       return { phase: 'playing', id, name, track: run.playing.track, endsAt: formatInstant(run.playing.endsAt) };
     }
     if (run.lockEngaged) {
-      return { phase: 'holding', id, name, unlockAt: formatInstant(run.plan.lock.until) };
+      return { phase: 'holding', id, name, unlockAt: formatInstant(run.plan.lock.until), deckHeld: run.deckHeld };
     }
     return { phase: 'waiting', id, name, startsAt: formatInstant(run.startsAt) };
   }
@@ -479,8 +479,11 @@ class FlowRunner {
     return this.active?.deckHeld ?? false;
   }
 
+  /** Told at once, since a quiet the run keeps the deck through looks like one it only holds the gate in. */
   private holdDeck(): void {
-    if (this.active) this.active.deckHeld = true;
+    if (!this.active || this.active.deckHeld) return;
+    this.active.deckHeld = true;
+    this.publish();
   }
 
   private async playTrack(

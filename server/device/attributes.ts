@@ -51,7 +51,7 @@ function checkVolume(value: unknown): Checked<number> {
   return valid ? accept(Math.round(value)) : BAD_VALUE;
 }
 
-/** Note(yoochan.kim): only while a run's music sounds; a run merely holding the gate leaves the deck free. */
+/** Note(yoochan.kim): from a run's first sound to its last, quiet between included; a run merely holding the gate leaves the deck free. */
 function deckIsFlows(deps: ServerDeps): boolean {
   return deps.flowRunner.ownsDeck();
 }
