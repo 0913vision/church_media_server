@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { SOCKET_CONFIG } from './constants/socketConfig.ts';
 import type { SocketData } from './constants/socketConfig.ts';
-import type { ClientToServerEventsUnsafe, ServerToClientEvents } from './protocol.ts';
+import type { ClientToServerEventsUnsafe, DeskNote, ServerToClientEvents } from './protocol.ts';
 import { DEVICE_CONFIG } from './constants/deviceConfig.ts';
 import { INITIAL_PLAYER_CONFIG } from './constants/playerConfig.ts';
 import type { PlayerConfig } from './constants/playerConfig.ts';
@@ -119,7 +119,8 @@ class MediaServer {
       currentSong: initialConfig.currentSong,
     };
     let deskJournal: readonly DeskJournalEntry[] = restored?.deskJournal ?? [];
-    const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset(), deskJournal });
+    let deskNotes: readonly DeskNote[] = restored?.deskNotes ?? [];
+    const persist = (): void => stateStore.save({ ...preferences, clockOffsetSec: clock.offset(), deskJournal, deskNotes });
     clock.onChange(persist);
 
     const player = new Player(
@@ -147,7 +148,16 @@ class MediaServer {
     const deskHolds = new DeskHolds(consoleDevice, CONSOLE_CONFIG.HOLD, (entries) => {
       deskJournal = entries;
       persist();
-    }, deskJournal);
+    }, deskJournal, {
+      now: () => clock.now(),
+      notes: deskNotes,
+      keep: (notes) => {
+        deskNotes = [...notes];
+        persist();
+      },
+      // Note(yoochan.kim): a hold left from before a restart can report once it starts putting back, after this line.
+      changed: () => { if (this.deskHolds) notifier.state({ deskUse: this.deskHolds.use() }); },
+    });
     this.deskHolds = deskHolds;
     const mixerConsole = new MixerConsole(consoleDevice, deskHolds);
     mixerConsole.onChange(() => notifier.state({ console: mixerConsole.read() }));

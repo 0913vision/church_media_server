@@ -6,6 +6,7 @@ import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead, LevelMeter } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 import type { DeskValue } from './desk.ts';
+import { stripsOf } from './deskNames.ts';
 
 const { UDPPort } = osc;
 
@@ -104,6 +105,7 @@ class X32Console implements ConsoleDevice {
       id: input.ID,
       label: input.LABEL,
       nominalDb: input.CHANNELS[0]!.FADER_DB,
+      strips: stripsOf(input),
       state: this.readInput(input),
     }));
   }

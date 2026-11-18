@@ -8,6 +8,7 @@ import type { LibraryEntry } from '../../server/tracks/TrackLibrary.ts';
 import type { FlowTiming } from '../../server/constants/flowConfig.ts';
 import type { Plan } from '../../server/flow/FlowRunner.ts';
 import { dbFromLevel, mpvVolumeFromDb } from '../../server/hardware/loudness.ts';
+import { testWatch } from './desk-watch.ts';
 
 // Note(yoochan.kim): a run's music against a stand-in mpv, so nothing sounds; modules load after env is set.
 type Modules = {
@@ -115,7 +116,7 @@ function rig(runsOn = true, lengths = new Map([A, B, C].map((track) => [track.fi
   const notifier = new Proxy({}, { get: () => () => {} }) as unknown as Notifier;
   const locks = new m.LockCoordinator(notifier);
   const desk = new m.MockConsole();
-  const holds = new m.DeskHolds(desk, { CONFIRM_ATTEMPTS: 2, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 }, () => {}, []);
+  const holds = new m.DeskHolds(desk, { CONFIRM_ATTEMPTS: 2, CONFIRM_GAP_MS: 5, RESTORE_RETRY_MS: 20 }, () => {}, [], testWatch());
   const runner = new m.FlowRunner(
     player, {} as unknown as TrackLibrary, locks, notifier, new m.Clock(0), new m.MixerConsole(desk, holds), [], TIMING,
   );

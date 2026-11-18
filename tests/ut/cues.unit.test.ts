@@ -12,6 +12,7 @@ import { int } from '../../server/console/desk.ts';
 import type { DeskChange } from '../../server/console/desk.ts';
 import { dbFromFader } from '../../server/console/faderLevel.ts';
 import { formatInstant } from '../../server/utils/instant.ts';
+import { testWatch } from './desk-watch.ts';
 
 // Note(yoochan.kim): mpv is a stand-in that only records calls, so nothing sounds; modules load after env is set.
 type Modules = {
@@ -112,7 +113,7 @@ function rig(library: TrackLibrary = LIBRARY) {
   const notifier = new Proxy({}, { get: () => () => {} }) as unknown as Notifier;
   const locks = new m.LockCoordinator(notifier);
   const desk = new m.MockConsole();
-  const holds = new m.DeskHolds(desk, HOLD_TIMING, () => {}, []);
+  const holds = new m.DeskHolds(desk, HOLD_TIMING, () => {}, [], testWatch());
   const mixer = new m.MixerConsole(desk, holds);
   const clock = new m.Clock(0);
   const runner = new m.FlowRunner(
@@ -529,7 +530,11 @@ describe('A countdown for the band alone', () => {
       }],
     };
     let between: Record<string, number> = {};
-    setTimeout(() => { void values(desk, touched).then((now) => { between = now; }); }, t0 + 1600 - Date.now());
+    let shown: unknown = null;
+    setTimeout(() => {
+      void values(desk, touched).then((now) => { between = now; });
+      shown = holds.use().holds.map((hold) => ({ phase: hold.phase, by: hold.by, strips: hold.strips }));
+    }, t0 + 1600 - Date.now());
     const sent: { address: string; at: number }[] = [];
     const send = desk.send.bind(desk);
     desk.send = async (address, value) => { sent.push({ address, at: Date.now() }); return send(address, value); };
@@ -546,7 +551,9 @@ describe('A countdown for the band alone', () => {
     // Note(yoochan.kim): an end is a planned instant; a start lands a few milliseconds after its own.
     assert.ok(sent.slice(n).every((message) => message.at >= count + 500 - SLACK_MS), 'put back after the count had ended');
     assert.equal(between['/auxin/05/mix/st'], 0, 'between the notices, still the band\'s alone');
+    assert.deepEqual(shown, [{ phase: 'holding', by: 'countdown', strips: ['Aux 5', 'Aux 6', 'AuxMix'] }], 'and every screen shown so');
     assert.deepEqual(await values(desk, touched), before, 'and after, the desk as it was');
+    assert.deepEqual(holds.use(), { holds: [], notes: [] }, 'shown as over');
     holds.dispose();
   });
 

@@ -1,4 +1,4 @@
-import { RejectReason } from '../protocol.ts';
+import { DeskUser, RejectReason } from '../protocol.ts';
 import type { FlowStatus, FlowTrack } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type { SongId } from '../constants/songs.ts';
@@ -392,7 +392,7 @@ class FlowRunner {
       }
     };
     try {
-      if (part.desk && part.desk.length > 0) await this.mixer.holding(part.desk, play);
+      if (part.desk && part.desk.length > 0) await this.mixer.holding(DeskUser.COUNTDOWN, part.desk, play);
       else await play();
     } catch (error) {
       if (error instanceof FlowAborted) throw error;

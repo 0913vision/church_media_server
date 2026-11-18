@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isMuteState } from '../protocol.ts';
+import { isDeskUser, isMuteState } from '../protocol.ts';
+import type { DeskNote } from '../protocol.ts';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
+import { isWireInstant } from '../utils/instant.ts';
 import type { StateStore, PersistedState, PersistedAll } from './StateStore.ts';
 import type { DeskJournalEntry } from '../console/DeskHolds.ts';
 
@@ -32,6 +34,7 @@ class FileStateStore implements StateStore {
         // Note(yoochan.kim): a file written before the clock existed declares no correction, which is what 0 means.
         clockOffsetSec: typeof offset === 'number' && Number.isFinite(offset) ? offset : 0,
         deskJournal: this.deskJournal((parsed as Record<string, unknown>).deskJournal),
+        deskNotes: this.deskNotes((parsed as Record<string, unknown>).deskNotes),
       };
     } catch (error) {
       log.error('stateStore', null, 'Failed to read persisted state', { error: errorMessage(error) });
@@ -66,6 +69,20 @@ class FileStateStore implements StateStore {
     };
     if (Array.isArray(value) && value.every(isEntry)) return value;
     log.error('stateStore', null, 'Desk journal unreadable; the desk may not be where it was', { filePath: this.filePath });
+    return [];
+  }
+
+  /** A file from before notes existed has none; a damaged list is reported and dropped like the journal. */
+  private deskNotes(value: unknown): DeskNote[] {
+    if (value === undefined) return [];
+    const text = (field: unknown): field is string => typeof field === 'string';
+    const isNote = (note: unknown): note is DeskNote => {
+      const n = note as Record<string, unknown> | null;
+      return text(n?.id) && isWireInstant(n.at) && isDeskUser(n.by) && Array.isArray(n.moved)
+        && n.moved.every((move: Record<string, unknown> | null) => text(move?.strip) && text(move.setting) && isWireInstant(move.at));
+    };
+    if (Array.isArray(value) && value.every(isNote)) return value;
+    log.error('stateStore', null, 'Desk notes unreadable; dropped', { filePath: this.filePath });
     return [];
   }
 

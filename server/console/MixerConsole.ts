@@ -1,7 +1,7 @@
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
 import { CONSOLE_CONFIG } from '../constants/consoleConfig.ts';
-import type { ConsoleInput, LevelMeter } from '../protocol.ts';
+import type { ConsoleInput, DeskUse, DeskUser, LevelMeter } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 import type { DeskChange } from './desk.ts';
 import { dbFromFader } from './faderLevel.ts';
@@ -57,8 +57,17 @@ class MixerConsole {
   }
 
   /** Sets part of the desk aside for the body and puts it back afterwards — see DeskHolds. */
-  holding<T>(changes: readonly DeskChange[], body: (desk: HeldDesk) => Promise<T>): Promise<T> {
-    return this.holds.holding(changes, body);
+  holding<T>(by: DeskUser, changes: readonly DeskChange[], body: (desk: HeldDesk) => Promise<T>): Promise<T> {
+    return this.holds.holding(by, changes, body);
+  }
+
+  /** What the server holds on the desk now, and the notes it keeps — see DeskHolds. */
+  use(): DeskUse {
+    return this.holds.use();
+  }
+
+  dismissNote(id: string): boolean {
+    return this.holds.dismiss(id);
   }
 
   watchMeters(meter: LevelMeter['kind'], listener: (levels: readonly number[]) => void): () => void {

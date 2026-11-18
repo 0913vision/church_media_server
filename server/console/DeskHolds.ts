@@ -1,8 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { log } from '../utils/logger.ts';
 import { errorMessage } from '../utils/errors.ts';
+import { formatInstant } from '../utils/instant.ts';
+import type { DeskHold, DeskMove, DeskNote, DeskUse } from '../protocol.ts';
+import { DeskUser } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 import { sameValue } from './desk.ts';
 import type { DeskChange, DeskValue } from './desk.ts';
+import { deskSetting, stripRank } from './deskNames.ts';
 
 /** What a hold has to put back: an address, and what it held before the hold first changed it. */
 export interface DeskJournalEntry {
@@ -17,6 +22,18 @@ export interface HoldTiming {
   readonly CONFIRM_GAP_MS: number;
   /** How often a desk that did not take its old values back is tried again */
   readonly RESTORE_RETRY_MS: number;
+}
+
+/** What the holds tell the rest of the server, so screens can show the desk is in use and what was moved on it. */
+export interface DeskWatch {
+  /** Church time, which every instant a screen reads is in */
+  now(): Date;
+  /** Notes kept from before a restart */
+  readonly notes: readonly DeskNote[];
+  /** The notes as they now stand, to be kept across a restart */
+  keep(notes: readonly DeskNote[]): void;
+  /** Something a screen shows has changed */
+  changed(): void;
 }
 
 /** The desk as the body of a hold sees it. */
@@ -44,6 +61,10 @@ export class DeskRestoreError extends Error {
 }
 
 interface Hold {
+  readonly by: DeskUser;
+  readonly since: Date;
+  /** Addresses someone else moved while it held them, and when each was first seen moved */
+  readonly moved: Map<string, Date>;
   /** Every address it owns, and what each held when first asked — changed or not */
   readonly originals: Map<string, DeskValue>;
   /** The addresses it changed, in the order it first changed them: what to put back, backwards */
@@ -70,17 +91,20 @@ class DeskHolds {
   /** Addresses whose change the server is reading back right now. */
   private readonly confirming = new Set<string>();
   private retry: NodeJS.Timeout | null = null;
+  private notes: DeskNote[];
 
   constructor(
     private readonly desk: ConsoleDevice,
     private readonly timing: HoldTiming,
     private readonly journal: (entries: readonly DeskJournalEntry[]) => void,
     leftover: readonly DeskJournalEntry[],
+    private readonly watch: DeskWatch,
   ) {
+    this.notes = [...watch.notes];
     desk.onWire((address, value) => this.heard(address, value));
     if (leftover.length === 0) return;
 
-    const hold = this.open();
+    const hold = this.open(DeskUser.RESTART);
     for (const entry of leftover) {
       this.owners.set(entry.address, hold);
       hold.originals.set(entry.address, entry.original);
@@ -93,8 +117,8 @@ class DeskHolds {
   }
 
   /** Reads every address before sending anything, so a desk that cannot say what it holds is never touched. */
-  async holding<T>(changes: readonly DeskChange[], body: (desk: HeldDesk) => Promise<T>): Promise<T> {
-    const hold = this.open();
+  async holding<T>(by: DeskUser, changes: readonly DeskChange[], body: (desk: HeldDesk) => Promise<T>): Promise<T> {
+    const hold = this.open(by);
     try {
       await this.remember(hold, changes.map((change) => change.address));
     } catch (error) {
@@ -106,6 +130,7 @@ class DeskHolds {
       hold.entries.push({ address, original: hold.originals.get(address)! });
     }
     this.writeJournal();
+    this.watch.changed();
     log.info('deskHolds', null, 'Desk captured before changing it', {
       values: hold.entries.map((entry) => `${entry.address}=${entry.original.value}`).join(' '),
     });
@@ -151,8 +176,39 @@ class DeskHolds {
     this.retry = null;
   }
 
-  private open(): Hold {
+  /** What the server holds on the desk now, what was moved there meanwhile, and the notes it keeps. */
+  use(): DeskUse {
+    const holds = this.holds
+      .filter((hold) => hold.phase !== 'over' && hold.entries.length > 0)
+      .map((hold): DeskHold => {
+        // Note(yoochan.kim): in the desk's order rather than the order changed, which runs from the output end back.
+        const settings = byDeskOrder(hold.entries.map((entry) => entry.address)).map(deskSetting);
+        const shown = {
+          by: hold.by,
+          since: formatInstant(hold.since),
+          strips: [...new Set(settings.map((setting) => setting.strip))],
+          moved: movesOf(hold),
+        };
+        return hold.phase === 'waiting' ? { phase: 'waiting', ...shown, unrestored: settings } : { phase: 'holding', ...shown };
+      });
+    return { holds, notes: [...this.notes] };
+  }
+
+  /** Sets one note aside. False when there is no such note. */
+  dismiss(id: string): boolean {
+    const at = this.notes.findIndex((note) => note.id === id);
+    if (at < 0) return false;
+    this.notes.splice(at, 1);
+    this.watch.keep(this.notes);
+    this.watch.changed();
+    return true;
+  }
+
+  private open(by: DeskUser): Hold {
     const hold: Hold = {
+      by,
+      since: this.watch.now(),
+      moved: new Map(),
       originals: new Map(),
       entries: [],
       expected: new Map(),
@@ -168,6 +224,12 @@ class DeskHolds {
     hold.phase = 'over';
     for (const [address, owner] of this.owners) if (owner === hold) this.owners.delete(address);
     this.holds.splice(this.holds.indexOf(hold), 1);
+    // Note(yoochan.kim): a move put back is still something a person did to the room's desk, so it is kept until read.
+    if (hold.moved.size > 0) {
+      this.notes.push({ id: randomUUID(), at: formatInstant(this.watch.now()), by: hold.by, moved: movesOf(hold) });
+      this.watch.keep(this.notes);
+    }
+    this.watch.changed();
   }
 
   /** Owns the addresses, then asks the desk what each holds. All are owned before any is asked. */
@@ -189,6 +251,7 @@ class DeskHolds {
     if (!hold.entries.some((entry) => entry.address === change.address)) {
       hold.entries.push({ address: change.address, original: hold.originals.get(change.address)! });
       this.writeJournal();
+      this.watch.changed();
     }
     hold.expected.set(change.address, change.value);
     await this.desk.send(change.address, change.value);
@@ -216,6 +279,9 @@ class DeskHolds {
 
   /** Puts back what the hold changed, newest first. False when the desk did not take it yet. */
   private async putBack(hold: Hold): Promise<boolean> {
+    // Note(yoochan.kim): a retry that fails again with nothing more put back changes nothing a screen shows.
+    const waited = hold.phase === 'waiting';
+    const left = hold.entries.length;
     hold.phase = 'restoring';
     hold.expected.clear();
     const putting = hold.entries.map((entry) => entry.address).reverse();
@@ -227,6 +293,7 @@ class DeskHolds {
         await this.confirm(entry.address, entry.original);
       } catch (error) {
         hold.phase = 'waiting';
+        if (!waited || hold.entries.length < left) this.watch.changed();
         if (!hold.told) {
           hold.told = true;
           log.error('deskHolds', null, 'The desk did not take its old value back; trying again until it does', {
@@ -266,6 +333,10 @@ class DeskHolds {
         const still = hold.expected.get(address);
         if (hold.phase !== 'open' || !still || sameValue(still, now) || this.confirming.has(address)) return;
         log.warn('deskHolds', null, 'A held address was moved on the desk', { address, value: now.value });
+        if (!hold.moved.has(address)) {
+          hold.moved.set(address, this.watch.now());
+          this.watch.changed();
+        }
         for (const listener of hold.listeners) listener(address, now);
       })
       .catch(() => {})
@@ -275,6 +346,15 @@ class DeskHolds {
   private writeJournal(): void {
     this.journal(this.holds.flatMap((hold) => hold.entries));
   }
+}
+
+function movesOf(hold: Hold): DeskMove[] {
+  return byDeskOrder([...hold.moved.keys()]).map((address) => ({ ...deskSetting(address), at: formatInstant(hold.moved.get(address)!) }));
+}
+
+/** Strip by strip as the desk lays them out; within a strip, in the order given. */
+function byDeskOrder(addresses: readonly string[]): string[] {
+  return [...addresses].sort((a, b) => stripRank(a) - stripRank(b));
 }
 
 export default DeskHolds;

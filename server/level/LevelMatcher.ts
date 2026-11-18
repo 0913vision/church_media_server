@@ -1,4 +1,4 @@
-import { LevelFailure, LevelStage, RejectReason } from '../protocol.ts';
+import { DeskUser, LevelFailure, LevelStage, RejectReason } from '../protocol.ts';
 import type { DeckSource, LevelAnswer, LevelMatch, LevelMeter, StatePatch } from '../protocol.ts';
 import type Player from '../player/Player.ts';
 import type TrackLibrary from '../tracks/TrackLibrary.ts';
@@ -218,7 +218,7 @@ class LevelMatcher {
     try {
       // Note(yoochan.kim): what the meter asks of the desk is set and read back before anything plays.
       const changes = run.meter.kind === 'output' ? this.desks.output : run.meter.mute ? this.desks.mainMuted : [];
-      await this.mixer.holding(changes, async (desk) => {
+      await this.mixer.holding(DeskUser.LEVEL_MATCH, changes, async (desk) => {
         desk.onDeskChange(() => {
           run.why ??= LevelFailure.DESK_MOVED;
         });

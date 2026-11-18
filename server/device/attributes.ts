@@ -210,6 +210,10 @@ export const ATTRIBUTE_IMPL: Record<AttributeName, AttributeSpec> = {
     read: (deps) => deps.levelMatcher.current(),
   },
 
+  deskUse: {
+    read: (deps) => deps.mixerConsole.use(),
+  },
+
   schedule: {
     read: (deps) => deps.schedule.list(),
   },

@@ -64,6 +64,9 @@ export const CONSOLE_CONFIG = {
     MAIN: { ADDRESS: "/main/st/mix/fader", ON_ADDRESS: "/main/st/mix/on", DB: 0.7, DELAY_MS: 500 }
   },
 
+  // Note(yoochan.kim): the room's own names for strips, which a person at the desk knows them by; the rest go by the desk's.
+  STRIP_NAMES: { [AUX_MIX]: "AuxMix" } as Readonly<Record<string, string>>,
+
   HOLD: {
     // Note(yoochan.kim): counts once read back; the first miss is the desk still applying it, later misses resend.
     CONFIRM_ATTEMPTS: 5,

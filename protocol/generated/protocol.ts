@@ -126,6 +126,17 @@ export function isLevelStage(value: unknown): value is LevelStage {
   return typeof value === 'string' && (Object.values(LevelStage) as string[]).includes(value);
 }
 
+/** What the server has set part of the X32 aside for */
+export const DeskUser = {
+  COUNTDOWN: 'countdown',
+  LEVEL_MATCH: 'levelMatch',
+  RESTART: 'restart',
+} as const;
+export type DeskUser = (typeof DeskUser)[keyof typeof DeskUser];
+export function isDeskUser(value: unknown): value is DeskUser {
+  return typeof value === 'string' && (Object.values(DeskUser) as string[]).includes(value);
+}
+
 /**
  * A song a user can select and leave looping. The server names these, so renaming one
  * — or adding another — needs no client release.
@@ -257,8 +268,85 @@ export interface ConsoleInput {
    * hand.
    */
   nominalDb: number;
+  /**
+   * The X32 strips it drives, named as deskUse names them, so a screen can mark it
+   * while the server holds one of them
+   */
+  strips: string[];
   state: ConsoleRead;
 }
+
+/**
+ * One setting on the X32, named as the desk itself names it, so a person standing at
+ * it can find it. The server names each address it touches once, here, rather than
+ * every client learning OSC.
+ */
+export interface DeskSetting {
+  /**
+   * The strip, as the desk or the room calls it: 'Aux 5', 'Ch 7', 'Main LR', or a
+   * room's own name such as 'AuxMix' for bus 8
+   */
+  strip: string;
+  /**
+   * What on that strip: 'Mute', 'Fader', 'Main LR', 'Mono', 'Bus 3 Send', 'Matrix 2
+   * Send', 'Mute Group', 'DCA'. Empty when the strip is the setting itself, as a mute
+   * group is.
+   */
+  setting: string;
+}
+
+/**
+ * A setting the server was holding that someone else moved, at the desk or from
+ * another app, and when it was first seen moved
+ */
+export interface DeskMove {
+  strip: string;
+  setting: string;
+  /** Instant it was first seen moved */
+  at: string;
+}
+
+/**
+ * What someone moved while the server held the desk, kept after the server put it
+ * back, until a person sets it aside with dismissDeskNote. Kept across restarts: it is
+ * the record that the room's desk was touched in the middle of something.
+ */
+export interface DeskNote {
+  /** Value to pass to dismissDeskNote */
+  id: string;
+  /** Instant the desk was put back */
+  at: string;
+  by: DeskUser;
+  /** What was moved, each put back to what it held before the server set it aside */
+  moved: DeskMove[];
+}
+
+/** What the server is doing with the X32 for itself, and what it keeps from earlier. */
+export interface DeskUse {
+  /** What it holds right now. Empty when it holds nothing. */
+  holds: DeskHold[];
+  /** Records of moves it has put back, oldest first. Empty when there are none. */
+  notes: DeskNote[];
+}
+
+/**
+ * One part of the X32 the server has set aside: while it uses it, and if the desk did
+ * not take its old values back when it finished, until it does. Every setting it
+ * changed goes back to what it held before, whatever anyone moved meanwhile.
+ */
+export type DeskHold =
+  /** In use. A person at the desk should leave these strips alone until it ends. */
+  | { phase: 'holding'; by: DeskUser; since: string; strips: string[]; moved: DeskMove[] }
+  /**
+   * Finished, but the desk did not take some old values back, most likely because it
+   * is switched off or out of reach. Tried again every few seconds until it does.
+   */
+  | { phase: 'waiting'; by: DeskUser; since: string; strips: string[]; moved: DeskMove[]; unrestored: DeskSetting[] }
+  ;
+export const DeskHoldKind = {
+  HOLDING: 'holding',
+  WAITING: 'waiting',
+} as const;
 
 /**
  * What a track is for. Music is what people and a flow's music play. A countdown's
@@ -769,6 +857,13 @@ export const ATTRIBUTES = {
    * unknown when the desk stops answering, so a dead console never wears a live face.
    */
   console: { access: 'ro' },
+  /**
+   * What the server holds on the X32 for itself (a countdown, a level measurement, or
+   * putting back what one left after a restart), what anyone moved there meanwhile,
+   * and the notes it keeps of moves it put back. Read-only: the countdown and the
+   * level measurement set it, and dismissDeskNote sets a note aside.
+   */
+  deskUse: { access: 'ro' },
 } as const;
 export type AttributeName = keyof typeof ATTRIBUTES;
 
@@ -974,6 +1069,11 @@ export const COMMANDS = {
    * one was applied, and unknownTrack when the track has gone.
    */
   revertLevelMatch: { permission: 'admin' },
+  /**
+   * Set one desk note aside once a person has read it. It changes nothing on the desk.
+   * Refused with invalidValue for a note that is not there.
+   */
+  dismissDeskNote: { permission: 'admin' },
 } as const;
 export type CommandName = keyof typeof COMMANDS;
 
@@ -1134,6 +1234,13 @@ export interface State {
    * unknown when the desk stops answering, so a dead console never wears a live face.
    */
   console: ConsoleInput[];
+  /**
+   * What the server holds on the X32 for itself (a countdown, a level measurement, or
+   * putting back what one left after a restart), what anyone moved there meanwhile,
+   * and the notes it keeps of moves it put back. Read-only: the countdown and the
+   * level measurement set it, and dismissDeskNote sets a note aside.
+   */
+  deskUse: DeskUse;
 }
 export type StatePatch = Partial<State>;
 
@@ -1173,6 +1280,7 @@ export type InvokeRequest =
   | { command: 'applyLevelMatch'; args: Record<string, never> }
   | { command: 'cancelLevelMatch'; args: Record<string, never> }
   | { command: 'revertLevelMatch'; args: Record<string, never> }
+  | { command: 'dismissDeskNote'; args: { id: string } }
   ;
 
 /** C2S event names */

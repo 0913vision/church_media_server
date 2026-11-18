@@ -4,6 +4,7 @@ import { log } from '../utils/logger.ts';
 import type { ConsoleInput, ConsoleRead } from '../protocol.ts';
 import type { ConsoleDevice } from './ConsoleDevice.ts';
 import { deskAddress, float, int } from './desk.ts';
+import { stripsOf } from './deskNames.ts';
 import type { DeskValue } from './desk.ts';
 
 const INPUTS = CONSOLE_CONFIG.INPUTS;
@@ -204,7 +205,7 @@ class MockConsole implements ConsoleDevice {
         on: this.wire.get(first.ON_ADDRESS) === UNMUTE,
         db: dbFromFader(level),
       };
-      return { id: input.ID, label: input.LABEL, nominalDb: first.FADER_DB, state };
+      return { id: input.ID, label: input.LABEL, nominalDb: first.FADER_DB, strips: stripsOf(input), state };
     });
   }
 

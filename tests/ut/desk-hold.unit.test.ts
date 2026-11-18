@@ -3,6 +3,9 @@ import { strict as assert } from 'node:assert';
 import type { ConsoleDevice } from '../../server/console/ConsoleDevice.ts';
 import type { DeskValue } from '../../server/console/desk.ts';
 import type { DeskJournalEntry, HoldTiming } from '../../server/console/DeskHolds.ts';
+import { DeskUser } from '../../server/protocol.ts';
+import type { DeskNote } from '../../server/protocol.ts';
+import { testWatch } from './desk-watch.ts';
 
 // Note(yoochan.kim): console config and logger read required env on load, hence env first and dynamic imports.
 process.env.X32_REMOTE_ADDRESS ??= '127.0.0.1';
@@ -76,19 +79,20 @@ class FakeDesk implements ConsoleDevice {
 
 const UNTOUCHED = { [AUX_ON]: int(1), [AUX_FADER]: float(0.75), [CH1_ON]: int(1) };
 
-function rig(leftover: readonly DeskJournalEntry[] = [], initial: Record<string, DeskValue> = UNTOUCHED) {
+function rig(leftover: readonly DeskJournalEntry[] = [], initial: Record<string, DeskValue> = UNTOUCHED, notes: readonly DeskNote[] = []) {
   const desk = new FakeDesk(initial);
   const journals: (readonly DeskJournalEntry[])[] = [];
-  const holds = new DeskHolds(desk, TIMING, (entries) => journals.push(entries), leftover);
+  const watch = testWatch(notes);
+  const holds = new DeskHolds(desk, TIMING, (entries) => journals.push(entries), leftover, watch);
   const journal = (): readonly DeskJournalEntry[] => journals[journals.length - 1] ?? leftover;
-  return { desk, holds, journal };
+  return { desk, holds, journal, watch };
 }
 
 describe('Holding part of the desk', () => {
   test('makes the changes, and puts every one back newest first once the body returns', async () => {
     const { desk, holds, journal } = rig();
 
-    const result = await holds.holding([off(auxin(5)), fader(auxin(5), -10)], async () => {
+    const result = await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10)], async () => {
       assert.equal(desk.values.get(AUX_ON)!.value, 0);
       assert.equal(desk.values.get(AUX_FADER)!.value, 0.5);
       return 'measured';
@@ -111,7 +115,7 @@ describe('Holding part of the desk', () => {
 
     let result: string;
     try {
-      result = await holds.holding([off(auxin(5))], async () => {
+      result = await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {
         assert.equal(desk.values.get(AUX_ON)!.value, 0, 'there, the second time');
         desk.lose.add(AUX_ON);
         return 'measured';
@@ -136,7 +140,7 @@ describe('Holding part of the desk', () => {
     const { desk, holds } = rig();
 
     await assert.rejects(
-      holds.holding([off(auxin(5))], async () => { throw new Error('measurement failed'); }),
+      holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => { throw new Error('measurement failed'); }),
       /measurement failed/,
     );
     assert.equal(desk.values.get(AUX_ON)!.value, 1);
@@ -146,7 +150,7 @@ describe('Holding part of the desk', () => {
   test('an address changed again goes back to what it held before the first change, in one step', async () => {
     const { desk, holds } = rig();
 
-    await holds.holding([fader(auxin(5), -20)], async (held) => {
+    await holds.holding(DeskUser.COUNTDOWN, [fader(auxin(5), -20)], async (held) => {
       await held.apply(fader(auxin(5), 5));
       await held.apply(fader(auxin(5), -5));
     });
@@ -159,7 +163,7 @@ describe('Holding part of the desk', () => {
   test('an address first touched midway is remembered before it changes, and put back first', async () => {
     const { desk, holds } = rig();
 
-    await holds.holding([off(auxin(5)), fader(auxin(5), -10)], async (held) => {
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10)], async (held) => {
       await held.apply(off(ch(1)));
     });
 
@@ -171,21 +175,21 @@ describe('Holding part of the desk', () => {
     const { desk, holds } = rig();
     desk.silent.add(AUX_FADER);
 
-    await assert.rejects(holds.holding([off(auxin(5)), fader(auxin(5), -10)], async () => {}), /no answer/);
+    await assert.rejects(holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10)], async () => {}), /no answer/);
     assert.deepEqual(desk.sent, []);
 
     // Note(yoochan.kim): nothing was left spoken for: once it answers, the same hold goes ahead.
     desk.silent.clear();
-    await holds.holding([off(auxin(5)), fader(auxin(5), -10)], async () => {});
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10)], async () => {});
     holds.dispose();
   });
 
   test('an address has one holder at a time, while another setting of the same strip is free', async () => {
     const { holds } = rig();
 
-    await holds.holding([off(auxin(5))], async () => {
-      await assert.rejects(holds.holding([off(auxin(5))], async () => {}), DeskHeldError);
-      await holds.holding([fader(auxin(5), -10)], async () => {});
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {
+      await assert.rejects(holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {}), DeskHeldError);
+      await holds.holding(DeskUser.COUNTDOWN, [fader(auxin(5), -10)], async () => {});
     });
     holds.dispose();
   });
@@ -194,7 +198,7 @@ describe('Holding part of the desk', () => {
     const { desk, holds } = rig();
     const moved: string[] = [];
 
-    await holds.holding([off(auxin(5))], async (held) => {
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async (held) => {
       held.onDeskChange((address, value) => moved.push(`${address}=${value.value}`));
 
       desk.late(AUX_ON, int(1));
@@ -213,7 +217,7 @@ describe('Holding part of the desk', () => {
     const writtenAtSend: (readonly DeskJournalEntry[])[] = [];
     desk.onSend = () => writtenAtSend.push(journal());
 
-    await holds.holding([off(auxin(5))], async () => {});
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {});
 
     assert.deepEqual(writtenAtSend[0], [{ address: AUX_ON, original: int(1) }]);
     assert.deepEqual(journal(), []);
@@ -225,7 +229,7 @@ describe('Holding part of the desk', () => {
     const writtenAtSend: (readonly DeskJournalEntry[])[] = [];
     desk.onSend = () => writtenAtSend.push(journal());
 
-    await holds.holding([off(auxin(5)), fader(auxin(5), -10), off(ch(1))], async () => {});
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10), off(ch(1))], async () => {});
 
     assert.deepEqual(writtenAtSend[0], [
       { address: AUX_ON, original: int(1) },
@@ -240,7 +244,7 @@ describe('Holding part of the desk', () => {
     const { desk, holds, journal } = rig();
 
     await assert.rejects(
-      holds.holding([off(auxin(5))], async () => { desk.unplugged = true; }),
+      holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => { desk.unplugged = true; }),
       DeskRestoreError,
     );
     assert.deepEqual(journal(), [{ address: AUX_ON, original: int(1) }]);
@@ -270,14 +274,14 @@ describe('Holding part of the desk', () => {
   test('the server\'s own writes keep out of a hold, but never out of each other', async () => {
     const { holds } = rig();
 
-    await holds.holding([off(auxin(5))], async () => {
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {
       await assert.rejects(holds.writing([AUX_ON], async () => {}), DeskHeldError);
     });
 
     let release!: () => void;
     const slow = holds.writing([AUX_ON], () => new Promise<void>((resolve) => { release = resolve; }));
     await holds.writing([AUX_ON], async () => {});
-    await assert.rejects(holds.holding([off(auxin(5))], async () => {}), DeskHeldError);
+    await assert.rejects(holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {}), DeskHeldError);
     release();
     await slow;
     holds.dispose();
@@ -289,14 +293,14 @@ describe('Holding the mock desk', () => {
     const desk = new MockConsole();
     await desk.initialize();
     desk.clearJournal();
-    const holds = new DeskHolds(desk, TIMING, () => {}, []);
+    const holds = new DeskHolds(desk, TIMING, () => {}, [], testWatch());
     const mixer = new MixerConsole(desk, holds);
     const aux = (): boolean => {
       const input = mixer.read().find((candidate) => candidate.id === 'aux')!;
       return input.state.kind === 'read' && input.state.on;
     };
 
-    await mixer.holding([off(auxin(5))], async () => {
+    await mixer.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {
       assert.equal(aux(), false);
       await assert.rejects(mixer.enable('aux'), DeskHeldError);
       await assert.rejects(mixer.initialize(), DeskHeldError);
@@ -313,7 +317,7 @@ describe('Holding the mock desk', () => {
 
   test('a send is set aside and comes back, at a level between the steps a send has', async () => {
     const desk = new MockConsole();
-    const holds = new DeskHolds(desk, TIMING, () => {}, []);
+    const holds = new DeskHolds(desk, TIMING, () => {}, [], testWatch());
     const mixer = new MixerConsole(desk, holds);
     const SEND_ON = '/auxin/05/mix/03/on';
     const SEND_LEVEL = '/auxin/05/mix/03/level';
@@ -325,13 +329,116 @@ describe('Holding the mock desk', () => {
     assert.equal(sameValue(await desk.query(SEND_LEVEL), float(faderFromDb(0.7))), false);
     desk.set(SEND_LEVEL, 0.5);
 
-    await mixer.holding([sendOff(auxin(5), bus(3)), sendLevel(auxin(5), bus(3), 0.7)], async () => {
+    await mixer.holding(DeskUser.COUNTDOWN, [sendOff(auxin(5), bus(3)), sendLevel(auxin(5), bus(3), 0.7)], async () => {
       assert.deepEqual(await desk.query(SEND_ON), int(0));
       assert.deepEqual(await desk.query(SEND_LEVEL), float(123 / 160));
     });
 
     assert.deepEqual(await desk.query(SEND_ON), int(1));
     assert.deepEqual(await desk.query(SEND_LEVEL), float(0.5));
+    holds.dispose();
+  });
+});
+
+describe('What screens are told about the desk', () => {
+  const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/;
+
+  test('while held it is told as holding, by whom and which strips, and nothing once it is over', async () => {
+    const { holds, watch } = rig();
+    assert.deepEqual(holds.use(), { holds: [], notes: [] });
+
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), off(ch(1))], async () => {
+      const [held] = holds.use().holds;
+      assert.equal(held?.phase, 'holding');
+      assert.equal(held.by, 'countdown');
+      assert.deepEqual(held.strips, ['Ch 1', 'Aux 5'], 'named as the desk names them, in its order rather than the order changed');
+      assert.deepEqual(held.moved, []);
+      assert.match(held.since, INSTANT);
+    });
+
+    assert.deepEqual(holds.use(), { holds: [], notes: [] }, 'a hold nobody touched leaves no note');
+    assert.ok(watch.told >= 2, 'screens told as it began and as it ended');
+    holds.dispose();
+  });
+
+  test('a hand on a held setting is shown once, kept as a note after it is put back, and set aside only by a person', async () => {
+    const { desk, holds, watch } = rig();
+
+    await holds.holding(DeskUser.COUNTDOWN, [off(auxin(5))], async () => {
+      desk.hand(AUX_ON, int(1));
+      await settle();
+      desk.hand(AUX_ON, int(1));
+      await settle();
+      const [held] = holds.use().holds;
+      assert.equal(held?.moved.length, 1, 'the same setting moved again is still one move');
+      assert.deepEqual({ strip: held.moved[0]!.strip, setting: held.moved[0]!.setting }, { strip: 'Aux 5', setting: 'Mute' });
+      assert.match(held.moved[0]!.at, INSTANT);
+    });
+
+    assert.equal(desk.values.get(AUX_ON)!.value, 1, 'put back to what it held before');
+    const { holds: left, notes } = holds.use();
+    assert.deepEqual(left, []);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0]!.by, 'countdown');
+    assert.deepEqual(notes[0]!.moved.map((move) => `${move.strip} ${move.setting}`), ['Aux 5 Mute']);
+    assert.deepEqual(watch.kept.at(-1), notes, 'kept for a restart');
+
+    assert.equal(holds.dismiss('no such note'), false);
+    assert.equal(holds.dismiss(notes[0]!.id), true);
+    assert.deepEqual(holds.use().notes, []);
+    assert.deepEqual(watch.kept.at(-1), [], 'and its setting aside kept too');
+    holds.dispose();
+  });
+
+  test('notes kept from before a restart are shown again', () => {
+    const note = { id: 'n1', at: '2026-11-13T21:00:00.300', by: DeskUser.COUNTDOWN, moved: [{ strip: 'Aux 5', setting: 'Mute', at: '2026-11-13T20:59:30.265' }] };
+    const { holds } = rig([], UNTOUCHED, [note]);
+    assert.deepEqual(holds.use().notes, [note]);
+    holds.dispose();
+  });
+
+  test('a desk that did not take its old values back is shown waiting with what is not back, until it does', async () => {
+    const { desk, holds } = rig();
+
+    await assert.rejects(holds.holding(DeskUser.LEVEL_MATCH, [off(auxin(5))], async () => { desk.unplugged = true; }), DeskRestoreError);
+    const [held] = holds.use().holds;
+    assert.equal(held?.phase, 'waiting');
+    assert.equal(held.by, 'levelMatch');
+    assert.deepEqual(held.phase === 'waiting' && held.unrestored, [{ strip: 'Aux 5', setting: 'Mute' }]);
+
+    desk.unplugged = false;
+    await settle(TIMING.RESTORE_RETRY_MS * 3);
+    assert.deepEqual(holds.use().holds, []);
+    holds.dispose();
+  });
+
+  test('a retry that puts back part of it tells the screens what is still not back', async () => {
+    const { desk, holds, watch } = rig();
+
+    await assert.rejects(
+      holds.holding(DeskUser.COUNTDOWN, [off(auxin(5)), fader(auxin(5), -10)], async () => { desk.unplugged = true; }),
+      DeskRestoreError,
+    );
+    const notBack = (): unknown => { const [held] = holds.use().holds; return held?.phase === 'waiting' && held.unrestored.map((s) => s.setting); };
+    assert.deepEqual(notBack(), ['Mute', 'Fader']);
+
+    const told = watch.told;
+    desk.unplugged = false;
+    desk.silent.add(AUX_ON);
+    await settle(TIMING.RESTORE_RETRY_MS * 1.5);
+    assert.deepEqual(notBack(), ['Mute'], 'the fader went back, the mute did not');
+    assert.ok(watch.told > told, 'and the screens were told');
+    holds.dispose();
+  });
+
+  test('a hold left from before a restart is shown as the restart\'s', async () => {
+    const desk = new FakeDesk({ [AUX_ON]: int(0) });
+    desk.silent.add(AUX_ON);
+    const holds = new DeskHolds(desk, TIMING, () => {}, [{ address: AUX_ON, original: int(1) }], testWatch());
+    await settle(10);
+    const [held] = holds.use().holds;
+    assert.equal(held?.phase, 'waiting');
+    assert.equal(held.by, 'restart');
     holds.dispose();
   });
 });

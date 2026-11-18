@@ -105,6 +105,13 @@ class LevelStage(str, Enum):
     PLAYING = "playing"
 
 
+class DeskUser(str, Enum):
+    """What the server has set part of the X32 aside for"""
+    COUNTDOWN = "countdown"
+    LEVEL_MATCH = "levelMatch"
+    RESTART = "restart"
+
+
 class Song(TypedDict):
     """
     A song a user can select and leave looping. The server names these, so
@@ -198,7 +205,85 @@ class ConsoleInput(TypedDict):
     id: str  # Value to pass to enableConsoleInput
     label: str  # What to call it on screen, e.g. '목사님 마이크'
     nominalDb: float  # Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand.
+    strips: list[str]  # The X32 strips it drives, named as deskUse names them, so a screen can mark it while the server holds one of them
     state: ConsoleRead
+
+
+class DeskSetting(TypedDict):
+    """
+    One setting on the X32, named as the desk itself names it, so a person
+    standing at it can find it. The server names each address it touches once,
+    here, rather than every client learning OSC.
+    """
+    strip: str  # The strip, as the desk or the room calls it: 'Aux 5', 'Ch 7', 'Main LR', or a room's own name such as 'AuxMix' for bus 8
+    setting: str  # What on that strip: 'Mute', 'Fader', 'Main LR', 'Mono', 'Bus 3 Send', 'Matrix 2 Send', 'Mute Group', 'DCA'. Empty when the strip is the setting itself, as a mute group is.
+
+
+class DeskMove(TypedDict):
+    """
+    A setting the server was holding that someone else moved, at the desk or
+    from another app, and when it was first seen moved
+    """
+    strip: str
+    setting: str
+    at: str  # Instant it was first seen moved
+
+
+class DeskNote(TypedDict):
+    """
+    What someone moved while the server held the desk, kept after the server
+    put it back, until a person sets it aside with dismissDeskNote. Kept
+    across restarts: it is the record that the room's desk was touched in the
+    middle of something.
+    """
+    id: str  # Value to pass to dismissDeskNote
+    at: str  # Instant the desk was put back
+    by: DeskUser
+    moved: list[DeskMove]  # What was moved, each put back to what it held before the server set it aside
+
+
+class DeskUse(TypedDict):
+    """
+    What the server is doing with the X32 for itself, and what it keeps from
+    earlier.
+    """
+    holds: list[DeskHold]  # What it holds right now. Empty when it holds nothing.
+    notes: list[DeskNote]  # Records of moves it has put back, oldest first. Empty when there are none.
+
+
+class DeskHoldHolding(TypedDict):
+    """
+    In use. A person at the desk should leave these strips alone until it
+    ends.
+    """
+    phase: Literal["holding"]
+    by: DeskUser
+    since: str  # Instant it set them aside
+    strips: list[str]  # The strips it changed, as the desk or the room calls them, in the desk's own order: inputs first, outputs last
+    moved: list[DeskMove]  # What someone moved since. Empty when nobody did.
+
+
+class DeskHoldWaiting(TypedDict):
+    """
+    Finished, but the desk did not take some old values back, most likely
+    because it is switched off or out of reach. Tried again every few seconds
+    until it does.
+    """
+    phase: Literal["waiting"]
+    by: DeskUser
+    since: str
+    strips: list[str]
+    moved: list[DeskMove]
+    unrestored: list[DeskSetting]  # What is not back yet, strip by strip in the desk's order
+
+
+"""
+One part of the X32 the server has set aside: while it uses it, and if the
+desk did not take its old values back when it finished, until it does. Every
+setting it changed goes back to what it held before, whatever anyone moved
+meanwhile.
+"""
+DeskHold = DeskHoldHolding | DeskHoldWaiting
 
 
 class TrackRoleMusic(TypedDict):
@@ -706,6 +791,7 @@ class State(TypedDict):
     schedule: list[ScheduleEntry]  # The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds, kept to the millisecond — a correction set by pressing a key on the wall clock's flip is rarely a whole second. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
     console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
+    deskUse: DeskUse  # What the server holds on the X32 for itself (a countdown, a level measurement, or putting back what one left after a restart), what anyone moved there meanwhile, and the notes it keeps of moves it put back. Read-only: the countdown and the level measurement set it, and dismissDeskNote sets a note aside.
 
 
 class StatePatch(TypedDict, total=False):
@@ -729,6 +815,7 @@ class StatePatch(TypedDict, total=False):
     schedule: list[ScheduleEntry]  # The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer.
     clockOffsetSec: float  # How far ahead of standard time the church clock runs, in seconds, kept to the millisecond — a correction set by pressing a key on the wall clock's flip is rarely a whole second. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts.
     console: list[ConsoleInput]  # The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face.
+    deskUse: DeskUse  # What the server holds on the X32 for itself (a countdown, a level measurement, or putting back what one left after a restart), what anyone moved there meanwhile, and the notes it keeps of moves it put back. Read-only: the countdown and the level measurement set it, and dismissDeskNote sets a note aside.
 
 
 class WriteRequest(TypedDict):
@@ -1023,6 +1110,14 @@ class RevertLevelMatchArgs(TypedDict):
     pass
 
 
+class DismissDeskNoteArgs(TypedDict):
+    """
+    Set one desk note aside once a person has read it. It changes nothing on
+    the desk. Refused with invalidValue for a note that is not there.
+    """
+    id: str  # Note id from the deskUse attribute
+
+
 class InvokeRequest(TypedDict):
     """One invoke runs one command. See the *Args types for its arguments."""
     command: str
@@ -1049,6 +1144,7 @@ ATTRIBUTES: dict[str, dict] = {
     "schedule": {"access": "ro"},
     "clockOffsetSec": {"access": "rw", "permission": "admin", "range": (-3600, 3600)},
     "console": {"access": "ro"},
+    "deskUse": {"access": "ro"},
 }
 
 COMMANDS: dict[str, dict] = {
@@ -1073,6 +1169,7 @@ COMMANDS: dict[str, dict] = {
     "applyLevelMatch": {"permission": "admin"},
     "cancelLevelMatch": {"permission": "admin"},
     "revertLevelMatch": {"permission": "admin"},
+    "dismissDeskNote": {"permission": "admin"},
 }
 
 

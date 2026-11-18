@@ -55,6 +55,7 @@ The server is modelled as a device that describes itself: it exposes attributes 
 | `schedule` | `ScheduleEntry[]` | 읽기 전용 | — | The weekly calendar this server keeps: every flow that may be run, in the order they were written. State rather than a one-shot list, because it is edited while clients are connected. Read-only — saveFlow and deleteFlow move it. It lives here because it is persistent, and because whether a track may be deleted depends on whether a flow still names it, which only whoever holds both can answer. |
 | `clockOffsetSec` | `number` (-3600–3600) | 읽기/쓰기 | admin | How far ahead of standard time the church clock runs, in seconds, kept to the millisecond — a correction set by pressing a key on the wall clock's flip is rarely a whole second. Negative means behind. Every instant on this wire is read against it, so writing it moves the whole schedule. Refused with adminLocked while the gate is held: a flow holds the gate for its whole run, which makes it impossible to move the clock out from under music that is already playing. Survives restarts. |
 | `console` | `ConsoleInput[]` | 읽기 전용 | — | The inputs this server drives, in the order to show them, each with what the mixing desk itself reports for it. Read-only: enableConsoleInput changes the desk, and the desk's next answer changes this. Each starts unknown and falls back to unknown when the desk stops answering, so a dead console never wears a live face. |
+| `deskUse` | `DeskUse` | 읽기 전용 | — | What the server holds on the X32 for itself (a countdown, a level measurement, or putting back what one left after a restart), what anyone moved there meanwhile, and the notes it keeps of moves it put back. Read-only: the countdown and the level measurement set it, and dismissDeskNote sets a note aside. |
 
 ## 명령 (인자를 받는 동작)
 
@@ -261,6 +262,16 @@ Put back the level an applied measurement replaced. levelMatch reads measured ag
 
 _필드 없음._
 
+### `dismissDeskNote`
+
+권한: admin
+
+Set one desk note aside once a person has read it. It changes nothing on the desk. Refused with invalidValue for a note that is not there.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Note id from the deskUse attribute |
+
 ## 열거형
 
 ### PlaybackState
@@ -304,6 +315,12 @@ Why a level measurement ended without an answer. Nothing about the track was cha
 Where a running level measurement has got to
 
 `"settingDesk"` · `"playing"`
+
+### DeskUser
+
+What the server has set part of the X32 aside for
+
+`"countdown"` · `"levelMatch"` · `"restart"`
 
 ## 객체
 
@@ -396,7 +413,47 @@ One input this server drives, as the desk last answered for it. A client draws o
 | `id` | `string` | Value to pass to enableConsoleInput |
 | `label` | `string` | What to call it on screen, e.g. '목사님 마이크' |
 | `nominalDb` | `number` | Where this input is meant to sit, in decibels — the level enableConsoleInput puts it back to. Marked on a meter, it shows at a glance that a fader has been moved by hand. |
+| `strips` | `string[]` | The X32 strips it drives, named as deskUse names them, so a screen can mark it while the server holds one of them |
 | `state` | `ConsoleRead` |  |
+
+### DeskSetting
+
+One setting on the X32, named as the desk itself names it, so a person standing at it can find it. The server names each address it touches once, here, rather than every client learning OSC.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `strip` | `string` | The strip, as the desk or the room calls it: 'Aux 5', 'Ch 7', 'Main LR', or a room's own name such as 'AuxMix' for bus 8 |
+| `setting` | `string` | What on that strip: 'Mute', 'Fader', 'Main LR', 'Mono', 'Bus 3 Send', 'Matrix 2 Send', 'Mute Group', 'DCA'. Empty when the strip is the setting itself, as a mute group is. |
+
+### DeskMove
+
+A setting the server was holding that someone else moved, at the desk or from another app, and when it was first seen moved
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `strip` | `string` |  |
+| `setting` | `string` |  |
+| `at` | `string` | Instant it was first seen moved |
+
+### DeskNote
+
+What someone moved while the server held the desk, kept after the server put it back, until a person sets it aside with dismissDeskNote. Kept across restarts: it is the record that the room's desk was touched in the middle of something.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `string` | Value to pass to dismissDeskNote |
+| `at` | `string` | Instant the desk was put back |
+| `by` | `DeskUser` |  |
+| `moved` | `DeskMove[]` | What was moved, each put back to what it held before the server set it aside |
+
+### DeskUse
+
+What the server is doing with the X32 for itself, and what it keeps from earlier.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `holds` | `DeskHold[]` | What it holds right now. Empty when it holds nothing. |
+| `notes` | `DeskNote[]` | Records of moves it has put back, oldest first. Empty when there are none. |
 
 ## 클라이언트 → 서버
 

@@ -9,6 +9,7 @@ import type { LibraryEntry } from '../../server/tracks/TrackLibrary.ts';
 import type { ConsoleDevice } from '../../server/console/ConsoleDevice.ts';
 import type { DeskValue } from '../../server/console/desk.ts';
 import type { LevelTiming } from '../../server/constants/levelConfig.ts';
+import { testWatch } from './desk-watch.ts';
 
 // Note(yoochan.kim): mpv only records and the meter is derived from it, so nothing sounds; modules read env on load.
 process.env.LOG_LEVEL ??= 'warn';
@@ -171,7 +172,7 @@ function rig() {
   );
   const lock = new LockCoordinator(notifier);
   const desk = new MeterDesk(mpv, events);
-  const holds = new DeskHolds(desk, HOLD_TIMING, () => {}, []);
+  const holds = new DeskHolds(desk, HOLD_TIMING, () => {}, [], testWatch());
   const flow = { owns: false, ownsDeck: () => flow.owns };
   const desks = { output: MEASURE, mainMuted: CONSOLE_CONFIG.MEASURE_MAIN_MUTED };
   const matcher = new LevelMatcher(player, library, lock, notifier, new MixerConsole(desk, holds), flow, desks, TIMING);

@@ -10,6 +10,7 @@ after(() => stopServer());
 const EXPECTED_ATTRIBUTES = [
   'playback', 'volume', 'mute', 'loop', 'song', 'deck', 'unlockWhenDone', 'musicEndsAt', 'tracks', 'trackFetch',
   'levelMatch', 'adminLock', 'adminHold', 'audioLock', 'isAdmin', 'flow', 'schedule', 'clockOffsetSec', 'console',
+  'deskUse',
 ];
 
 describe('Handshake and Read Tests', () => {

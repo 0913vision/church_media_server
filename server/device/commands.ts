@@ -372,6 +372,15 @@ export const COMMAND_IMPL: Partial<Record<CommandName, CommandSpec>> = {
       return deps.levelMatcher.revert();
     },
   },
+
+  // Note(yoochan.kim): only the note goes; the move it records was put back on the desk when the hold ended.
+  dismissDeskNote: {
+    async run(args, deps) {
+      const id = argsObject(args).id;
+      if (typeof id !== 'string' || !deps.mixerConsole.dismissNote(id)) return refuse(RejectReason.INVALID_VALUE);
+      return DONE;
+    },
+  },
 };
 
 export const IMPLEMENTED_COMMANDS: readonly string[] = Object.keys(COMMAND_IMPL);
