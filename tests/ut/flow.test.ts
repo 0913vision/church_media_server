@@ -142,7 +142,7 @@ describe('Flow Tests', () => {
     }
   });
 
-  test('a run only holding the gate leaves the deck usable, and takes it back at its own start', async () => {
+  test('a run only holding the gate leaves the deck usable, and on ending leaves a person\'s track to their own hold', async () => {
     const admin = await connectAuthedAdmin();
 
     try {
@@ -154,16 +154,27 @@ describe('Flow Tests', () => {
       admin.invoke('selectTrack', { id: firstTrackId });
       assert.strictEqual((await chosen).deck!.source, 'track', 'a quiet run does not own the deck');
 
+      // Note(yoochan.kim): a track only an admin can put on has no place on the panel, so the run's end keeps the gate (2026-11-20).
+      const kept = admin.waitForState((patch) => patch.adminHold?.kind === 'at');
       await stopFlow(admin);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Note(yoochan.kim): back to the deck the run was handed, not the track put on halfway through it.
+      await kept;
       const after = await admin.read();
-      assert.deepStrictEqual(after.deck, { source: 'song' });
-      assert.strictEqual(after.song, before.song, 'the run restored what it was given');
-      assert.strictEqual(after.volume, before.volume);
+      assert.deepStrictEqual(after.flow, { phase: 'idle' });
+      assert.strictEqual(after.adminLock, true, 'the gate stays, a person\'s hold now');
+      assert.deepStrictEqual(after.deck, { source: 'track', id: firstTrackId }, 'the track left as the person put it on');
+
+      // Note(yoochan.kim): opening the gate sends two patches; a read before the second would take it as its reply.
+      const opened = admin.waitForState((patch) => patch.loop === true);
+      admin.write('adminLock', false);
+      await opened;
+      const open = await admin.read();
+      assert.deepStrictEqual(open.deck, { source: 'song' }, 'the person\'s release puts the deck back');
+      assert.strictEqual(open.song, before.song);
+      assert.strictEqual(open.volume, before.volume);
     } finally {
       await stopFlow(admin).catch(() => {});
+      admin.write('adminLock', false);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       admin.disconnect();
     }
   });

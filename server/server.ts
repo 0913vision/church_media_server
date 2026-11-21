@@ -177,6 +177,11 @@ class MediaServer {
     this.levelMatcher = levelMatcher;
     const adminSession = new AdminSession(player, lockCoordinator, notifier, clock, levelMatcher);
     this.adminSession = adminSession;
+    // Note(yoochan.kim): a gate a run leaves to a person is theirs from here, with the hour a person's hold has.
+    flowRunner.onGateHandedOver(() => {
+      adminSession.engage();
+      notifier.state({ adminHold: adminSession.adminHold(), musicEndsAt: adminSession.musicEndsAt() });
+    });
     const autoStarter = new AutoStarter(schedule, clock, flowRunner);
     this.autoStarter = autoStarter;
     autoStarter.start();

@@ -110,6 +110,7 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 class FlowRunner {
   private active: ActiveRun | undefined;
   private readonly waiters = new Set<Waiter>();
+  private handOver: (() => void) | undefined;
 
   constructor(
     private readonly player: Player,
@@ -146,6 +147,11 @@ class FlowRunner {
   /** Note(yoochan.kim): from the run's first sound to its last; holding only the gate leaves the deck free. */
   ownsDeck(): boolean {
     return this.active?.deckHeld ?? false;
+  }
+
+  /** Told when a run ends with its gate kept as a person's hold, so the hold starts its hour. */
+  onGateHandedOver(listener: () => void): void {
+    this.handOver = listener;
   }
 
   /** Note(yoochan.kim): a run copied its tracks at acceptance, so an edited calendar cannot say what it will play. */
@@ -557,19 +563,47 @@ class FlowRunner {
     const run = this.active;
     if (!run) return;
 
-    try {
-      await this.restoreDeck();
-    } catch (error) {
-      log.error('flow', null, 'Failed to restore the deck after a flow', { error: errorMessage(error) });
+    // Note(yoochan.kim): only a deck the run still holds goes back to the one it was handed. One it gave back, or never
+    // took, is a person's, and a run ending must not change what the room hears (the user, 2026-11-20).
+    const theirs = !run.deckHeld;
+    if (theirs) {
+      log.info('flow', null, 'Deck left as a person has it', {
+        deck: this.deckName(), playing: this.player.isPlaying(), level: this.player.getVolume(),
+      });
+    } else {
+      try {
+        await this.restoreDeck();
+      } catch (error) {
+        log.error('flow', null, 'Failed to restore the deck after a flow', { error: errorMessage(error) });
+      }
     }
-    if (run.lockEngaged) {
-      this.lockCoordinator.setAdminLock(false);
-    }
+    if (run.lockEngaged) this.leaveGate(theirs);
 
     this.active = undefined;
     this.waiters.clear();
     this.publish();
     log.info('flow', null, 'Flow finished', { name: run.plan.name });
+  }
+
+  /** A track only an admin can put on has no place on the panel, so a person's one keeps the gate, as their hold now. */
+  private leaveGate(theirs: boolean): void {
+    if (theirs && this.player.getDeck().source === 'track') {
+      this.lockCoordinator.setAdminLock(true, 'person');
+      log.info('flow', null, 'Gate kept as a person\'s hold: a track only an admin can put on is on the deck', { deck: this.deckName() });
+      this.handOver?.();
+      return;
+    }
+    // Note(yoochan.kim): the panel's songs loop again once the gate opens, as when a person releases it.
+    if (!this.player.getLoop()) {
+      this.player.setLoop(true);
+      this.notifier.state({ loop: true });
+    }
+    this.lockCoordinator.setAdminLock(false);
+  }
+
+  private deckName(): string {
+    const deck = this.player.getDeck();
+    return deck.source === 'track' ? `track ${deck.id}` : `song ${this.player.getCurrentSong()}`;
   }
 
   /** Returns the deck to the user's song; a no-op when no track took it. */

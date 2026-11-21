@@ -116,8 +116,18 @@ class AdminSession {
     const now = this.clock.now();
 
     if (this.lapsesAt && now >= this.lapsesAt && !this.musicIsOwedItsEnd()) {
+      // Note(yoochan.kim): the lapse never cuts music (the user, 2026-11-20): a repeating track stops repeating and plays
+      // out the pass it is in, and the gate opens once it has ended.
+      const deck = this.player.getDeck();
+      if (deck.source === 'track' && this.trackSounding()) {
+        this.player.setLoop(false);
+        this.sync();
+        this.notifier.state({ loop: false });
+        log.info('adminSession', null, 'The hold lapsed under repeating music; it plays to its end, then the gate opens', { deck: `track ${deck.id}` });
+        return;
+      }
       log.info('adminSession', null, 'The hold lapsed, gate released');
-      await this.release(true);
+      await this.release(!this.player.hasEnded());
       return;
     }
 
@@ -143,8 +153,12 @@ class AdminSession {
 
   /** Note(yoochan.kim): the lapse waits for music that will end; music looping with no end is what the hour is for. */
   private musicIsOwedItsEnd(): boolean {
-    const sounding = this.player.getDeck().source === 'track' && this.player.getState() === PlaybackState.PLAYING;
-    return sounding && (!this.player.getLoop() || this.musicEnd.kind === 'at');
+    return this.trackSounding() && (!this.player.getLoop() || this.musicEnd.kind === 'at');
+  }
+
+  /** Note(yoochan.kim): a track that ran out still reads as playing, so its end is asked of the device too. */
+  private trackSounding(): boolean {
+    return this.player.getDeck().source === 'track' && this.player.getState() === PlaybackState.PLAYING && !this.player.hasEnded();
   }
 
   /** The same unwinding a manual release does. */

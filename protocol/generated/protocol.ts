@@ -806,8 +806,10 @@ export const ATTRIBUTES = {
    * by itself — see adminHold. A run engages the same gate, and a run starting over a
    * person's hold takes it: a scheduled service outranks an ad-hoc lock, and the hold
    * stops counting from that moment rather than expiring later under music that is
-   * playing. Releasing it, or a run taking it, ends a level measurement, which puts
-   * the deck and the desk back on its way out.
+   * playing. A run ending while a person has a track only an admin can put on the deck
+   * does not release it: it stays, as that person's hold. Releasing it, or a run
+   * taking it, ends a level measurement, which puts the deck and the desk back on its
+   * way out.
    */
   adminLock: { access: 'rw', permission: 'admin' },
   /**
@@ -815,10 +817,13 @@ export const ATTRIBUTES = {
    * — a track that will finish, or one told when to stop — because releasing under a
    * song that is still sounding opens the panel mid-music. Never more than an hour
    * ahead: a panel locked and forgotten is a panel nobody in the building can use, and
-   * the person who locked it has usually gone home. Lapsing does what releasing does —
-   * the user's song comes back with it. extendAdminHold pushes it out while somebody
-   * is still there. Reads none when the gate is open, and while a flow holds it: a run
-   * names its own window and ends on its own.
+   * the person who locked it has usually gone home. Repeating music nobody gave an end
+   * to is not cut either: at the lapse its repeat is turned off, it plays out the pass
+   * it is in, and the gate opens once it has ended. Lapsing does what releasing does —
+   * the user's song comes back with it. A gate a run left as a person's hold counts
+   * its hour from the run's end. extendAdminHold pushes it out while somebody is still
+   * there. Reads none when the gate is open, and while a flow holds it: a run names
+   * its own window and ends on its own.
    */
   adminHold: { access: 'ro' },
   /**
@@ -920,8 +925,11 @@ export const COMMANDS = {
    */
   startFlow: { permission: 'admin' },
   /**
-   * End the running flow now: stop playback, restore the user's song, release the
-   * admin lock.
+   * End the running flow now. A deck the run still holds goes back to the one it was
+   * handed and the admin lock is released. A deck a person has used since the run gave
+   * it back, or before it ever took it, is left exactly as it is: one of the panel's
+   * songs opens the gate over it, while a track only an admin can put on keeps the
+   * gate, as that person's hold — the same as a run ending on its own.
    */
   stopFlow: { permission: 'admin' },
   /**
@@ -1187,8 +1195,10 @@ export interface State {
    * by itself — see adminHold. A run engages the same gate, and a run starting over a
    * person's hold takes it: a scheduled service outranks an ad-hoc lock, and the hold
    * stops counting from that moment rather than expiring later under music that is
-   * playing. Releasing it, or a run taking it, ends a level measurement, which puts
-   * the deck and the desk back on its way out.
+   * playing. A run ending while a person has a track only an admin can put on the deck
+   * does not release it: it stays, as that person's hold. Releasing it, or a run
+   * taking it, ends a level measurement, which puts the deck and the desk back on its
+   * way out.
    */
   adminLock: boolean;
   /**
@@ -1196,10 +1206,13 @@ export interface State {
    * — a track that will finish, or one told when to stop — because releasing under a
    * song that is still sounding opens the panel mid-music. Never more than an hour
    * ahead: a panel locked and forgotten is a panel nobody in the building can use, and
-   * the person who locked it has usually gone home. Lapsing does what releasing does —
-   * the user's song comes back with it. extendAdminHold pushes it out while somebody
-   * is still there. Reads none when the gate is open, and while a flow holds it: a run
-   * names its own window and ends on its own.
+   * the person who locked it has usually gone home. Repeating music nobody gave an end
+   * to is not cut either: at the lapse its repeat is turned off, it plays out the pass
+   * it is in, and the gate opens once it has ended. Lapsing does what releasing does —
+   * the user's song comes back with it. A gate a run left as a person's hold counts
+   * its hour from the run's end. extendAdminHold pushes it out while somebody is still
+   * there. Reads none when the gate is open, and while a flow holds it: a run names
+   * its own window and ends on its own.
    */
   adminHold: Deadline;
   /**
